@@ -11,12 +11,21 @@ This repository provides a Python toolkit that enables TensorRT-LLM and vLLM int
 ```
 ModelHostingContainerStandards/
 ├── python/                    # Python implementation
-│   ├── model_hosting_container_standards/  # Python package
-│   ├── examples/              # Python examples
-│   ├── tests/                 # Python tests
+│   ├── model_hosting_container_standards/  # Main Python package
+│   │   ├── __init__.py
+│   │   ├── config.py
+│   │   ├── logging_config.py
+│   │   ├── utils.py
+│   │   ├── sagemaker/         # SageMaker integration
+│   │   └── fastapi/           # FastAPI integration
+│   ├── tests/                 # Package tests
+│   ├── examples/              # Python examples and demos
 │   ├── pyproject.toml         # Python project configuration
 │   ├── Makefile               # Build automation
 │   └── README.md              # Python-specific documentation
+├── docs/                      # Documentation
+├── examples/                  # Top-level examples
+├── .github/                   # GitHub templates and workflows
 ├── Config                     # Shared configuration files
 └── README.md                  # This file
 ```

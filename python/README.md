@@ -239,6 +239,9 @@ pip install dist/*.whl --force-reinstall
 
 # Test import
 python -c "from model_hosting_container_standards import ping; import logging; logging.basicConfig(); logging.getLogger().info('Import successful')"
+
+# Run tests
+make test
 ```
 
 #### 4. Pre-commit Hooks
