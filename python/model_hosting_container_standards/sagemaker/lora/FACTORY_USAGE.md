@@ -8,6 +8,7 @@ This guide provides practical examples of using the LoRA decorator factory to im
 - [How the Factory Works](#how-the-factory-works)
 - [Using the Convenience Functions](#using-the-convenience-functions)
 - [Basic Examples](#basic-examples)
+- [Setting Up Your FastAPI Application](#setting-up-your-fastapi-application)
 - [Troubleshooting](#troubleshooting)
 - [Best Practices](#best-practices)
 
@@ -16,9 +17,12 @@ This guide provides practical examples of using the LoRA decorator factory to im
 Here's the minimal setup to create a LoRA register handler:
 
 ```python
-from fastapi import Request, Response
+from fastapi import FastAPI, Request, Response
 from types import SimpleNamespace
-from model_hosting_container_standards.sagemaker import register_load_adapter_handler
+from model_hosting_container_standards.sagemaker import (
+    register_load_adapter_handler,
+    bootstrap
+)
 
 # Define your handler with transformations
 @register_load_adapter_handler(
@@ -36,6 +40,12 @@ async def load_lora_adapter(data: SimpleNamespace, raw_request: Request):
     await my_backend.load_adapter(adapter_id, adapter_source)
 
     return Response(status_code=200)
+
+# Create FastAPI app and configure with SageMaker integrations
+app = FastAPI()
+bootstrap(app)
+
+# Your app now automatically has: POST /adapters -> load_lora_adapter
 ```
 
 ## How the Factory Works
@@ -158,7 +168,7 @@ The `sagemaker` module provides convenience functions that wrap `create_transfor
 from model_hosting_container_standards.sagemaker import (
     register_load_adapter_handler,
     register_unload_adapter_handler,
-    register_adapter_id_handler
+    inject_adapter_id
 )
 ```
 
@@ -201,14 +211,14 @@ async def unload_adapter(data: SimpleNamespace, raw_request: Request):
     return Response(status_code=200)
 ```
 
-**3. `register_adapter_id_handler(request_shape, response_shape={})`**
+**3. `inject_adapter_id(request_shape, response_shape={})`**
 
 Creates a decorator for injecting adapter IDs from headers into the request body. This function has **special behavior**:
 
 ```python
-from model_hosting_container_standards.sagemaker import register_adapter_id_handler
+from model_hosting_container_standards.sagemaker import inject_adapter_id
 
-@register_adapter_id_handler(
+@inject_adapter_id(
     request_shape={
         "lora_id": None  # Value is ignored - automatically filled with the SageMaker header
     }
@@ -218,7 +228,7 @@ async def inject_adapter_id(raw_request: Request):
     return Response(status_code=200)
 ```
 
-**Special behavior of `register_adapter_id_handler`:**
+**Special behavior of `inject_adapter_id`:**
 - Only accepts a **single key** in `request_shape` (raises `ValueError` if more than one)
 - **Ignores the value** you provide - it automatically replaces it with the correct JMESPath expression for the SageMaker adapter identifier header: `headers."X-Amzn-SageMaker-Adapter-Identifier"`
 - Logs a warning if you provide a `response_shape` (since this handler type doesn't use response transformations)
@@ -227,9 +237,9 @@ This makes it foolproof - you don't need to remember the exact header name or ho
 
 ```python
 # These are all equivalent and produce the same result:
-@register_adapter_id_handler(request_shape={"lora_id": None})
-@register_adapter_id_handler(request_shape={"lora_id": ""})
-@register_adapter_id_handler(request_shape={"lora_id": "any_value"})
+@inject_adapter_id(request_shape={"lora_id": None})
+@inject_adapter_id(request_shape={"lora_id": ""})
+@inject_adapter_id(request_shape={"lora_id": "any_value"})
 
 # The function automatically converts all of these to:
 # request_shape={"lora_id": "headers.\"X-Amzn-SageMaker-Adapter-Identifier\""}
@@ -240,7 +250,7 @@ This makes it foolproof - you don't need to remember the exact header name or ho
 1. **Shorter imports**: Import from `sagemaker` instead of `sagemaker.lora.factory`
 2. **Clearer intent**: Function names explicitly state what they do
 3. **Less boilerplate**: No need to import and reference `LoRAHandlerType`
-4. **Built-in validation**: `register_adapter_id_handler` validates and auto-fills the header mapping
+4. **Built-in validation**: `inject_adapter_id` validates and auto-fills the header mapping
 5. **Future-proof**: If the implementation changes, your code doesn't need updates
 
 ### When to Use Direct Factory Access
@@ -384,9 +394,9 @@ This example shows how to extract adapter information from HTTP headers and inje
 
 ```python
 from fastapi import Request, Response
-from model_hosting_container_standards.sagemaker import register_adapter_id_handler
+from model_hosting_container_standards.sagemaker import inject_adapter_id
 
-@register_adapter_id_handler(
+@inject_adapter_id(
     request_shape={
         "lora_id": None  # Value is automatically filled with the SageMaker header
     }
@@ -534,9 +544,65 @@ print(result)  # Prints: "my-adapter"
    print(result)
    ```
 
+## Setting Up Your FastAPI Application
+
+After defining your handlers, you need to configure your FastAPI application to use them. The SageMaker module provides a simple one-line setup function.
+
+### Using `bootstrap()`
+
+The `bootstrap()` function automatically configures your FastAPI application with all registered SageMaker handlers:
+
+```python
+from fastapi import FastAPI, Request, Response
+from types import SimpleNamespace
+from model_hosting_container_standards.sagemaker import (
+    register_load_adapter_handler,
+    register_unload_adapter_handler,
+    bootstrap
+)
+
+# Step 1: Define your handlers
+@register_load_adapter_handler(
+    request_shape={
+        "adapter_id": "body.name",
+        "adapter_source": "body.src"
+    }
+)
+async def load_adapter(data: SimpleNamespace, request: Request):
+    await my_backend.load_adapter(data.adapter_id, data.adapter_source)
+    return Response(status_code=200, content=f"Loaded {data.adapter_id}")
+
+@register_unload_adapter_handler(
+    request_shape={"adapter_id": "path_params.adapter_name"}
+)
+async def unload_adapter(data: SimpleNamespace, request: Request):
+    await my_backend.unload_adapter(data.adapter_id)
+    return Response(status_code=200, content=f"Unloaded {data.adapter_id}")
+
+# Step 2: Create your FastAPI app
+app = FastAPI()
+
+# Step 3: Configure SageMaker integrations (must be called after handlers are registered)
+bootstrap(app)
+
+# Your app now automatically has these routes:
+# POST /adapters -> load_adapter
+# DELETE /adapters/{adapter_name} -> unload_adapter
+```
+
+### Important Notes
+
+1. **Call `bootstrap()` after registering handlers**: The function mounts all handlers that are registered at the time it's called. Handlers registered after calling `bootstrap()` will not be automatically mounted.
+
+2. **Default routes**: Handlers are mounted at standard SageMaker paths:
+   - Register adapter: `POST /adapters`
+   - Unregister adapter: `DELETE /adapters/{adapter_name}`
+
+3. **One-time setup**: Call `bootstrap()` only once per application.
+
 ## Best Practices
 
-1. **Use the Convenience Functions:** Unless you are creating a new handler, always use `register_load_adapter_handler`, `register_unload_adapter_handler`, and `register_adapter_id_handler` from the `sagemaker` module instead of directly using `create_transform_decorator`. They provide better error messages, validation, and automatic header handling.
+1. **Use the Convenience Functions:** Unless you are creating a new handler, always use `register_load_adapter_handler`, `register_unload_adapter_handler`, and `inject_adapter_id` from the `sagemaker` module instead of directly using `create_transform_decorator`. They provide better error messages, validation, and automatic header handling.
 
 2. **Use Descriptive Field Names:** Choose clear names for your transformed fields that match your backend's API.
 
@@ -546,6 +612,6 @@ print(result)  # Prints: "my-adapter"
 
 5. **Document Your Transformations:** Add comments explaining your transformation mappings, especially for complex JMESPath expressions.
 
-6. **Remember to Escape Hyphens:** When extracting from headers with hyphens, wrap field names in escaped double quotes (e.g., `headers.\"X-Request-Id\"`). Or better yet, use `register_adapter_id_handler` which handles this for you.
+6. **Remember to Escape Hyphens:** When extracting from headers with hyphens, wrap field names in escaped double quotes (e.g., `headers.\"X-Request-Id\"`).
 
 For more information, see the main [README.md](./README.md).

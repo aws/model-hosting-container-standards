@@ -188,7 +188,7 @@ CUSTOM_FASTAPI_PING_HANDLER=vllm.entrypoints.openai.api_server:health vllm serve
 ### Environment Variables
 
 ```python
-from model_hosting_container_standards.fastapi import EnvVars, ENV_CONFIG
+from model_hosting_container_standards.common.fastapi import EnvVars, ENV_CONFIG
 from model_hosting_container_standards.sagemaker import SageMakerEnvVars, SAGEMAKER_ENV_CONFIG
 
 # FastAPI environment variables
@@ -269,12 +269,17 @@ make clean             # Clean build artifacts
 ### Package Structure
 ```
 model_hosting_container_standards/
+├── common/             # Common utilities
+│   ├── fastapi/        # FastAPI integration & env config
+│   ├── custom_code_ref_resolver/  # Dynamic code loading
+│   └── handler/        # Handler specifications & resolution
+│       └── spec/       # Handler interface definitions
 ├── sagemaker/          # SageMaker decorators & handlers
-├── fastapi/            # FastAPI integration & env config
-├── custom_code_ref_resolver/  # Dynamic code loading
-├── handler_spec/       # Handler specifications
-├── registry.py         # Handler registration system
-├── handler_resolver.py # Generic resolution framework
+│   └── lora/           # LoRA adapter support
+│       ├── models/     # LoRA request/response models
+│       └── transforms/ # API transformation logic
+├── config.py           # Configuration management
+├── utils.py            # Utility functions
 └── logging_config.py   # Centralized logging
 ```
 

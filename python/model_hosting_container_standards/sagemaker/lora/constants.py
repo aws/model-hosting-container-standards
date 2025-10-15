@@ -5,7 +5,7 @@ from enum import Enum
 class LoRAHandlerType(str, Enum):
     REGISTER_ADAPTER = "register_adapter"
     UNREGISTER_ADAPTER = "unregister_adapter"
-    ADAPTER_ID = "adapter_id"
+    INJECT_ADAPTER_ID = "inject_adapter_id"
 
 
 # SageMaker API Headers for LoRA API

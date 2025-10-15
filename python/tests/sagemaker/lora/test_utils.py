@@ -5,7 +5,7 @@ from unittest.mock import Mock
 from fastapi import Request
 from pydantic import BaseModel
 
-from model_hosting_container_standards.fastapi.utils import serialize_request
+from model_hosting_container_standards.common.fastapi.utils import serialize_request
 from model_hosting_container_standards.sagemaker.lora.constants import (
     RequestField,
     SageMakerLoRAApiHeader,

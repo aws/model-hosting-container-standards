@@ -12,8 +12,8 @@ Usage:
 import os
 from typing import Any, Callable, Optional, Union
 
+from ..common.fastapi import EnvVars as FastAPIEnvVars
 from ..common.handler.spec import HandlerSpec, parse_handler_spec
-from ..fastapi import EnvVars as FastAPIEnvVars
 from .config import SageMakerDefaults, SageMakerEnvVars
 
 

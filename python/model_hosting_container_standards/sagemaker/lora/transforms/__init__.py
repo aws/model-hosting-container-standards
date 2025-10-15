@@ -27,7 +27,7 @@ def get_transform_cls_from_handler_type(handler_type: str) -> type:
         case LoRAHandlerType.UNREGISTER_ADAPTER:
             logger.debug("Resolved to UnregisterLoRAApiTransform")
             return UnregisterLoRAApiTransform
-        case LoRAHandlerType.ADAPTER_ID:
+        case LoRAHandlerType.INJECT_ADAPTER_ID:
             logger.debug("Resolved to AdapterHeaderToBodyApiTransform")
             return AdapterHeaderToBodyApiTransform
         case _:

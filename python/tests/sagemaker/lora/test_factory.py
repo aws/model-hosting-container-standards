@@ -68,7 +68,7 @@ class TestResolveTransforms:
     def test_resolve_transforms_adapter_header_to_body(self, mock_get_transform_cls):
         """Test _resolve_transforms with adapter_header_to_body handler type."""
         # Arrange
-        handler_type = LoRAHandlerType.ADAPTER_ID
+        handler_type = LoRAHandlerType.INJECT_ADAPTER_ID
         request_shape = {"model": "headers.X-Amzn-SageMaker-Adapter-Identifier"}
         response_shape = {}
 
@@ -358,7 +358,7 @@ class TestCreateTransformDecorator:
             LoRAHandlerType.UNREGISTER_ADAPTER
         )
         header_to_body_decorator_factory = create_transform_decorator(
-            LoRAHandlerType.ADAPTER_ID
+            LoRAHandlerType.INJECT_ADAPTER_ID
         )
 
         # Assert

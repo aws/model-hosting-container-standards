@@ -9,6 +9,7 @@ The LoRA (Low-Rank Adaptation) module provides a flexible framework for handling
 - [Request Response Transformations](#request-response-transformations)
 - [LoRA Handler Decorator Factory](#lora-handler-decorator-factory)
 - [Public API and Convenience Functions](#public-api-and-convenience-functions)
+- [Setting Up Your FastAPI Application](#setting-up-your-fastapi-application)
 - [Custom Transformer Implementation](#custom-transformer-implementation)
 - [Utilities](#utilities)
 - [Error Handling](#error-handling)
@@ -148,7 +149,7 @@ from model_hosting_container_standards.sagemaker.lora.constants import LoRAHandl
 # Create decorators for each handler type
 register_load = create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)
 register_unload = create_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)
-register_adapter_id = create_transform_decorator(LoRAHandlerType.ADAPTER_ID)
+inject_adapter_id = create_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)
 ```
 
 ### Handler Types
@@ -169,7 +170,7 @@ Used for unregistering/unloading LoRA adapters.
 - No request body required
 - Generates unregistration confirmation messages
 
-#### 3. `ADAPTER_ID` (adapter_id -> register_adapter_id_handler)
+#### 3. `INJECT_ADAPTER_ID` (inject_adapter_id -> inject_adapter_id)
 Used for moving adapter information from HTTP headers to the request body.
 
 **Transformer**: `AdapterHeaderToBodyApiTransform`
@@ -249,55 +250,7 @@ The convenience functions are thin wrappers around `create_transform_decorator` 
 1. **Cleaner imports**: Users import from `sagemaker` instead of `sagemaker.lora.factory`
 2. **Validation and preprocessing**: Input validation before passing to the factory
 3. **Handler type abstraction**: Users don't need to know about `LoRAHandlerType` enum
-4. **Special behavior**: Automatic configuration (e.g., header auto-fill for `register_adapter_id_handler`)
-
-**Implementation in `sagemaker/__init__.py`:**
-
-```python
-from .lora import create_transform_decorator, LoRAHandlerType, SageMakerLoRAApiHeader
-
-def register_load_adapter_handler(request_shape: dict, response_shape: dict = {}):
-    """Convenience function for creating load adapter handler decorators.
-
-    This wraps create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER).
-    Future: Add validation and preprocessing here.
-    """
-    # TODO: validate and preprocess request shape
-    # TODO: validate and preprocess response shape
-    return create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(request_shape, response_shape)
-
-def register_unload_adapter_handler(request_shape: dict, response_shape: dict = {}):
-    """Convenience function for creating unload adapter handler decorators.
-
-    This wraps create_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER).
-    Future: Add validation and preprocessing here.
-    """
-    # TODO: validate and preprocess request shape
-    # TODO: validate and preprocess response shape
-    return create_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(request_shape, response_shape)
-
-def register_adapter_id_handler(request_shape: dict, response_shape: dict = {}):
-    """Convenience function for creating adapter ID handler decorators.
-
-    Special behavior:
-    - Validates that request_shape contains exactly one key
-    - Automatically fills the value with the SageMaker adapter identifier header
-    - Logs warning if response_shape is provided (not used for this handler type)
-    """
-    # Validate single key
-    if len(request_shape.keys()) > 1:
-        raise ValueError(f"Invalid {request_shape=} for register_adapter_id")
-
-    # Warn if response_shape provided
-    if response_shape:
-        logger.warning(f"Handler type {LoRAHandlerType.ADAPTER_ID} does not take response_shape, but {response_shape=}")
-
-    # Auto-fill with proper header path (with escaped hyphens)
-    for k in request_shape.keys():
-        request_shape[k] = f"headers.\"{SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER.value}\""
-
-    return create_transform_decorator(LoRAHandlerType.ADAPTER_ID)(request_shape, response_shape)
-```
+4. **Special behavior**: Automatic configuration (e.g., header auto-fill for `inject_adapter_id`)
 
 ### Design Rationale
 
@@ -305,7 +258,7 @@ def register_adapter_id_handler(request_shape: dict, response_shape: dict = {}):
 
 1. **API Stability**: The factory implementation can change without breaking user code
 2. **Input Validation**: Catch common mistakes early with clear error messages
-3. **Special Cases**: Handle handler-specific logic (like `register_adapter_id_handler` auto-fill)
+3. **Special Cases**: Handle handler-specific logic (like `inject_adapter_id` auto-fill)
 4. **Future Extensions**: Easy to add preprocessing, logging, or metrics without changing the factory
 5. **User Experience**: Simpler, more intuitive API for common use cases
 
@@ -329,7 +282,7 @@ When adding support for a new LoRA operation:
 class LoRAHandlerType(str, Enum):
     REGISTER_ADAPTER = "register_adapter"
     UNREGISTER_ADAPTER = "unregister_adapter"
-    ADAPTER_ID = "adapter_id"
+    INJECT_ADAPTER_ID = "inject_adapter_id"
     MY_NEW_OPERATION = "my_new_operation"  # New
 ```
 
@@ -408,6 +361,147 @@ for key, expression in request_shape.items():
         raise ValueError(f"Invalid JMESPath in '{key}': {e}")
 ```
 
+## Setting Up Your FastAPI Application
+
+The `sagemaker` module provides utilities for automatically configuring your FastAPI application with registered handlers.
+
+### Recommended Approach: Using `bootstrap()`
+
+The simplest and recommended way to configure your FastAPI application is using `bootstrap()`:
+
+```python
+from fastapi import FastAPI, Request, Response
+from types import SimpleNamespace
+from model_hosting_container_standards.sagemaker import (
+    register_load_adapter_handler,
+    register_unload_adapter_handler,
+    bootstrap
+)
+
+# Step 1: Define your handlers
+@register_load_adapter_handler(
+    request_shape={
+        "adapter_id": "body.name",
+        "adapter_source": "body.src"
+    }
+)
+async def load_adapter(data: SimpleNamespace, request: Request):
+    await my_backend.load_adapter(data.adapter_id, data.adapter_source)
+    return Response(status_code=200, content=f"Loaded {data.adapter_id}")
+
+@register_unload_adapter_handler(
+    request_shape={"adapter_id": "path_params.adapter_name"}
+)
+async def unload_adapter(data: SimpleNamespace, request: Request):
+    await my_backend.unload_adapter(data.adapter_id)
+    return Response(status_code=200, content=f"Unloaded {data.adapter_id}")
+
+# Step 2: Create your FastAPI app
+app = FastAPI()
+
+# Step 3: Configure SageMaker integrations
+bootstrap(app)
+
+# Your app now has these routes automatically configured:
+# POST /adapters -> load_adapter
+# DELETE /adapters/{adapter_name} -> unload_adapter
+```
+
+**Important:** Call `bootstrap()` after registering all handlers. Handlers registered after this call will not be automatically mounted.
+
+### Advanced: Router Mounting Internals
+
+For developers who need more control over the routing infrastructure, the following functions are available:
+
+**1. `create_sagemaker_router()`**
+
+Creates a new APIRouter with all registered SageMaker handlers automatically mounted. This is used internally by `bootstrap()` but can be used directly if you need to manually control router mounting:
+
+```python
+from fastapi import FastAPI
+from model_hosting_container_standards.sagemaker import create_sagemaker_router
+
+# Register your handlers first
+@register_load_adapter_handler(request_shape={"name": "body.name"})
+async def load_adapter(data, request):
+    return {"status": "loaded"}
+
+# Manually create and mount the router
+app = FastAPI()
+sagemaker_router = create_sagemaker_router()
+app.include_router(sagemaker_router)
+```
+
+This function internally uses the generic `create_router()` from `common.fastapi.routing` with the LoRA route resolver.
+
+**2. `mount_handlers(router, handler_names=None, route_resolver=None)`**
+
+For even more control, use the generic mounting function from `common.fastapi.routing` to mount handlers to an existing router:
+
+```python
+from fastapi import APIRouter
+from model_hosting_container_standards.common.fastapi.routing import mount_handlers
+from model_hosting_container_standards.sagemaker.lora.routes import get_lora_route_config
+
+# Create your router
+app_router = APIRouter()
+
+# Register your handlers first
+@register_load_adapter_handler(request_shape={"name": "body.name"})
+async def load_adapter(data, request):
+    return {"status": "loaded"}
+
+@register_unload_adapter_handler(request_shape={"name": "path_params.adapter_name"})
+async def unload_adapter(data, request):
+    return {"status": "unloaded"}
+
+# Mount all registered handlers using the LoRA route resolver
+mount_handlers(app_router, route_resolver=get_lora_route_config)
+
+# Or mount only specific handler types
+mount_handlers(
+    app_router,
+    handler_names=["register_adapter", "unregister_adapter"],
+    route_resolver=get_lora_route_config
+)
+```
+
+**3. `get_lora_route_config(handler_type)`**
+
+Maps LoRA handler types to their default API route configurations, returning a `RouteConfig` object:
+
+```python
+from model_hosting_container_standards.sagemaker.lora.routes import get_lora_route_config
+from model_hosting_container_standards.common.fastapi.routing import RouteConfig
+
+# Get route configuration
+route_config = get_lora_route_config("register_adapter")
+if route_config:
+    print(f"{route_config.method} {route_config.path}")  # Prints: POST /adapters
+    print(f"Tags: {route_config.tags}")  # Prints: Tags: ['adapters', 'lora']
+    print(f"Summary: {route_config.summary}")  # Prints: Summary: Register a new LoRA adapter
+
+# Returns None for handlers without routes
+route_config = get_lora_route_config("inject_adapter_id")
+print(route_config)  # Prints: None (no default route - this is a transform only)
+```
+
+The `RouteConfig` dataclass (from `common.fastapi.routing`) provides:
+- `path`: The URL path for the route (e.g., "/adapters")
+- `method`: The HTTP method (e.g., "POST", "DELETE")
+- `tags`: Optional list of tags for API documentation
+- `summary`: Optional short summary for API documentation
+
+### Default Route Mappings
+
+The following default routes are automatically configured:
+
+| Handler Type | HTTP Method | Route Path | Description |
+|-------------|-------------|------------|-------------|
+| `register_adapter` | POST | `/adapters` | Register/load a LoRA adapter |
+| `unregister_adapter` | DELETE | `/adapters/{adapter_name}` | Unregister/unload a LoRA adapter |
+| `inject_adapter_id` | N/A | N/A | request transform only, no direct route |
+
 ## Custom Transformer Implementation
 
 To implement a custom transformer for specialized LoRA operations:
@@ -473,7 +567,7 @@ def get_transform_cls_from_handler_type(handler_type: str) -> type:
             return RegisterLoRAApiTransform
         case LoRAHandlerType.UNREGISTER_ADAPTER:
             return UnregisterLoRAApiTransform
-        case LoRAHandlerType.ADAPTER_ID:
+        case LoRAHandlerType.INJECT_ADAPTER_ID:
             return AdapterHeaderToBodyApiTransform
         case LoRAHandlerType.MY_CUSTOM_HANDLER:
             return MyCustomTransform  # New mapping

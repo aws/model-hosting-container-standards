@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from model_hosting_container_standards.common.fastapi import EnvVars
 from model_hosting_container_standards.common.handler import handler_registry
-from model_hosting_container_standards.fastapi import EnvVars
 from model_hosting_container_standards.sagemaker.config import SageMakerEnvVars
 from model_hosting_container_standards.sagemaker.handler_resolver import (
     SageMakerHandlerResolver,

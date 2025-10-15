@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from model_hosting_container_standards.fastapi import EnvVars
+from model_hosting_container_standards.common.fastapi import EnvVars
 from model_hosting_container_standards.sagemaker.config import SageMakerEnvVars
 from model_hosting_container_standards.sagemaker.sagemaker_loader import (
     SageMakerFunctionLoader,

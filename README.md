@@ -16,8 +16,12 @@ ModelHostingContainerStandards/
 │   │   ├── config.py
 │   │   ├── logging_config.py
 │   │   ├── utils.py
-│   │   ├── sagemaker/         # SageMaker integration
-│   │   └── fastapi/           # FastAPI integration
+│   │   ├── common/            # Common utilities
+│   │   │   ├── fastapi/       # FastAPI integration
+│   │   │   ├── custom_code_ref_resolver/  # Dynamic code loading
+│   │   │   └── handler/       # Handler specifications
+│   │   └── sagemaker/         # SageMaker integration
+│   │       └── lora/          # LoRA adapter support
 │   ├── tests/                 # Package tests
 │   ├── examples/              # Python examples and demos
 │   ├── pyproject.toml         # Python project configuration

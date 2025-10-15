@@ -5,8 +5,8 @@ import jmespath
 from fastapi import Request, Response
 from pydantic import BaseModel
 
-from ..fastapi.utils import serialize_request
 from ..logging_config import logger
+from .fastapi.utils import serialize_request
 from .utils import _compile_jmespath_expressions
 
 
