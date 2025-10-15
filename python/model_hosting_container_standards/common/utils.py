@@ -21,4 +21,3 @@ def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
         else:
             logger.warning(f"Request/response mapping must be a dictionary of strings (nested allowed), not {type(value)}. This value will be ignored.")
     return compiled_shape
-

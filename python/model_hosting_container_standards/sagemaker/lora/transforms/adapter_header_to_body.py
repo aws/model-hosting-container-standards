@@ -32,7 +32,9 @@ class AdapterHeaderToBodyApiTransform(BaseLoRAApiTransform):
         # Extract data from headers using JMESPath transformations
         add_to_body = self._transform_request(None, raw_request)
         # Merge header-derived data into request body
+        logger.debug(f"Extracted headers: {add_to_body}")
         request_data.update(add_to_body)
+        logger.debug(f"Updated request body with extracted headers: {request_data}")
 
         # Update the raw request body with the modified data
         raw_request._body = json.dumps(request_data).encode("utf-8")

@@ -48,7 +48,7 @@ class BaseLoRAApiTransform(BaseApiTransform):
         else:
             return self._transform_error_response(response, adapter_name, adapter_alias)
 
-    def _transform_ok_response(self, response: Response, adapter_name: str):
+    def _transform_ok_response(self, response: Response, adapter_name: str, adapter_alias: str):
         """Transform successful (200 OK) responses.
 
         :param Response response: The successful response to transform
@@ -58,7 +58,7 @@ class BaseLoRAApiTransform(BaseApiTransform):
         """
         raise NotImplementedError()
 
-    def _transform_error_response(self, response: Response, adapter_name: str):
+    def _transform_error_response(self, response: Response, adapter_name: str, adapter_alias: str):
         """Transform error responses.
 
         :param Response response: The error response to transform

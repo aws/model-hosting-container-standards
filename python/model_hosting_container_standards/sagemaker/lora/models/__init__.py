@@ -5,7 +5,6 @@ from .request import (
     SageMakerRegisterLoRAAdapterRequest,
     SageMakerUpdateLoRAAdapterRequest
 )
-from .response import get_response_body
 from .transform import BaseLoRATransformRequestOutput
 
 __all__: List[str] = [
@@ -13,5 +12,4 @@ __all__: List[str] = [
     'SageMakerListLoRAAdaptersRequest',
     'SageMakerRegisterLoRAAdapterRequest',
     'SageMakerUpdateLoRAAdapterRequest',
-    'get_response_body',
 ]

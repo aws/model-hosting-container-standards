@@ -2,7 +2,7 @@ from http import HTTPStatus
 from typing import Optional
 
 from ..base_lora_api_transform import BaseLoRAApiTransform
-from ..models import BaseLoRATransformRequestOutput, SageMakerRegisterLoRAAdapterRequest, get_response_body
+from ..models import BaseLoRATransformRequestOutput, SageMakerRegisterLoRAAdapterRequest
 from ..constants import ResponseMessage
 
 from fastapi import Request, Response
@@ -61,7 +61,7 @@ class RegisterLoRAApiTransform(BaseLoRAApiTransform):
                 alias=adapter_alias or adapter_name)
         )
 
-    async def _transform_error_response(self, response: Response, adapter_name: str, adapter_alias: Optional[str] = None):
+    def _transform_error_response(self, response: Response, adapter_name: str, adapter_alias: Optional[str] = None):
         """Transform error response for failed registration attempts.
 
         :param Response response: The original error response
@@ -69,7 +69,7 @@ class RegisterLoRAApiTransform(BaseLoRAApiTransform):
         :return Response: Transformed error response
         """
         # TODO: add error handling
-        response_body = await get_response_body(response)
+        response_body = response.body.decode()
 
         # Register adapter failed (adapter weights related error): 424.
         if ResponseMessage.ADAPTER_INVALID_WEIGHTS in response_body:
