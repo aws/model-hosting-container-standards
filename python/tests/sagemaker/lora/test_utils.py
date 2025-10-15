@@ -1,27 +1,28 @@
 """Unit tests for LoRA utils module."""
 
-import pytest
-from unittest.mock import Mock, MagicMock
+from unittest.mock import Mock
+
 from fastapi import Request
 from pydantic import BaseModel
 
 from model_hosting_container_standards.fastapi.utils import serialize_request
-from model_hosting_container_standards.sagemaker.lora.utils import (
-    get_adapter_name_from_request,
-    get_adapter_alias_from_request_header,
-    get_adapter_name_from_request_path,
+from model_hosting_container_standards.sagemaker.lora.constants import (
+    RequestField,
+    SageMakerLoRAApiHeader,
 )
 from model_hosting_container_standards.sagemaker.lora.models.transform import (
     BaseLoRATransformRequestOutput,
 )
-from model_hosting_container_standards.sagemaker.lora.constants import (
-    SageMakerLoRAApiHeader,
-    RequestField,
+from model_hosting_container_standards.sagemaker.lora.utils import (
+    get_adapter_alias_from_request_header,
+    get_adapter_name_from_request,
+    get_adapter_name_from_request_path,
 )
 
 
 class MockRequestModel(BaseModel):
     """Mock request model for testing."""
+
     name: str
     src: str
     preload: bool = True
@@ -51,7 +52,11 @@ class TestGetRequestDataForJmespath:
         assert "path_params" in result
 
         # Verify body content
-        expected_body = {"name": "test-adapter", "src": "s3://bucket/path", "preload": True}
+        expected_body = {
+            "name": "test-adapter",
+            "src": "s3://bucket/path",
+            "preload": True,
+        }
         assert result["body"] == expected_body
 
         # Verify other components
@@ -97,7 +102,7 @@ class TestGetRequestDataForJmespath:
         request_dict = {
             "name": "dict-adapter",
             "src": "s3://bucket/dict-path",
-            "preload": False
+            "preload": False,
         }
 
         raw_request = Mock(spec=Request)
@@ -148,8 +153,7 @@ class TestGetAdapterNameFromRequest:
         raw_request.path_params = {RequestField.ADAPTER_NAME: "path-adapter"}
 
         transform_output = self.create_mock_transform_output(
-            raw_request=raw_request,
-            adapter_name="output-adapter"
+            raw_request=raw_request, adapter_name="output-adapter"
         )
 
         result = get_adapter_name_from_request(transform_output)
@@ -162,8 +166,7 @@ class TestGetAdapterNameFromRequest:
         raw_request.path_params = {}
 
         transform_output = self.create_mock_transform_output(
-            raw_request=raw_request,
-            adapter_name="output-adapter"
+            raw_request=raw_request, adapter_name="output-adapter"
         )
 
         result = get_adapter_name_from_request(transform_output)
@@ -172,12 +175,13 @@ class TestGetAdapterNameFromRequest:
     def test_adapter_identifier_header_fallback(self):
         """Test that adapter identifier header is used as fallback."""
         raw_request = Mock(spec=Request)
-        raw_request.headers = {SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER: "identifier-fallback"}
+        raw_request.headers = {
+            SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER: "identifier-fallback"
+        }
         raw_request.path_params = {}
 
         transform_output = self.create_mock_transform_output(
-            raw_request=raw_request,
-            adapter_name=None
+            raw_request=raw_request, adapter_name=None
         )
 
         result = get_adapter_name_from_request(transform_output)
@@ -190,8 +194,7 @@ class TestGetAdapterNameFromRequest:
         raw_request.path_params = {}
 
         transform_output = self.create_mock_transform_output(
-            raw_request=raw_request,
-            adapter_name=None
+            raw_request=raw_request, adapter_name=None
         )
 
         result = get_adapter_name_from_request(transform_output)
@@ -206,7 +209,7 @@ class TestGetAdapterAliasFromRequestHeader:
         raw_request = Mock(spec=Request)
         raw_request.headers = {
             SageMakerLoRAApiHeader.ADAPTER_ALIAS: "test-alias",
-            "other-header": "other-value"
+            "other-header": "other-value",
         }
 
         result = get_adapter_alias_from_request_header(raw_request)
@@ -217,7 +220,7 @@ class TestGetAdapterAliasFromRequestHeader:
         raw_request = Mock(spec=Request)
         raw_request.headers = {
             "other-header": "other-value",
-            SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER: "identifier"
+            SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER: "identifier",
         }
 
         result = get_adapter_alias_from_request_header(raw_request)
@@ -228,7 +231,7 @@ class TestGetAdapterAliasFromRequestHeader:
         raw_request = Mock(spec=Request)
         raw_request.headers = {
             SageMakerLoRAApiHeader.ADAPTER_ALIAS: "",
-            "other-header": "other-value"
+            "other-header": "other-value",
         }
 
         result = get_adapter_alias_from_request_header(raw_request)
@@ -259,7 +262,7 @@ class TestGetAdapterNameFromRequestPath:
         raw_request = Mock(spec=Request)
         raw_request.path_params = {
             RequestField.ADAPTER_NAME: "path-adapter",
-            "other-param": "other-value"
+            "other-param": "other-value",
         }
 
         result = get_adapter_name_from_request_path(raw_request)
@@ -268,10 +271,7 @@ class TestGetAdapterNameFromRequestPath:
     def test_returns_none_when_no_adapter_name_param(self):
         """Test that None is returned when no adapter_name path param is present."""
         raw_request = Mock(spec=Request)
-        raw_request.path_params = {
-            "other-param": "other-value",
-            "id": "123"
-        }
+        raw_request.path_params = {"other-param": "other-value", "id": "123"}
 
         result = get_adapter_name_from_request_path(raw_request)
         assert result is None
@@ -281,7 +281,7 @@ class TestGetAdapterNameFromRequestPath:
         raw_request = Mock(spec=Request)
         raw_request.path_params = {
             RequestField.ADAPTER_NAME: "",
-            "other-param": "other-value"
+            "other-param": "other-value",
         }
 
         result = get_adapter_name_from_request_path(raw_request)

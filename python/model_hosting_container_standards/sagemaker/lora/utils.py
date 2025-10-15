@@ -1,9 +1,9 @@
 from typing import Optional
 
-from .models import BaseLoRATransformRequestOutput
-from .constants import SageMakerLoRAApiHeader, RequestField
-
 from fastapi import Request
+
+from .constants import RequestField, SageMakerLoRAApiHeader
+from .models import BaseLoRATransformRequestOutput
 
 
 def get_adapter_alias_from_request_header(raw_request: Request) -> Optional[str]:
@@ -13,6 +13,7 @@ def get_adapter_alias_from_request_header(raw_request: Request) -> Optional[str]
             return adapter_alias
     return None
 
+
 def get_adapter_name_from_request_path(raw_request: Request) -> Optional[str]:
     if raw_request.path_params:
         adapter_name = raw_request.path_params.get(RequestField.ADAPTER_NAME)
@@ -20,7 +21,10 @@ def get_adapter_name_from_request_path(raw_request: Request) -> Optional[str]:
             return adapter_name
     return None
 
-def get_adapter_name_from_request(transform_request_output: BaseLoRATransformRequestOutput) -> Optional[str]:
+
+def get_adapter_name_from_request(
+    transform_request_output: BaseLoRATransformRequestOutput,
+) -> Optional[str]:
     """Extract the LoRA adapter name from various sources in the request.
 
     Searches for the adapter name in multiple locations with the following priority:
@@ -45,8 +49,10 @@ def get_adapter_name_from_request(transform_request_output: BaseLoRATransformReq
         return transform_request_output.adapter_name
 
     # Priority 3: Fallback to ADAPTER_IDENTIFIER header
-    if raw_request.headers:
-        adapter_identifier = raw_request.headers.get(SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER)
+    if raw_request and raw_request.headers:
+        adapter_identifier = raw_request.headers.get(
+            SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER
+        )
         if adapter_identifier:
             return adapter_identifier
 

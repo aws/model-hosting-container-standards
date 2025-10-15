@@ -1,7 +1,7 @@
 """Unit tests for LoRA API transform classes."""
 
-from unittest.mock import Mock, patch
 from http import HTTPStatus
+from unittest.mock import Mock, patch
 
 import jmespath
 from fastapi import Request, Response
@@ -17,6 +17,7 @@ from model_hosting_container_standards.sagemaker.lora.models.transform import (
 
 class MockRequestModel(BaseModel):
     """Mock request model for testing."""
+
     name: str
     src: str
     preload: bool = True
@@ -31,21 +32,25 @@ class ConcreteLoRAApiTransform(BaseLoRAApiTransform):
         return BaseLoRATransformRequestOutput(
             request=transformed_request,
             raw_request=raw_request,
-            adapter_name=getattr(request, 'name', None) if request else None,
+            adapter_name=getattr(request, "name", None) if request else None,
         )
 
-    def _transform_ok_response(self, response: Response, adapter_name: str, adapter_alias: str = None):
+    def _transform_ok_response(self, response: Response, **kwargs):
         """Mock implementation of abstract method."""
+        adapter_name = kwargs.get("adapter_name")
+        adapter_alias = kwargs.get("adapter_alias")
         return Response(
             status_code=HTTPStatus.OK,
-            content=f"Success for adapter: {adapter_name} (alias: {adapter_alias})"
+            content=f"Success for adapter: {adapter_name} (alias: {adapter_alias})",
         )
 
-    def _transform_error_response(self, response: Response, adapter_name: str, adapter_alias: str = None):
+    def _transform_error_response(self, response: Response, **kwargs):
         """Mock implementation of abstract method."""
+        adapter_name = kwargs.get("adapter_name")
+        adapter_alias = kwargs.get("adapter_alias")
         return Response(
             status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
-            content=f"Error for adapter: {adapter_name} (alias: {adapter_alias})"
+            content=f"Error for adapter: {adapter_name} (alias: {adapter_alias})",
         )
 
 
@@ -61,7 +66,7 @@ class TestBaseLoRATransformRequestOutput:
         output = BaseLoRATransformRequestOutput(
             request=mock_request,
             raw_request=mock_raw_request,
-            adapter_name=adapter_name
+            adapter_name=adapter_name,
         )
 
         assert output.request == mock_request
@@ -81,8 +86,7 @@ class TestBaseLoRATransformRequestOutput:
         mock_raw_request = Mock(spec=Request)
 
         output = BaseLoRATransformRequestOutput(
-            raw_request=mock_raw_request,
-            adapter_name="partial-adapter"
+            raw_request=mock_raw_request, adapter_name="partial-adapter"
         )
 
         assert output.request is None
@@ -98,27 +102,34 @@ class TestBaseLoRAApiTransform:
         self.request_shape = {
             "model": "body.name",
             "source": "body.src",
-            "preload_flag": "body.preload"
+            "preload_flag": "body.preload",
         }
-        self.response_shape = {
-            "status": "status_code",
-            "message": "content"
-        }
+        self.response_shape = {"status": "status_code", "message": "content"}
         self.transformer = ConcreteLoRAApiTransform(
-            self.request_shape,
-            self.response_shape
+            self.request_shape, self.response_shape
         )
 
     def test_init_compiles_jmespath_expressions(self):
         """Test that __init__ compiles JMESPath expressions."""
         # Verify request shape expressions are compiled JMESPath objects
-        assert isinstance(self.transformer._request_shape["model"], jmespath.parser.ParsedResult)
-        assert isinstance(self.transformer._request_shape["source"], jmespath.parser.ParsedResult)
-        assert isinstance(self.transformer._request_shape["preload_flag"], jmespath.parser.ParsedResult)
+        assert isinstance(
+            self.transformer._request_shape["model"], jmespath.parser.ParsedResult
+        )
+        assert isinstance(
+            self.transformer._request_shape["source"], jmespath.parser.ParsedResult
+        )
+        assert isinstance(
+            self.transformer._request_shape["preload_flag"],
+            jmespath.parser.ParsedResult,
+        )
 
         # Verify response shape expressions are compiled JMESPath objects
-        assert isinstance(self.transformer._response_shape["status"], jmespath.parser.ParsedResult)
-        assert isinstance(self.transformer._response_shape["message"], jmespath.parser.ParsedResult)
+        assert isinstance(
+            self.transformer._response_shape["status"], jmespath.parser.ParsedResult
+        )
+        assert isinstance(
+            self.transformer._response_shape["message"], jmespath.parser.ParsedResult
+        )
 
     def test_init_with_empty_response_shape(self):
         """Test initialization with empty response shape."""
@@ -130,81 +141,61 @@ class TestBaseLoRAApiTransform:
     def test_transform_with_valid_data(self):
         """Test _transform method with valid source data."""
         request_source_data = {
-            "body": {
-                "name": "test-model",
-                "src": "s3://bucket/path",
-                "preload": True
-            },
+            "body": {"name": "test-model", "src": "s3://bucket/path", "preload": True},
         }
 
         # Test request transformation
-        result = self.transformer._transform(request_source_data, self.transformer._request_shape)
+        result = self.transformer._transform(
+            request_source_data, self.transformer._request_shape
+        )
 
         expected = {
             "model": "test-model",
             "source": "s3://bucket/path",
-            "preload_flag": True
+            "preload_flag": True,
         }
         assert result == expected
 
         # Test response transformation
 
-        response_source_data = {
-            "status_code": 200,
-            "content": "success"
-        }
-        result = self.transformer._transform(response_source_data, self.transformer._response_shape)
+        response_source_data = {"status_code": 200, "content": "success"}
+        result = self.transformer._transform(
+            response_source_data, self.transformer._response_shape
+        )
 
-        expected = {
-            "status": 200,
-            "message": "success"
-        }
+        expected = {"status": 200, "message": "success"}
         assert result == expected
 
     def test_transform_with_missing_fields(self):
         """Test _transform method when JMESPath expressions don't match."""
-        source_data = {
-            "body": {
-                "other_field": "value"
-            }
-        }
+        source_data = {"body": {"other_field": "value"}}
 
-        result = self.transformer._transform(source_data, self.transformer._request_shape)
+        result = self.transformer._transform(
+            source_data, self.transformer._request_shape
+        )
 
         # Missing fields should result in None values
-        expected = {
-            "model": None,
-            "source": None,
-            "preload_flag": None
-        }
+        expected = {"model": None, "source": None, "preload_flag": None}
         assert result == expected
 
     def test_transform_with_nested_data(self):
         """Test _transform method with nested data structures."""
         request_shape = {
             "nested_value": "body.config.setting",
-            "array_value": "body.items[0].name"
+            "array_value": "body.items[0].name",
         }
         transformer = ConcreteLoRAApiTransform(request_shape)
 
         source_data = {
             "body": {
-                "config": {
-                    "setting": "production"
-                },
-                "items": [
-                    {"name": "first-item"},
-                    {"name": "second-item"}
-                ]
+                "config": {"setting": "production"},
+                "items": [{"name": "first-item"}, {"name": "second-item"}],
             }
         }
 
         result = transformer._transform(source_data, transformer._request_shape)
 
-        expected = {
-            "nested_value": "production",
-            "array_value": "first-item"
-        }
+        expected = {"nested_value": "production", "array_value": "first-item"}
         assert result == expected
 
     def test_transform_with_nested_shape_dict(self):
@@ -216,8 +207,8 @@ class TestBaseLoRAApiTransform:
                 "nested_nested_object": {
                     "field_within": "body.without",
                 },
-                "another_field": "body.config.value"
-            }
+                "another_field": "body.config.value",
+            },
         }
         transformer = ConcreteLoRAApiTransform(request_shape)
 
@@ -225,10 +216,7 @@ class TestBaseLoRAApiTransform:
             "body": {
                 "without": False,
                 "name": "test-name",
-                "config": {
-                    "setting": "production",
-                    "value": 42
-                }
+                "config": {"setting": "production", "value": 42},
             }
         }
 
@@ -241,12 +229,14 @@ class TestBaseLoRAApiTransform:
                 "nested_nested_object": {
                     "field_within": False,
                 },
-                "another_field": 42
-            }
+                "another_field": 42,
+            },
         }
         assert result == expected
 
-    @patch('model_hosting_container_standards.common.base_api_transform.serialize_request')
+    @patch(
+        "model_hosting_container_standards.common.base_api_transform.serialize_request"
+    )
     def test_transform_request_calls_utils(self, mock_get_data):
         """Test that _transform_request calls utility function."""
         mock_request = MockRequestModel(name="test", src="s3://test")
@@ -262,15 +252,15 @@ class TestBaseLoRAApiTransform:
         mock_get_data.assert_called_once_with(mock_request, mock_raw_request)
 
         # Verify transformation result
-        expected = {
-            "model": "test",
-            "source": "s3://test",
-            "preload_flag": True
-        }
+        expected = {"model": "test", "source": "s3://test", "preload_flag": True}
         assert result == expected
 
-    @patch('model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_name_from_request')
-    @patch('model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_alias_from_request_header')
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_name_from_request"
+    )
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_alias_from_request_header"
+    )
     def test_transform_response_ok_status(self, mock_get_alias, mock_get_adapter):
         """Test transform_response with OK status."""
         mock_response = Mock(spec=Response)
@@ -281,18 +271,28 @@ class TestBaseLoRAApiTransform:
         mock_get_adapter.return_value = "test-adapter"
         mock_get_alias.return_value = "test-alias"
 
-        with patch.object(self.transformer, '_transform_ok_response') as mock_ok_response:
+        with patch.object(
+            self.transformer, "_transform_ok_response"
+        ) as mock_ok_response:
             mock_ok_response.return_value = "ok_result"
 
-            result = self.transformer.transform_response(mock_response, mock_transform_output)
+            result = self.transformer.transform_response(
+                mock_response, mock_transform_output
+            )
 
             mock_get_adapter.assert_called_once_with(mock_transform_output)
             mock_get_alias.assert_called_once_with(mock_transform_output.raw_request)
-            mock_ok_response.assert_called_once_with(mock_response, "test-adapter", "test-alias")
+            mock_ok_response.assert_called_once_with(
+                mock_response, adapter_name="test-adapter", adapter_alias="test-alias"
+            )
             assert result == "ok_result"
 
-    @patch('model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_name_from_request')
-    @patch('model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_alias_from_request_header')
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_name_from_request"
+    )
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.base_lora_api_transform.get_adapter_alias_from_request_header"
+    )
     def test_transform_response_error_status(self, mock_get_alias, mock_get_adapter):
         """Test transform_response with error status."""
         mock_response = Mock(spec=Response)
@@ -303,14 +303,20 @@ class TestBaseLoRAApiTransform:
         mock_get_adapter.return_value = "test-adapter"
         mock_get_alias.return_value = "test-alias"
 
-        with patch.object(self.transformer, '_transform_error_response') as mock_error_response:
+        with patch.object(
+            self.transformer, "_transform_error_response"
+        ) as mock_error_response:
             mock_error_response.return_value = "error_result"
 
-            result = self.transformer.transform_response(mock_response, mock_transform_output)
+            result = self.transformer.transform_response(
+                mock_response, mock_transform_output
+            )
 
             mock_get_adapter.assert_called_once_with(mock_transform_output)
             mock_get_alias.assert_called_once_with(mock_transform_output.raw_request)
-            mock_error_response.assert_called_once_with(mock_response, "test-adapter", "test-alias")
+            mock_error_response.assert_called_once_with(
+                mock_response, adapter_name="test-adapter", adapter_alias="test-alias"
+            )
             assert result == "error_result"
 
     def test_complex_jmespath_expressions(self):
@@ -318,7 +324,7 @@ class TestBaseLoRAApiTransform:
         complex_shape = {
             "filtered_items": "body.items[?active==`true`].name",
             "first_active": "body.items[?active==`true`] | [0].name",
-            "count": "length(body.items)"
+            "count": "length(body.items)",
         }
         transformer = ConcreteLoRAApiTransform(complex_shape)
 
@@ -327,7 +333,7 @@ class TestBaseLoRAApiTransform:
                 "items": [
                     {"name": "item1", "active": True},
                     {"name": "item2", "active": False},
-                    {"name": "item3", "active": True}
+                    {"name": "item3", "active": True},
                 ]
             }
         }
@@ -337,6 +343,6 @@ class TestBaseLoRAApiTransform:
         expected = {
             "filtered_items": ["item1", "item3"],
             "first_active": "item1",
-            "count": 3
+            "count": 3,
         }
         assert result == expected

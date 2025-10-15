@@ -1,11 +1,10 @@
 import json
-from typing import Any, Dict, Optional
+
+from fastapi import Request, Response
 
 from ....logging_config import logger
 from ..base_lora_api_transform import BaseLoRAApiTransform
 from ..models import BaseLoRATransformRequestOutput
-
-from fastapi import Request, Response
 
 
 class AdapterHeaderToBodyApiTransform(BaseLoRAApiTransform):
@@ -16,7 +15,9 @@ class AdapterHeaderToBodyApiTransform(BaseLoRAApiTransform):
     directly from the request payload.
     """
 
-    async def transform_request(self, raw_request: Request) -> BaseLoRATransformRequestOutput:
+    async def transform_request(
+        self, raw_request: Request
+    ) -> BaseLoRATransformRequestOutput:
         """Transform request by adding header-derived data to the request body.
 
         Extracts data from request headers based on the configured request_shape mappings
@@ -42,7 +43,6 @@ class AdapterHeaderToBodyApiTransform(BaseLoRAApiTransform):
             request=None,
             raw_request=raw_request,
         )
-
 
     def transform_response(self, response: Response, transform_request_output):
         """Pass through the response without any transformations.

@@ -3,9 +3,9 @@ from typing import Any, Dict, Optional, Union
 from fastapi import Request
 from pydantic import BaseModel
 
+
 def serialize_request(
-    request: Optional[Union[BaseModel, Dict[str, Any]]],
-    raw_request: Request
+    request: Optional[Union[BaseModel, Dict[str, Any]]], raw_request: Request
 ) -> Dict[str, Any]:
     """Create a structured data dictionary for JMESPath transformations.
 

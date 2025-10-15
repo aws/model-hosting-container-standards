@@ -436,14 +436,16 @@ class MyCustomTransform(BaseLoRAApiTransform):
             adapter_name=request_data.get("name")
         )
 
-    def _transform_ok_response(self, response: Response, adapter_name: str, adapter_alias: str):
+    def _transform_ok_response(self, response: Response, **kwargs):
         # Transform successful responses
+        adapter_name = kwargs.get("adapter_name")
+        adapter_alias = kwargs.get("adapter_alias")
         return Response(
             status_code=200,
             content=f"Operation succeeded for {adapter_alias or adapter_name}"
         )
 
-    def _transform_error_response(self, response: Response, adapter_name: str, adapter_alias: str):
+    def _transform_error_response(self, response: Response, **kwargs):
         # Transform error responses
         return response  # Or customize error handling
 ```
@@ -561,7 +563,7 @@ class ResponseMessage(str, Enum):
 Implement `_transform_error_response` in your transformer to customize error handling:
 
 ```python
-def _transform_error_response(self, response: Response, adapter_name: str, adapter_alias: str):
+def _transform_error_response(self, response: Response, **kwargs):
     response_body = response.body.decode()
 
     if "specific_error_pattern" in response_body:

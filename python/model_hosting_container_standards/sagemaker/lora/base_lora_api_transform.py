@@ -1,14 +1,11 @@
 import abc
 from http import HTTPStatus
 
+from fastapi import Request, Response
+
 from ...common import BaseApiTransform
 from .models import BaseLoRATransformRequestOutput
-from .utils import (
-    get_adapter_name_from_request,
-    get_adapter_alias_from_request_header,
-)
-
-from fastapi import Request, Response
+from .utils import get_adapter_alias_from_request_header, get_adapter_name_from_request
 
 
 class BaseLoRAApiTransform(BaseApiTransform):
@@ -20,7 +17,9 @@ class BaseLoRAApiTransform(BaseApiTransform):
     """
 
     @abc.abstractmethod
-    async def transform_request(self, raw_request: Request) -> BaseLoRATransformRequestOutput:
+    async def transform_request(
+        self, raw_request: Request
+    ) -> BaseLoRATransformRequestOutput:
         """Transform an incoming HTTP request for LoRA adapter operations.
 
         Subclasses must implement this method to handle request parsing, validation,
@@ -32,7 +31,11 @@ class BaseLoRAApiTransform(BaseApiTransform):
         """
         raise NotImplementedError()
 
-    def transform_response(self, response: Response, transform_request_output: BaseLoRATransformRequestOutput):
+    def transform_response(
+        self,
+        response: Response,
+        transform_request_output: BaseLoRATransformRequestOutput,
+    ):
         """Transform the response based on the request processing results.
 
         Routes to appropriate response transformation method based on HTTP status code.
@@ -42,13 +45,19 @@ class BaseLoRAApiTransform(BaseApiTransform):
         :return Response: Transformed response
         """
         adapter_name = get_adapter_name_from_request(transform_request_output)
-        adapter_alias = get_adapter_alias_from_request_header(transform_request_output.raw_request)
+        adapter_alias = get_adapter_alias_from_request_header(
+            transform_request_output.raw_request
+        )
         if response.status_code == HTTPStatus.OK:
-            return self._transform_ok_response(response, adapter_name, adapter_alias)
+            return self._transform_ok_response(
+                response, adapter_name=adapter_name, adapter_alias=adapter_alias
+            )
         else:
-            return self._transform_error_response(response, adapter_name, adapter_alias)
+            return self._transform_error_response(
+                response, adapter_name=adapter_name, adapter_alias=adapter_alias
+            )
 
-    def _transform_ok_response(self, response: Response, adapter_name: str, adapter_alias: str):
+    def _transform_ok_response(self, response: Response, **kwargs):
         """Transform successful (200 OK) responses.
 
         :param Response response: The successful response to transform
@@ -58,7 +67,7 @@ class BaseLoRAApiTransform(BaseApiTransform):
         """
         raise NotImplementedError()
 
-    def _transform_error_response(self, response: Response, adapter_name: str, adapter_alias: str):
+    def _transform_error_response(self, response: Response, **kwargs):
         """Transform error responses.
 
         :param Response response: The error response to transform

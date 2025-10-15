@@ -20,7 +20,7 @@ class RequestField(str, Enum):
 
 
 # Response message formats
-class ResponseMessage(str, Enum):
+class ResponseMessage:
     ADAPTER_REGISTERED = "Adapter {alias} registered"
     ADAPTER_UNREGISTERED = "Adapter {alias} unregistered"
     ADAPTER_UPDATED = "Adapter {alias} updated"

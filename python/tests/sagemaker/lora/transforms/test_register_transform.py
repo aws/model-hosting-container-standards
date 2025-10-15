@@ -1,21 +1,21 @@
 """Unit tests for RegisterLoRAApiTransform."""
 
-import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from http import HTTPStatus
+from unittest.mock import AsyncMock, Mock, patch
 
+import pytest
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import ValidationError
 
-from model_hosting_container_standards.sagemaker.lora.transforms.register import (
-    validate_sagemaker_register_request,
-    RegisterLoRAApiTransform,
-)
+from model_hosting_container_standards.sagemaker.lora.constants import ResponseMessage
 from model_hosting_container_standards.sagemaker.lora.models.request import (
     SageMakerRegisterLoRAAdapterRequest,
 )
-from model_hosting_container_standards.sagemaker.lora.constants import ResponseMessage
+from model_hosting_container_standards.sagemaker.lora.transforms.register import (
+    RegisterLoRAApiTransform,
+    validate_sagemaker_register_request,
+)
 
 
 class TestValidateSagemakerRegisterRequest:
@@ -26,7 +26,7 @@ class TestValidateSagemakerRegisterRequest:
         request_data = {
             "name": "test-adapter",
             "src": "s3://bucket/path/adapter",
-            "preload": True
+            "preload": True,
         }
 
         result = validate_sagemaker_register_request(request_data)
@@ -38,10 +38,7 @@ class TestValidateSagemakerRegisterRequest:
 
     def test_valid_request_with_minimal_fields(self):
         """Test validation with only required fields."""
-        request_data = {
-            "name": "minimal-adapter",
-            "src": "s3://bucket/minimal"
-        }
+        request_data = {"name": "minimal-adapter", "src": "s3://bucket/minimal"}
 
         result = validate_sagemaker_register_request(request_data)
 
@@ -52,9 +49,7 @@ class TestValidateSagemakerRegisterRequest:
 
     def test_missing_name_raises_http_exception(self):
         """Test that missing name raises HTTPException."""
-        request_data = {
-            "src": "s3://bucket/path"
-        }
+        request_data = {"src": "s3://bucket/path"}
 
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
@@ -63,9 +58,7 @@ class TestValidateSagemakerRegisterRequest:
 
     def test_missing_src_raises_http_exception(self):
         """Test that missing src raises HTTPException."""
-        request_data = {
-            "name": "test-adapter"
-        }
+        request_data = {"name": "test-adapter"}
 
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
@@ -74,10 +67,7 @@ class TestValidateSagemakerRegisterRequest:
 
     def test_empty_name_raises_http_exception(self):
         """Test that empty name raises HTTPException."""
-        request_data = {
-            "name": "",
-            "src": "s3://bucket/path"
-        }
+        request_data = {"name": "", "src": "s3://bucket/path"}
 
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
@@ -86,10 +76,7 @@ class TestValidateSagemakerRegisterRequest:
 
     def test_empty_src_raises_http_exception(self):
         """Test that empty src raises HTTPException."""
-        request_data = {
-            "name": "test-adapter",
-            "src": ""
-        }
+        request_data = {"name": "test-adapter", "src": ""}
 
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
@@ -98,10 +85,7 @@ class TestValidateSagemakerRegisterRequest:
 
     def test_none_name_raises_http_exception(self):
         """Test that None name raises HTTPException."""
-        request_data = {
-            "name": None,
-            "src": "s3://bucket/path"
-        }
+        request_data = {"name": None, "src": "s3://bucket/path"}
 
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
@@ -110,23 +94,19 @@ class TestValidateSagemakerRegisterRequest:
 
     def test_none_src_raises_http_exception(self):
         """Test that None src raises HTTPException."""
-        request_data = {
-            "name": "test-adapter",
-            "src": None
-        }
+        request_data = {"name": "test-adapter", "src": None}
 
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
         assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
 
-    @patch('model_hosting_container_standards.sagemaker.lora.transforms.register.SageMakerRegisterLoRAAdapterRequest.model_validate')
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.transforms.register.SageMakerRegisterLoRAAdapterRequest.model_validate"
+    )
     def test_validation_error_raises_http_exception(self, mock_validate):
         """Test that ValidationError raises HTTPException."""
-        request_data = {
-            "name": "test-adapter",
-            "src": "s3://bucket/path"
-        }
+        request_data = {"name": "test-adapter", "src": "s3://bucket/path"}
 
         # Mock ValidationError by making model_validate raise it
         mock_validate.side_effect = ValidationError("test error", [])
@@ -142,7 +122,7 @@ class TestValidateSagemakerRegisterRequest:
             "name": "test-adapter",
             "src": "s3://bucket/path",
             "preload": False,
-            "extra_field": "should_be_ignored"
+            "extra_field": "should_be_ignored",
         }
 
         result = validate_sagemaker_register_request(request_data)
@@ -152,7 +132,7 @@ class TestValidateSagemakerRegisterRequest:
         assert result.src == "s3://bucket/path"
         assert result.preload is False
         # Extra field should not be present
-        assert not hasattr(result, 'extra_field')
+        assert not hasattr(result, "extra_field")
 
 
 class TestRegisterLoRAApiTransform:
@@ -160,41 +140,48 @@ class TestRegisterLoRAApiTransform:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.request_shape = {
-            "model": "body.name",
-            "source": "body.src"
-        }
+        self.request_shape = {"model": "body.name", "source": "body.src"}
         self.response_shape = {}
         self.transformer = RegisterLoRAApiTransform(
-            self.request_shape,
-            self.response_shape
+            self.request_shape, self.response_shape
         )
 
     @pytest.mark.asyncio
-    @patch('model_hosting_container_standards.sagemaker.lora.utils.get_adapter_alias_from_request_header')
-    @patch('model_hosting_container_standards.sagemaker.lora.transforms.register.RegisterLoRAApiTransform._transform_request')
-    @patch('model_hosting_container_standards.sagemaker.lora.transforms.register.validate_sagemaker_register_request')
-    async def test_transform_request_success(self, mock_validate, mock_transform, mock_get_alias):
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.utils.get_adapter_alias_from_request_header"
+    )
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.transforms.register.RegisterLoRAApiTransform._transform_request"
+    )
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.transforms.register.validate_sagemaker_register_request"
+    )
+    async def test_transform_request_success(
+        self, mock_validate, mock_transform, mock_get_alias
+    ):
         """Test successful request transformation."""
         # Setup mocks for the request data and validation
         mock_raw_request = Mock(spec=Request)
-        mock_raw_request.json = AsyncMock(return_value={"name": "test-adapter", "src": "s3://test"})
+        mock_raw_request.json = AsyncMock(
+            return_value={"name": "test-adapter", "src": "s3://test"}
+        )
         mock_get_alias.return_value = "test-alias"
 
-        mock_request = SageMakerRegisterLoRAAdapterRequest(name="test-adapter", src="s3://test")
+        mock_request = SageMakerRegisterLoRAAdapterRequest(
+            name="test-adapter", src="s3://test"
+        )
         mock_validate.return_value = mock_request
 
-        mock_transform.return_value = {
-            "model": "test-adapter",
-            "source": "s3://test"
-        }
+        mock_transform.return_value = {"model": "test-adapter", "source": "s3://test"}
 
         # Call method - only pass raw_request
         result = await self.transformer.transform_request(mock_raw_request)
 
         # Verify calls
         mock_raw_request.json.assert_called_once()
-        mock_validate.assert_called_once_with({"name": "test-adapter", "src": "s3://test"})
+        mock_validate.assert_called_once_with(
+            {"name": "test-adapter", "src": "s3://test"}
+        )
         mock_transform.assert_called_once_with(mock_request, mock_raw_request)
 
         # Verify result
@@ -210,7 +197,9 @@ class TestRegisterLoRAApiTransform:
         mock_response.media_type = "application/json"
         adapter_name = "test-adapter"
 
-        result = self.transformer._transform_ok_response(mock_response, adapter_name)
+        result = self.transformer._transform_ok_response(
+            mock_response, adapter_name=adapter_name
+        )
 
         assert isinstance(result, Response)
         assert result.status_code == HTTPStatus.OK
@@ -220,12 +209,16 @@ class TestRegisterLoRAApiTransform:
         assert expected_message == "Adapter test-adapter registered"
 
     @pytest.mark.asyncio
-    @patch('model_hosting_container_standards.sagemaker.lora.utils.get_adapter_alias_from_request_header')
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.utils.get_adapter_alias_from_request_header"
+    )
     async def test_integration_transform_request_and_response(self, mock_get_alias):
         """Test integration between request and response transformation."""
         # Setup request transformation with mocked raw request
         mock_raw_request = Mock(spec=Request)
-        mock_raw_request.json = AsyncMock(return_value={"name": "integration-test", "src": "s3://integration"})
+        mock_raw_request.json = AsyncMock(
+            return_value={"name": "integration-test", "src": "s3://integration"}
+        )
         mock_get_alias.return_value = "integration-alias"
 
         # Transform request - only pass raw_request
@@ -240,7 +233,9 @@ class TestRegisterLoRAApiTransform:
         mock_ok_response.headers = {}
         mock_ok_response.media_type = "application/json"
 
-        ok_result = self.transformer.transform_response(mock_ok_response, transform_output)
+        ok_result = self.transformer.transform_response(
+            mock_ok_response, transform_output
+        )
 
         assert ok_result.status_code == HTTPStatus.OK
         assert "registered" in ok_result.body.decode()

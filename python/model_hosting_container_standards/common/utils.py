@@ -1,8 +1,9 @@
 from typing import Any, Dict
 
+import jmespath
+
 from ..logging_config import logger
 
-import jmespath
 
 def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
     """Recursively compile JMESPath expressions in the shape dictionary.
@@ -19,5 +20,7 @@ def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
             # Recursively compile nested dictionaries
             compiled_shape[key] = _compile_jmespath_expressions(value)
         else:
-            logger.warning(f"Request/response mapping must be a dictionary of strings (nested allowed), not {type(value)}. This value will be ignored.")
+            logger.warning(
+                f"Request/response mapping must be a dictionary of strings (nested allowed), not {type(value)}. This value will be ignored."
+            )
     return compiled_shape

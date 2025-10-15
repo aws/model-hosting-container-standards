@@ -1,13 +1,13 @@
 import abc
 from typing import Any, Dict, Optional
 
-from ..fastapi.utils import serialize_request
-from .utils import _compile_jmespath_expressions
-from ..logging_config import logger
-
-from fastapi import Request, Response
 import jmespath
+from fastapi import Request, Response
 from pydantic import BaseModel
+
+from ..fastapi.utils import serialize_request
+from ..logging_config import logger
+from .utils import _compile_jmespath_expressions
 
 
 class BaseApiTransform(abc.ABC):
@@ -18,7 +18,9 @@ class BaseApiTransform(abc.ABC):
     Subclasses must implement the abstract methods to handle specific transformation logic.
     """
 
-    def __init__(self, request_shape: Dict[str, Any], response_shape: Dict[str, Any] = {}):
+    def __init__(
+        self, request_shape: Dict[str, Any], response_shape: Dict[str, Any] = {}
+    ):
         """Initialize the transformer with request and response mapping shapes.
 
         :param Dict[str, Any] request_shape: Dictionary containing JMESPath expressions
@@ -29,7 +31,9 @@ class BaseApiTransform(abc.ABC):
         self._request_shape = _compile_jmespath_expressions(request_shape)
         self._response_shape = _compile_jmespath_expressions(response_shape)
 
-    def _transform(self, source_data: Dict[str, Any], target_shape: Dict[str, Any]) -> Dict[str, Any]:
+    def _transform(
+        self, source_data: Dict[str, Any], target_shape: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """Apply JMESPath transformations to source data using the target shape.
 
         :param Dict[str, Any] source_data: The source data to transform
@@ -44,9 +48,13 @@ class BaseApiTransform(abc.ABC):
                 transformed_request[target_key] = value
             elif isinstance(nested_or_compiled, dict):
                 # Recursively transform nested structures
-                transformed_request[target_key] = self._transform(source_data, nested_or_compiled)
+                transformed_request[target_key] = self._transform(
+                    source_data, nested_or_compiled
+                )
             else:
-                logger.warning(f"Request/response mapping must be a dictionary of strings (nested allowed), not {type(nested_or_compiled)}. This value will be ignored.")
+                logger.warning(
+                    f"Request/response mapping must be a dictionary of strings (nested allowed), not {type(nested_or_compiled)}. This value will be ignored."
+                )
         return transformed_request
 
     @abc.abstractmethod
@@ -61,7 +69,9 @@ class BaseApiTransform(abc.ABC):
         """
         raise NotImplementedError()
 
-    def _transform_request(self, request: Optional[BaseModel], raw_request: Request) -> Dict[str, Any]:
+    def _transform_request(
+        self, request: Optional[BaseModel], raw_request: Request
+    ) -> Dict[str, Any]:
         """Apply request shape transformations to extract structured data from the request.
 
         :param Optional[BaseModel] request: Parsed request body as Pydantic model (can be None)

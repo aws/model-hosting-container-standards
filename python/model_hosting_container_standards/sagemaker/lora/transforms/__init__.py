@@ -2,7 +2,6 @@ import logging
 from typing import List
 
 from ..constants import LoRAHandlerType
-
 from .adapter_header_to_body import AdapterHeaderToBodyApiTransform
 from .register import RegisterLoRAApiTransform
 from .unregister import UnregisterLoRAApiTransform
@@ -23,13 +22,13 @@ def get_transform_cls_from_handler_type(handler_type: str) -> type:
     logger.debug(f"Resolving transformer class for handler type: {handler_type}")
     match handler_type:
         case LoRAHandlerType.REGISTER_ADAPTER:
-            logger.debug(f"Resolved to RegisterLoRAApiTransform")
+            logger.debug("Resolved to RegisterLoRAApiTransform")
             return RegisterLoRAApiTransform
         case LoRAHandlerType.UNREGISTER_ADAPTER:
-            logger.debug(f"Resolved to UnregisterLoRAApiTransform")
+            logger.debug("Resolved to UnregisterLoRAApiTransform")
             return UnregisterLoRAApiTransform
         case LoRAHandlerType.ADAPTER_ID:
-            logger.debug(f"Resolved to AdapterHeaderToBodyApiTransform")
+            logger.debug("Resolved to AdapterHeaderToBodyApiTransform")
             return AdapterHeaderToBodyApiTransform
         case _:
             logger.error(f"Unsupported LoRAHandlerType: {handler_type}")
@@ -37,8 +36,8 @@ def get_transform_cls_from_handler_type(handler_type: str) -> type:
 
 
 __all__: List[str] = [
-    'AdapterHeaderToBodyApiTransform',
-    'RegisterLoRAApiTransform',
-    'UnregisterLoRAApiTransform',
-    'get_transform_cls_from_handler_type'
+    "AdapterHeaderToBodyApiTransform",
+    "RegisterLoRAApiTransform",
+    "UnregisterLoRAApiTransform",
+    "get_transform_cls_from_handler_type",
 ]
