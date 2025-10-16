@@ -2,7 +2,7 @@ import logging
 from typing import List
 
 from ..constants import LoRAHandlerType
-from .adapter_header_to_body import AdapterHeaderToBodyApiTransform
+from .inject_to_body import InjectToBodyApiTransform
 from .register import RegisterLoRAApiTransform
 from .unregister import UnregisterLoRAApiTransform
 
@@ -28,15 +28,15 @@ def get_transform_cls_from_handler_type(handler_type: str) -> type:
             logger.debug("Resolved to UnregisterLoRAApiTransform")
             return UnregisterLoRAApiTransform
         case LoRAHandlerType.INJECT_ADAPTER_ID:
-            logger.debug("Resolved to AdapterHeaderToBodyApiTransform")
-            return AdapterHeaderToBodyApiTransform
+            logger.debug("Resolved to InjectToBodyApiTransform")
+            return InjectToBodyApiTransform
         case _:
             logger.error(f"Unsupported LoRAHandlerType: {handler_type}")
             raise ValueError(f"Unsupported LoRAHandlerType: {handler_type}")
 
 
 __all__: List[str] = [
-    "AdapterHeaderToBodyApiTransform",
+    "InjectToBodyApiTransform",
     "RegisterLoRAApiTransform",
     "UnregisterLoRAApiTransform",
     "get_transform_cls_from_handler_type",

@@ -65,8 +65,8 @@ class TestResolveTransforms:
     @patch(
         "model_hosting_container_standards.sagemaker.lora.factory.get_transform_cls_from_handler_type"
     )
-    def test_resolve_transforms_adapter_header_to_body(self, mock_get_transform_cls):
-        """Test _resolve_transforms with adapter_header_to_body handler type."""
+    def test_resolve_transforms_inject_adapter_id(self, mock_get_transform_cls):
+        """Test _resolve_transforms with inject_adapter_id handler type."""
         # Arrange
         handler_type = LoRAHandlerType.INJECT_ADAPTER_ID
         request_shape = {"model": "headers.X-Amzn-SageMaker-Adapter-Identifier"}
@@ -357,18 +357,18 @@ class TestCreateTransformDecorator:
         unregister_decorator_factory = create_transform_decorator(
             LoRAHandlerType.UNREGISTER_ADAPTER
         )
-        header_to_body_decorator_factory = create_transform_decorator(
+        inject_adapter_id_decorator_factory = create_transform_decorator(
             LoRAHandlerType.INJECT_ADAPTER_ID
         )
 
         # Assert
         assert callable(register_decorator_factory)
         assert callable(unregister_decorator_factory)
-        assert callable(header_to_body_decorator_factory)
+        assert callable(inject_adapter_id_decorator_factory)
         # Verify they are different functions
         assert register_decorator_factory != unregister_decorator_factory
-        assert register_decorator_factory != header_to_body_decorator_factory
-        assert unregister_decorator_factory != header_to_body_decorator_factory
+        assert register_decorator_factory != inject_adapter_id_decorator_factory
+        assert unregister_decorator_factory != inject_adapter_id_decorator_factory
 
     @patch(
         "model_hosting_container_standards.sagemaker.lora.factory._resolve_transforms"

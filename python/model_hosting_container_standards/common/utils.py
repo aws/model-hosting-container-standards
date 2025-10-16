@@ -24,3 +24,24 @@ def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
                 f"Request/response mapping must be a dictionary of strings (nested allowed), not {type(value)}. This value will be ignored."
             )
     return compiled_shape
+
+
+def set_value(obj: dict, path: str, value: Any) -> dict:
+    """Set value in a nested dict using JMESPath for the parent path."""
+    # Split "parent.child" into ('parent', 'child')
+    if "." not in path:
+        obj[path] = value
+        return obj
+
+    *parent_parts, child = path.split(".")
+    parent_expr = ".".join(parent_parts)
+
+    # Use JMESPath to find the parent node
+    parent = jmespath.search(parent_expr, obj)
+    if parent is None:
+        logger.exception(f"Parent path '{parent_expr}' not found in {obj}")
+        raise KeyError(f"Parent path '{parent_expr}' not found in {obj}")
+
+    # Assign directly (since parent is a dict)
+    parent[child] = value
+    return obj

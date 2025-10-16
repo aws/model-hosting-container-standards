@@ -78,16 +78,4 @@ class RegisterLoRAApiTransform(BaseLoRAApiTransform):
         :return Response: Transformed error response
         """
         # TODO: add error handling
-        response_body = response.body.decode()
-        # Register adapter failed (adapter weights related error): 424.
-        if ResponseMessage.ADAPTER_INVALID_WEIGHTS in response_body:
-            return Response(
-                status_code=HTTPStatus.FAILED_DEPENDENCY,
-                content=response_body,
-            )
-        if ResponseMessage.ADAPTER_MAX_LORA_RANK in response_body:
-            return Response(
-                status_code=HTTPStatus.FAILED_DEPENDENCY,
-                content=response_body,
-            )
         return response

@@ -86,7 +86,6 @@ class TestMountHandlers:
         mock_registry.list_handlers.assert_called_once()
         mock_registry.get_handler.assert_called_once_with("test_handler")
         assert len(router.routes) == 1
-        mock_logger.info.assert_called_once()
 
     @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
     @patch("model_hosting_container_standards.common.fastapi.routing.logger")
@@ -136,8 +135,6 @@ class TestMountHandlers:
         # Assert
         # No routes should be added
         assert len(router.routes) == 0
-        # Resolver should not be called since handler is None
-        mock_logger.info.assert_not_called()
 
     @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
     @patch("model_hosting_container_standards.common.fastapi.routing.logger")

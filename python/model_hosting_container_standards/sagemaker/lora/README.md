@@ -42,7 +42,7 @@ lora/
 ├── transforms/                   # Concrete transformer implementations
 │   ├── register.py              # Register adapter transformer
 │   ├── unregister.py            # Unregister adapter transformer
-│   └── adapter_header_to_body.py # Header-to-body transformer
+│   └── inject_to_body.py        # Inject data to body transformer
 ├── constants.py                  # Constants and enums
 └── utils.py                      # Utility functions
 ```
@@ -171,12 +171,45 @@ Used for unregistering/unloading LoRA adapters.
 - Generates unregistration confirmation messages
 
 #### 3. `INJECT_ADAPTER_ID` (inject_adapter_id -> inject_adapter_id)
-Used for moving adapter information from HTTP headers to the request body.
+Used for injecting adapter information into the request body from various sources (headers, query params, etc.).
 
-**Transformer**: `AdapterHeaderToBodyApiTransform`
-- Extracts data from headers using request_shape
-- Injects extracted data into request body
+**Transformer**: `InjectToBodyApiTransform`
+- Extracts data from sources (headers, query params, etc.) using JMESPath expressions in request_shape
+- Injects extracted data into request body at specified paths (supports nested paths using dot notation)
 - Useful for inference requests with adapter identifiers in headers
+- Only accepts flat request_shape mappings (target paths to source expressions as strings)
+- Does not support response transformations (response_shape is ignored with a warning)
+
+**Example Usage:**
+```python
+from model_hosting_container_standards.sagemaker import inject_adapter_id_handler
+
+@inject_adapter_id_handler(
+    request_shape={
+        "adapter_id": 'headers."x-adapter-id"',           # Inject to top-level
+        "config.adapter_name": 'headers."x-adapter-name"', # Inject to nested path
+        "config.priority": 'headers."x-priority"'          # Inject to nested path
+    }
+)
+async def inference_handler(raw_request: Request):
+    # Request body is automatically modified before reaching this handler
+    body = await raw_request.json()
+    # body now contains:
+    # {
+    #   "adapter_id": "<value-from-header>",
+    #   "config": {
+    #     "adapter_name": "<value-from-header>",
+    #     "priority": "<value-from-header>"
+    #   }
+    # }
+    return Response(status_code=200)
+```
+
+**Important Notes:**
+- The request_shape keys use dot notation for nested paths (e.g., `"config.adapter_name"`)
+- Parent objects must exist in the request body before injecting nested values
+- The transformer modifies the raw request body in place
+- Non-string values in request_shape will raise a `ValueError`
 
 ### Decorator Behavior
 
@@ -552,7 +585,7 @@ Add your handler type to `constants.py`:
 class LoRAHandlerType(str, Enum):
     REGISTER_ADAPTER = "register_adapter"
     UNREGISTER_ADAPTER = "unregister_adapter"
-    ADAPTER_ID = "adapter_id"
+    INJECT_ADAPTER_ID = "inject_adapter_id"
     MY_CUSTOM_HANDLER = "my_custom_handler"  # New handler type
 ```
 
@@ -568,7 +601,7 @@ def get_transform_cls_from_handler_type(handler_type: str) -> type:
         case LoRAHandlerType.UNREGISTER_ADAPTER:
             return UnregisterLoRAApiTransform
         case LoRAHandlerType.INJECT_ADAPTER_ID:
-            return AdapterHeaderToBodyApiTransform
+            return InjectToBodyApiTransform
         case LoRAHandlerType.MY_CUSTOM_HANDLER:
             return MyCustomTransform  # New mapping
         case _:
