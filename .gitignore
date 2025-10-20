@@ -196,6 +196,9 @@ coverage.xml
 *.swo
 *~
 
+# Kiro IDE files
+.kiro/
+
 # OS
 .DS_Store
 .DS_Store?

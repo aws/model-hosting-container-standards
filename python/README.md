@@ -85,42 +85,36 @@ CUSTOM_FASTAPI_PING_HANDLER="vllm.entrypoints.openai.api_server:health"
 
 ### 3. Handler Resolution Priority
 
-The system resolves handlers in this order:
+The system automatically resolves handlers in this order:
 1. **Environment Variables** (highest priority)
-2. **Decorator Registration** (`@ping`, `@invoke`)
+2. **Decorator Override** (`@ping`, `@invoke`)
 3. **Function Discovery** (functions in custom script named `ping`, `invoke`)
 4. **Default Handlers** (framework fallbacks)
+
+**Note**: All handler detection and route setup happens automatically during bootstrap
 
 ## Framework Examples
 
 ### Integration with vLLM
 
-To integrate with vLLM, you need to add the decorators to your vLLM server. Here's a complete working example `model.py`:
+To integrate with vLLM, simply add your custom handlers using the `@ping` and `@invoke` decorators. The system automatically detects and sets up your custom routes during bootstrap. Here's a complete working example `model.py`:
 
 ```python
-import sys
-import os
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 from model_hosting_container_standards.logging_config import logger
-from fastapi.responses import JSONResponse, Response, StreamingResponse
-from fastapi import APIRouter, Depends, FastAPI, Form, HTTPException, Request
-from vllm.lora.request import LoRARequest
-import json
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi.responses import Response
+from fastapi import Request, HTTPException
 from http import HTTPStatus
 import json
 import pydantic
-from fastapi.responses import JSONResponse
-from vllm.entrypoints.openai.protocol import CompletionRequest, ErrorResponse
+from vllm.entrypoints.openai.protocol import CompletionRequest
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 
-# Customer override ping handler
+# Custom ping handler - automatically replaces vLLM's default /ping route
 @sagemaker_standards.ping
 async def myping(raw_request: Request):
     logger.info("Custom ping handler called")
-    return Response(status_code=201)
-
-logger.info("Customer script loaded: Custom ping handler set")
+    return Response(status_code=200, content="Custom ping OK")
 
 def completion(raw_request: Request) -> OpenAIServingCompletion:
     """Get completion handler from request."""
@@ -133,9 +127,10 @@ async def create_completion(request: CompletionRequest, raw_request: Request):
     handler = completion(raw_request)
     return await handler.create_completion(request, raw_request)
 
+# Custom invocation handler - automatically replaces vLLM's default /invocations route
 @sagemaker_standards.invoke
 async def invocations(raw_request: Request):
-    """Simple completion-only handler for SageMaker."""
+    """Custom invocation handler for SageMaker."""
     logger.info("Custom invocation handler called")
     try:
         body = await raw_request.json()
@@ -157,8 +152,14 @@ async def invocations(raw_request: Request):
 
     return await create_completion(request, raw_request)
 
-logger.info("Customer script loaded - handlers registered")
+logger.info("Custom handlers loaded - will be automatically registered during bootstrap")
 ```
+
+**Key Points:**
+- ✅ **No manual registration needed** - handlers are automatically detected and set up
+- ✅ **Simple decorators** - just use `@ping` and `@invoke`
+- ✅ **Automatic route replacement** - your handlers replace vLLM's default routes
+- ✅ **Bootstrap integration** - routes are configured when vLLM calls the bootstrap function
 
 ### Adding Middleware to vLLM Integration
 
