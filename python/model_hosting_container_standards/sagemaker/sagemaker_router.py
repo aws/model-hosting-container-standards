@@ -15,22 +15,6 @@ from .lora.routes import get_lora_route_config
 logger = logging.getLogger(__name__)
 
 
-# Route configurations for SageMaker endpoints
-_PING_ROUTE_CONFIG = {
-    "path": "/ping",
-    "methods": ["GET"],  # Standard SageMaker ping endpoint (GET only)
-    "tags": ["health"],
-    "summary": "Health check endpoint",
-}
-
-_INVOKE_ROUTE_CONFIG = {
-    "path": "/invocations",
-    "methods": ["POST"],  # Standard SageMaker invocations endpoint (POST only)
-    "tags": ["inference"],
-    "summary": "Model inference endpoint",
-}
-
-
 # Router creation utility
 def create_sagemaker_router() -> APIRouter:
     """Create a FastAPI router with all registered SageMaker handlers mounted.
