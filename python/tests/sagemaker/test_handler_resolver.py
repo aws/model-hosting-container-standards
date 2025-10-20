@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from model_hosting_container_standards.common.fastapi import EnvVars
+from model_hosting_container_standards.common.fastapi.config import FastAPIEnvVars
 from model_hosting_container_standards.common.handler import handler_registry
 from model_hosting_container_standards.sagemaker.config import SageMakerEnvVars
 from model_hosting_container_standards.sagemaker.handler_resolver import (
@@ -34,7 +34,7 @@ class TestHandlerResolver:
         """Test resolving ping handler from environment variable."""
         # Mock environment variable
         with patch.dict(
-            os.environ, {EnvVars.CUSTOM_FASTAPI_PING_HANDLER: "os.path:exists"}
+            os.environ, {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "os.path:exists"}
         ):
             handler = self.resolver.resolve_ping_handler()
             assert handler is not None
@@ -121,7 +121,7 @@ def ping():
             with patch.dict(
                 os.environ,
                 {
-                    EnvVars.CUSTOM_FASTAPI_PING_HANDLER: "os.path:exists",
+                    FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "os.path:exists",
                     SageMakerEnvVars.SAGEMAKER_MODEL_PATH: script_dir,
                     SageMakerEnvVars.CUSTOM_SCRIPT_FILENAME: script_name,
                 },
@@ -157,14 +157,16 @@ def ping():
     def test_router_path_in_env_var(self):
         """Test that router paths in environment variables are handled correctly."""
         # Test with router path - should return None for callable handlers
-        with patch.dict(os.environ, {EnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/health"}):
+        with patch.dict(
+            os.environ, {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/health"}
+        ):
             handler = self.resolver.resolve_ping_handler()
             # Should fall back to next priority (registry/customer script)
             assert handler is None
 
         # Test with another router path format
         with patch.dict(
-            os.environ, {EnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/api/v1/status"}
+            os.environ, {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/api/v1/status"}
         ):
             handler = self.resolver.resolve_ping_handler()
             assert handler is None

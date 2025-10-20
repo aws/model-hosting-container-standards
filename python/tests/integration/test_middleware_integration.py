@@ -24,12 +24,16 @@ class TestMiddlewareIntegration:
         from model_hosting_container_standards.common.fastapi.middleware import (
             middleware_registry,
         )
+        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+            decorator_loader,
+        )
         from model_hosting_container_standards.sagemaker.sagemaker_loader import (
             SageMakerFunctionLoader,
         )
 
         middleware_registry.clear_middlewares()
-        middleware_registry.clear_formatters()
+        # Clear decorator loader state
+        decorator_loader.clear()
         SageMakerFunctionLoader._default_function_loader = None
 
     def _reload_mock_vllm_server(self):
@@ -43,7 +47,7 @@ class TestMiddlewareIntegration:
 
         SageMakerFunctionLoader.get_function_loader()
 
-        from ....resources import mock_vllm_server
+        from ..resources import mock_vllm_server
 
         importlib.reload(mock_vllm_server)
         return mock_vllm_server
@@ -90,12 +94,24 @@ async def customer_output_formatter(response):
                 self._reload_mock_vllm_server()
 
                 # Test that middlewares are registered
+                # Trigger middleware loading and registration
+                from model_hosting_container_standards.common.custom_code_ref_resolver.function_loader import (
+                    FunctionLoader,
+                )
                 from model_hosting_container_standards.common.fastapi.middleware import (
                     middleware_registry,
                 )
+                from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+                    decorator_loader,
+                )
+
+                function_loader = FunctionLoader()
+                middleware_registry.load_middlewares(function_loader)
 
                 assert middleware_registry.has_middleware("throttle")
-                assert middleware_registry.has_formatters()
+                assert (
+                    decorator_loader.post_fn is not None
+                )  # output formatter was registered
 
                 # Create a real FastAPI app to test middleware execution
                 from fastapi import FastAPI, Request
@@ -121,11 +137,15 @@ async def customer_output_formatter(response):
                     return {"text": "Generated response", "model": "mock-vllm"}
 
                 # Load middlewares into the app
-                from model_hosting_container_standards.common.fastapi.middleware.loader import (
+                from model_hosting_container_standards.common.custom_code_ref_resolver.function_loader import (
+                    FunctionLoader,
+                )
+                from model_hosting_container_standards.common.fastapi.middleware.core import (
                     load_middlewares,
                 )
 
-                load_middlewares(app)
+                function_loader = FunctionLoader()
+                load_middlewares(app, function_loader)
 
                 # Test HTTP request to verify middleware execution
                 client = TestClient(app)

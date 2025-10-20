@@ -18,6 +18,15 @@ from model_hosting_container_standards.exceptions import (
 class TestMiddlewareExceptions:
     """Test middleware-specific exceptions."""
 
+    def setup_method(self):
+        """Clear global state before each test."""
+        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+            decorator_loader,
+        )
+
+        # Clear decorator loader state
+        decorator_loader.clear()
+
     def test_middleware_registration_error_invalid_name(self):
         """Test MiddlewareRegistrationError for invalid middleware name."""
         with pytest.raises(MiddlewareRegistrationError) as exc_info:
@@ -46,8 +55,10 @@ class TestMiddlewareExceptions:
         assert "already registered" in str(exc_info.value)
 
     def test_formatter_registration_error_duplicate_input_formatter(self):
-        """Test ValueError for duplicate input formatter at registry level."""
-        registry = MiddlewareRegistry()
+        """Test ValueError for duplicate input formatter at decorator loader level."""
+        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+            decorator_loader,
+        )
 
         def formatter1():
             pass
@@ -56,17 +67,19 @@ class TestMiddlewareExceptions:
             pass
 
         # First registration should succeed
-        registry.set_input_formatter(formatter1)
+        decorator_loader.set_input_formatter(formatter1)
 
-        # Second registration should raise ValueError (registry level)
+        # Second registration should raise ValueError
         with pytest.raises(ValueError) as exc_info:
-            registry.set_input_formatter(formatter2)
+            decorator_loader.set_input_formatter(formatter2)
 
         assert "Input formatter is already registered" in str(exc_info.value)
 
     def test_formatter_registration_error_duplicate_output_formatter(self):
-        """Test ValueError for duplicate output formatter at registry level."""
-        registry = MiddlewareRegistry()
+        """Test ValueError for duplicate output formatter at decorator loader level."""
+        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+            decorator_loader,
+        )
 
         def formatter1():
             pass
@@ -75,11 +88,11 @@ class TestMiddlewareExceptions:
             pass
 
         # First registration should succeed
-        registry.set_output_formatter(formatter1)
+        decorator_loader.set_output_formatter(formatter1)
 
-        # Second registration should raise ValueError (registry level)
+        # Second registration should raise ValueError
         with pytest.raises(ValueError) as exc_info:
-            registry.set_output_formatter(formatter2)
+            decorator_loader.set_output_formatter(formatter2)
 
         assert "Output formatter is already registered" in str(exc_info.value)
 

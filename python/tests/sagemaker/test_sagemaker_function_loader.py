@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from model_hosting_container_standards.common.fastapi import EnvVars
+from model_hosting_container_standards.common.fastapi.config import FastAPIEnvVars
 from model_hosting_container_standards.sagemaker.config import SageMakerEnvVars
 from model_hosting_container_standards.sagemaker.sagemaker_loader import (
     SageMakerFunctionLoader,
@@ -266,7 +266,7 @@ class ModelHandler:
             {
                 "SAGEMAKER_MODEL_PATH": str(self.temp_dir),
                 "CUSTOM_SCRIPT_FILENAME": "model.py",
-                EnvVars.CUSTOM_FASTAPI_PING_HANDLER: f"{self.test_file.name}:ping_handler",
+                FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: f"{self.test_file.name}:ping_handler",
             },
             clear=False,
         ):
@@ -278,7 +278,7 @@ class ModelHandler:
         """Test getting ping handler as router URL."""
         with patch.dict(
             os.environ,
-            {EnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/health"},
+            {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/health"},
             clear=False,
         ):
             result = SageMakerFunctionLoader.get_ping_handler_from_env()
@@ -296,7 +296,7 @@ class ModelHandler:
             {
                 "SAGEMAKER_MODEL_PATH": str(self.temp_dir),
                 "CUSTOM_SCRIPT_FILENAME": "model.py",
-                EnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER: f"{self.test_file.name}:invocation_handler",
+                FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER: f"{self.test_file.name}:invocation_handler",
             },
             clear=False,
         ):
@@ -310,7 +310,7 @@ class ModelHandler:
         """Test getting invocation handler as router URL."""
         with patch.dict(
             os.environ,
-            {EnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER: "/v1/chat/completions"},
+            {FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER: "/v1/chat/completions"},
             clear=False,
         ):
             result = SageMakerFunctionLoader.get_invocation_handler_from_env()
@@ -363,8 +363,8 @@ class ModelHandler:
         with patch.dict(
             os.environ,
             {
-                EnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/health",
-                EnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER: "model:invoke",
+                FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/health",
+                FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER: "model:invoke",
             },
             clear=False,
         ):

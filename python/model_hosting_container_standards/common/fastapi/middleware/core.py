@@ -48,9 +48,11 @@ def create_middleware_object(middleware_info: Any) -> "Middleware":
         return _wrap_http_middleware(middleware_info.middleware)
 
 
-def load_middlewares(app: "FastAPI") -> None:
+def load_middlewares(app: "FastAPI", function_loader) -> None:
     """
     Load container standards middlewares while preserving existing engine middlewares.
+
+    Environment variables have precedence over decorators for middleware configuration.
 
     Middleware execution order (request flow):
         Request -> Throttle -> Engine middlewares -> Pre/Post Process
@@ -59,11 +61,10 @@ def load_middlewares(app: "FastAPI") -> None:
 
     Args:
         app: FastAPI application instance
+        function_loader: Function loader for environment variable middleware.
     """
-    # Ensure customer script is loaded before processing middlewares
-
-    # Generate process middleware if formatters are registered
-    middleware_registry.generate_process_middleware()
+    # Load and resolve middlewares from all sources (env vars, decorators, formatters)
+    middleware_registry.load_middlewares(function_loader)
 
     # Get existing middlewares (engine middlewares)
     existing_middlewares = list(app.user_middleware)

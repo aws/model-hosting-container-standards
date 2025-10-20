@@ -4,7 +4,7 @@ from typing import Callable, Union
 
 from ....exceptions import FormatterRegistrationError, MiddlewareRegistrationError
 from ....logging_config import logger
-from .registry import middleware_registry
+from .source.decorator_loader import decorator_loader
 
 
 def register_middleware(
@@ -39,8 +39,8 @@ def register_middleware(
         )
 
         try:
-            # Register the middleware in the middleware registry
-            middleware_registry.register_middleware(name, middleware)
+            # Set the middleware in the decorator loader
+            decorator_loader.set_middleware(name, middleware)
             logger.info(
                 f"[MIDDLEWARE] Successfully registered {middleware_type} '{middleware.__name__}' as '{name}'"
             )
@@ -78,7 +78,7 @@ def input_formatter(func: Callable) -> Callable:
     logger.debug(f"[INPUT_FORMATTER] Registering input formatter: {func.__name__}")
 
     try:
-        middleware_registry.set_input_formatter(func)
+        decorator_loader.set_input_formatter(func)
         logger.info(f"[INPUT_FORMATTER] Successfully registered: {func.__name__}")
 
     except ValueError as e:
@@ -111,7 +111,7 @@ def output_formatter(func: Callable) -> Callable:
     logger.debug(f"[OUTPUT_FORMATTER] Registering output formatter: {func.__name__}")
 
     try:
-        middleware_registry.set_output_formatter(func)
+        decorator_loader.set_output_formatter(func)
         logger.info(f"[OUTPUT_FORMATTER] Successfully registered: {func.__name__}")
 
     except ValueError as e:

@@ -160,6 +160,52 @@ async def invocations(raw_request: Request):
 logger.info("Customer script loaded - handlers registered")
 ```
 
+### Adding Middleware to vLLM Integration
+
+You can also add middleware to your vLLM integration:
+
+```python
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+from model_hosting_container_standards.common.fastapi.middleware import register_middleware, input_formatter, output_formatter
+from model_hosting_container_standards.logging_config import logger
+
+# Add throttling middleware
+@register_middleware("throttle")
+async def rate_limit_middleware(request, call_next):
+    # Simple rate limiting example
+    client_ip = request.client.host
+    logger.info(f"Processing request from {client_ip}")
+
+    response = await call_next(request)
+    response.headers["X-Rate-Limited"] = "true"
+    return response
+
+# Add request preprocessing
+@input_formatter
+async def preprocess_request(request):
+    # Log incoming requests
+    logger.info(f"Preprocessing request: {request.method} {request.url}")
+    return request
+
+# Add response postprocessing
+@output_formatter
+async def postprocess_response(response):
+    # Add custom headers
+    response.headers["X-Processed-By"] = "model-hosting-standards"
+    return response
+
+# Your existing handlers
+@sagemaker_standards.ping
+async def myping(raw_request: Request):
+    logger.info("Custom ping handler called")
+    return Response(status_code=201)
+
+@sagemaker_standards.invoke
+async def invocations(raw_request: Request):
+    # Your invocation logic here
+    pass
+```
+
 #### Example Commands
 
 ```bash
@@ -174,6 +220,19 @@ CUSTOM_FASTAPI_PING_HANDLER=/opt/ml/model/model.py:myping vllm serve TinyLlama/T
 
 # Use vLLM's built-in health endpoint as ping handler
 CUSTOM_FASTAPI_PING_HANDLER=vllm.entrypoints.openai.api_server:health vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 --dtype auto
+
+# Add middleware via environment variables (file path)
+CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE=middleware.py:throttle_func vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 --dtype auto
+
+# Add middleware via module path
+CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE=my_middleware:RateLimitClass vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 --dtype auto
+
+# Combined middleware configuration
+CUSTOM_FASTAPI_PING_HANDLER=model.py:myping \
+CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE=middleware_module:RateLimiter \
+CUSTOM_PRE_PROCESS=processors:log_requests \
+CUSTOM_POST_PROCESS=processors:add_headers \
+vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 --dtype auto
 ```
 
 **Handler Path Formats:**
@@ -181,19 +240,123 @@ CUSTOM_FASTAPI_PING_HANDLER=vllm.entrypoints.openai.api_server:health vllm serve
 - `/opt/ml/model/handlers.py:ping` - Absolute path
 - `vllm.entrypoints.openai.api_server:health` - Module path
 
+## Middleware Configuration
+
+The package provides a flexible middleware system that supports both environment variable and decorator-based configuration.
+
+### Middleware Environment Variables
+
+```bash
+# Throttling middleware
+export CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE="throttle.py:rate_limit_middleware"
+
+# Combined pre/post processing middleware
+export CUSTOM_FASTAPI_MIDDLEWARE_PRE_POST_PROCESS="processing.py:combined_middleware"
+
+# Using module paths (no file extension)
+export CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE="my_middleware_module:RateLimitMiddleware"
+export CUSTOM_PRE_PROCESS="request_processors:log_and_validate"
+
+# Separate pre/post processing (automatically combined)
+export CUSTOM_PRE_PROCESS="preprocessing.py:pre_process_func"
+export CUSTOM_POST_PROCESS="postprocessing.py:post_process_func"
+```
+
+### Middleware Decorators
+
+```python
+from model_hosting_container_standards.common.fastapi.middleware import (
+    register_middleware,
+    input_formatter,
+    output_formatter,
+)
+
+# Register throttle middleware
+@register_middleware("throttle")
+async def my_throttle_middleware(request, call_next):
+    # Rate limiting logic
+    response = await call_next(request)
+    return response
+
+# Register combined pre/post middleware (function)
+@register_middleware("pre_post_process")
+async def my_pre_post_middleware(request, call_next):
+    # Pre-processing
+    request = await pre_process(request)
+
+    # Call next middleware/handler
+    response = await call_next(request)
+
+    # Post-processing
+    response = await post_process(response)
+    return response
+
+# Register middleware class
+@register_middleware("throttle")
+class ThrottleMiddleware:
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        # ASGI middleware implementation
+        # Rate limiting logic here
+        await self.app(scope, receive, send)
+
+# Register input formatter (pre-processing only)
+@input_formatter
+async def pre_process(request):
+    # Modify request
+    return request
+
+# Register output formatter (post-processing only)
+@output_formatter
+async def post_process(response):
+    # Modify response
+    return response
+```
+
+### Middleware Priority
+
+**Environment Variables > Decorators**
+
+Environment variables always take priority over decorator-registered middleware:
+
+```python
+# This decorator will be ignored if CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE is set
+@register_middleware("throttle")
+async def decorator_throttle(request, call_next):
+    return await call_next(request)
+
+# Environment variable takes priority (can use module or file path)
+# CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE=throttle_module:ThrottleClass
+# CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE=env_throttle.py:env_throttle_func
+```
+
+
+
+### Middleware Execution Order
+
+```
+Request → Throttle → Engine Middlewares → Pre/Post Process → Handler → Response
+```
+
 ## Configuration Reference
-
-
 
 ### Environment Variables
 
 ```python
-from model_hosting_container_standards.common.fastapi import EnvVars, ENV_CONFIG
+from model_hosting_container_standards.common.fastapi.config import FastAPIEnvVars, FASTAPI_ENV_CONFIG
 from model_hosting_container_standards.sagemaker import SageMakerEnvVars, SAGEMAKER_ENV_CONFIG
 
-# FastAPI environment variables
-EnvVars.CUSTOM_FASTAPI_PING_HANDLER
-EnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER
+# FastAPI handler environment variables
+FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER
+FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER
+
+# FastAPI middleware environment variables
+FastAPIEnvVars.CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE
+FastAPIEnvVars.CUSTOM_FASTAPI_MIDDLEWARE_PRE_POST_PROCESS
+FastAPIEnvVars.CUSTOM_PRE_PROCESS
+FastAPIEnvVars.CUSTOM_POST_PROCESS
 
 # SageMaker environment variables
 SageMakerEnvVars.CUSTOM_SCRIPT_FILENAME

@@ -2,7 +2,7 @@
 
 import inspect
 
-from model_hosting_container_standards.utils import (
+from model_hosting_container_standards.common.handler.decorators import (
     create_override_decorator,
     create_register_decorator,
 )

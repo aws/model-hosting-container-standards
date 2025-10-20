@@ -1,6 +1,8 @@
-"""Middleware registry for managing middleware functions and formatters."""
+"""Middleware registry for storing registered middlewares."""
 
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
+
+from ....logging_config import logger
 
 # Allowed middleware names in execution order
 ALLOWED_MIDDLEWARE_NAMES = ["throttle", "pre_post_process"]
@@ -16,17 +18,19 @@ class MiddlewareInfo:
 
 
 class MiddlewareRegistry:
-    """Registry specifically for managing middlewares."""
+    """Simple registry for storing middlewares."""
 
     def __init__(self) -> None:
+        # Simple structure: name -> MiddlewareInfo
         self._middlewares: Dict[str, MiddlewareInfo] = {}
         # Only allow these specific middleware names
         self._allowed_middleware_names = set(ALLOWED_MIDDLEWARE_NAMES)
-        # Store formatter functions
-        self._input_formatter: Optional[Callable] = None
-        self._output_formatter: Optional[Callable] = None
 
-    def register_middleware(self, name: str, middleware: Union[Callable, type]) -> None:
+    def register_middleware(
+        self,
+        name: str,
+        middleware: Union[Callable, type],
+    ) -> None:
         """
         Register a middleware by name.
 
@@ -75,87 +79,62 @@ class MiddlewareRegistry:
         """Clear all registered middlewares."""
         self._middlewares.clear()
 
-    # Formatter functions management
-    def set_input_formatter(self, formatter: Callable) -> None:
-        """Set the input formatter function."""
-        if self._input_formatter is not None:
-            raise ValueError(
-                "Input formatter is already registered. Only one input formatter is allowed."
+    def load_middlewares(self, function_loader) -> None:
+        """Load and resolve middlewares from all sources (env vars, decorators, formatters).
+
+        Args:
+            function_loader: Function loader for environment variable middleware.
+        """
+        # Import here to avoid circular imports
+        from .source.decorator_loader import decorator_loader
+        from .source.environment_loader import MiddlewareEnvironmentLoader
+
+        env_loader = MiddlewareEnvironmentLoader()
+
+        # Load from both sources
+        logger.debug("[REGISTRY] Loading middlewares from environment variables")
+        env_loader.load(function_loader)
+
+        logger.debug("[REGISTRY] Loading middlewares from decorators")
+        decorator_loader.load()
+
+        # Register with priority (env overrides decorator)
+        self._register_middleware_with_priority(
+            "throttle", env_loader, decorator_loader
+        )
+        self._register_middleware_with_priority(
+            "pre_post_process", env_loader, decorator_loader
+        )
+
+        logger.info("[REGISTRY] Middleware resolution and registration complete")
+
+    def _register_middleware_with_priority(
+        self, middleware_name: str, env_loader, dec_loader
+    ) -> None:
+        """Register middleware with env > decorator priority."""
+
+        # Get middleware with priority: env > decorator
+        middleware = env_loader.get_middleware(
+            middleware_name
+        ) or dec_loader.get_middleware(middleware_name)
+
+        if middleware is None:
+            logger.debug(
+                f"[REGISTRY] No {middleware_name} middleware found in any source"
             )
-        self._input_formatter = formatter
-
-    def set_output_formatter(self, formatter: Callable) -> None:
-        """Set the output formatter function."""
-        if self._output_formatter is not None:
-            raise ValueError(
-                "Output formatter is already registered. Only one output formatter is allowed."
-            )
-        self._output_formatter = formatter
-
-    def get_input_formatter(self) -> Optional[Callable]:
-        """Get the input formatter function."""
-        return self._input_formatter
-
-    def get_output_formatter(self) -> Optional[Callable]:
-        """Get the output formatter function."""
-        return self._output_formatter
-
-    def has_formatters(self) -> bool:
-        """Check if any formatter functions are registered."""
-        return self._input_formatter is not None or self._output_formatter is not None
-
-    def generate_process_middleware(self) -> None:
-        """Generate and register the process middleware if formatters exist."""
-        if not self.has_formatters():
             return
 
-        # Import here to avoid circular imports
-        from ....logging_config import logger
-
-        async def process_middleware(request: Any, call_next: Callable) -> Any:
-            """Auto-generated process middleware that calls registered formatters."""
-            try:
-                # Apply input formatter if exists
-                if self._input_formatter is not None:
-                    logger.debug("[PROCESS] Applying input formatter")
-                    request = await self._input_formatter(request) or request
-
-                # Call the next middleware/handler
-                response = await call_next(request)
-
-                # Apply output formatter if exists
-                if self._output_formatter is not None:
-                    logger.debug("[PROCESS] Applying output formatter")
-                    response = await self._output_formatter(response) or response
-
-                return response
-
-            except Exception as e:
-                logger.error(f"[PROCESS] Error in process middleware: {e}")
-                # Return 500 error as requested
-                from fastapi.responses import JSONResponse
-
-                return JSONResponse(
-                    status_code=500,
-                    content={
-                        "error": "Internal server error in process middleware",
-                        "message": str(e),
-                    },
-                )
-
-        # Register the generated middleware
-        if not self.has_middleware("pre_post_process"):
-            self._middlewares["pre_post_process"] = MiddlewareInfo(
-                "pre_post_process", process_middleware
+        # Register in registry
+        try:
+            self.register_middleware(middleware_name, middleware)
+            source = (
+                "env" if env_loader.get_middleware(middleware_name) else "decorator"
             )
             logger.info(
-                "[PROCESS] Auto-generated pre_post_process middleware registered"
+                f"[REGISTRY] Registered {middleware_name} middleware from {source}"
             )
-
-    def clear_formatters(self) -> None:
-        """Clear all formatter functions."""
-        self._input_formatter = None
-        self._output_formatter = None
+        except ValueError as e:
+            logger.error(f"[REGISTRY] Failed to register {middleware_name}: {e}")
 
 
 # Global registry instance

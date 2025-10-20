@@ -1,8 +1,8 @@
-"""Utility functions for model hosting container standards."""
+"""Utility functions for creating handler decorators."""
 
 from typing import Any, Callable, Optional
 
-from .logging_config import logger
+from ...logging_config import logger
 
 
 def create_override_decorator(

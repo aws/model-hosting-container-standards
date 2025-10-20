@@ -6,9 +6,12 @@ from fastapi import FastAPI
 
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig
+from ..common.handler.decorators import (
+    create_override_decorator,
+    create_register_decorator,
+)
 from ..common.handler.registry import handler_registry
 from ..logging_config import logger
-from ..utils import create_override_decorator, create_register_decorator
 
 # Import the real resolver functions
 from .handler_resolver import get_invoke_handler, get_ping_handler
@@ -77,7 +80,7 @@ def bootstrap(app: FastAPI) -> FastAPI:
     """Configure a FastAPI application with SageMaker functionality.
 
     This function sets up all necessary SageMaker integrations on the provided
-    FastAPI application. Currently supports mounting LoRA router paths.
+    FastAPI application, including middlewares and LoRA router paths.
 
     Args:
         app: The FastAPI application instance to configure
@@ -89,8 +92,16 @@ def bootstrap(app: FastAPI) -> FastAPI:
         All handlers must be registered before calling this function. Handlers
         registered after this call will not be automatically mounted.
     """
+    from ..common.fastapi.middleware.core import (
+        load_middlewares as core_load_middlewares,
+    )
+
     logger.info("Starting SageMaker bootstrap process")
     logger.debug(f"Bootstrapping FastAPI app: {app.title or 'unnamed'}")
+
+    # Load container standards middlewares with SageMaker function loader
+    sagemaker_function_loader = SageMakerFunctionLoader.get_function_loader()
+    core_load_middlewares(app, sagemaker_function_loader)
 
     # Mount the SageMaker router with registered handlers
     sagemaker_router = create_sagemaker_router()
@@ -110,6 +121,7 @@ __all__: List[str] = [
     "register_load_adapter_handler",
     "register_unload_adapter_handler",
     "inject_adapter_id",
+    "load_middlewares",
     "bootstrap",
     "RouteConfig",
 ]
