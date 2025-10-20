@@ -10,7 +10,6 @@ Note: These tests focus on validating server responses rather than directly call
 get_ping_handler() and get_invoke_handler() to ensure full integration testing.
 """
 
-import importlib
 import os
 import tempfile
 from unittest.mock import patch
@@ -60,7 +59,8 @@ class TestHandlerOverrideIntegration:
 
         from ..resources import mock_vllm_server
 
-        importlib.reload(mock_vllm_server)
+        # Reset the mock server to create a fresh FastAPI app
+        mock_vllm_server.mock_server.reset()
         return mock_vllm_server
 
     def test_customer_script_functions_auto_loaded(self):
@@ -71,6 +71,8 @@ class TestHandlerOverrideIntegration:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
+from fastapi import Request
+
 async def ping():
     return {
         "status": "healthy",
@@ -78,7 +80,7 @@ async def ping():
         "message": "Custom ping from customer script"
     }
 
-async def invoke(request=None):
+async def invoke(request: Request):
     return {
         "predictions": ["Custom response from customer script"],
         "source": "customer_override"
@@ -125,10 +127,12 @@ async def invoke(request=None):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
+from fastapi import Request
+
 async def ping():
     return {"status": "healthy", "source": "auto_loaded_script"}
 
-async def invoke(request=None):
+async def invoke(request: Request):
     return {"predictions": ["Auto loaded response"], "source": "auto_loaded_script"}
 """
             )
@@ -168,9 +172,10 @@ async def invoke(request=None):
             f.write(
                 """
 import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import Request
 
 @sagemaker_standards.invoke
-async def custom_invoke(raw_request=None):
+async def custom_invoke(request: Request):
     return {
         "predictions": ["Custom response"],
         "source": "customer_decorator",
@@ -219,10 +224,12 @@ async def ping():
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
+from fastapi import Request
+
 async def ping():
     return {"source": "script_ping", "type": "script_function"}
 
-async def invoke(request=None):
+async def invoke(request: Request):
     return {"source": "script_invoke", "type": "script_function"}
 
 async def env_ping():
@@ -270,10 +277,12 @@ async def env_invoke(request=None):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
+from fastapi import Request
+
 async def ping():
     return {"status": "healthy", "source": "file_customer_script"}
 
-async def invoke(request):
+async def invoke(request: Request):
     return {"predictions": ["file customer response"], "source": "file_customer_script"}
 """
             )
@@ -360,10 +369,11 @@ async def ping():
             f.write(
                 """
 import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import Request
 
 # Customer uses decorators for some handlers
 @sagemaker_standards.invoke
-async def my_invoke(request):
+async def my_invoke(request: Request):
     return {"type": "invoke", "source": "customer_decorator"}
 
 # Customer uses regular function for ping (higher priority than decorators)
