@@ -1,76 +1,88 @@
-"""Mock vLLM server for integration testing.
+"""Mock vLLM server for integration testing using real FastAPI.
 
 This simulates exactly how a real vLLM server works:
-- Defines endpoint functions decorated with @sagemaker_standards.register_*_handler
-- The decorators resolve the final handler at startup time
-- When endpoints are called, they directly call the resolved handler function
-- No direct calls to get_ping_handler() or get_invoke_handler() needed
+- Uses @router.get("/ping") and @router.post("/invocations") decorators like real vLLM
+- Defines default vLLM ping and invocations functions
+- Creates FastAPI app and includes the router
+- Calls SageMaker bootstrap at the end to setup handler overrides
 """
 
 from typing import Any, Dict
 
-import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi.testclient import TestClient
+
+from model_hosting_container_standards.sagemaker.sagemaker_router import (
+    setup_ping_invoke_routes,
+)
+
+# Create router like real vLLM does
+router = APIRouter()
 
 
-class MockRequest:
-    """Mock request object for testing."""
+@router.get("/ping", response_class=Response)
+@router.post("/ping", response_class=Response)
+async def ping(raw_request: Request) -> Response:
+    """Ping check. Endpoint required for SageMaker"""
+    return Response(
+        content='{"status": "healthy", "source": "vllm_default", "message": "Default ping from vLLM server"}',
+        media_type="application/json",
+    )
 
-    def __init__(self, body: str = '{"prompt": "Hello world"}'):
-        self._body = body.encode()
 
-    async def body(self) -> bytes:
-        return self._body
+@router.post("/invocations", response_class=Response)
+async def invocations(raw_request: Request) -> Response:
+    """Model invocations endpoint like real vLLM"""
+    return Response(
+        content='{"predictions": ["Default vLLM response"], "source": "vllm_default"}',
+        media_type="application/json",
+    )
 
 
 class MockVLLMServer:
-    """Mock vLLM server with FastAPI-style endpoints."""
+    """Mock vLLM server using real FastAPI application like real vLLM."""
 
     def __init__(self):
-        self.request_count = 0
-        # Setup endpoint handlers exactly like real vLLM server
-        self._setup_endpoints()
+        self.app = None
+        self.client = None
 
-    def _setup_endpoints(self):
-        """Setup FastAPI endpoint handlers with sagemaker_standards decorators."""
+    def _setup_app(self):
+        """Setup FastAPI application like real vLLM server."""
+        # Create fresh FastAPI app
+        self.app = FastAPI(title="Mock vLLM Server", version="1.0.0")
 
-        # This is exactly how real vLLM server defines its ping endpoint
-        @sagemaker_standards.register_ping_handler
-        async def ping_endpoint():
-            """vLLM ping endpoint - decorator returns the final handler."""
-            return {
-                "status": "healthy",
-                "source": "vllm_default",
-                "message": "Default ping from vLLM server",
-            }
+        # Add other vLLM-like routes
+        self.app.add_api_route("/health", self._health_check, methods=["GET"])
+        self.app.add_api_route("/v1/models", self._list_models, methods=["GET"])
 
-        # This is exactly how real vLLM server defines its invocations endpoint
-        @sagemaker_standards.register_invocation_handler
-        async def invocations_endpoint(request=None):
-            """vLLM invocations endpoint - decorator returns the final handler."""
-            return {"predictions": ["Default vLLM response"], "source": "vllm_default"}
+        # Include the router with default vLLM endpoints (like real vLLM does)
+        self.app.include_router(router)
 
-        # Store the final handlers returned by decorators
-        self._ping_handler = ping_endpoint
-        self._invocations_handler = invocations_endpoint
+        # Bootstrap SageMaker routes at the end (like real vLLM does)
+        # This will replace the default routes if custom handlers are found
+        setup_ping_invoke_routes(self.app)
 
-    async def get(self, path: str) -> Dict[str, Any]:
-        """Simulate FastAPI GET routing."""
-        if path == "/ping":
-            self.request_count += 1
-            # Call the handler returned by the decorator directly
-            return await self._ping_handler()
-        return {"error": f"Endpoint {path} not found", "source": "error"}
+        # Create test client
+        self.client = TestClient(self.app)
 
-    async def post(
-        self, path: str, data: Dict[str, Any] | None = None
-    ) -> Dict[str, Any]:
-        """Simulate FastAPI POST routing."""
-        if path == "/invocations":
-            self.request_count += 1
-            # Call the handler returned by the decorator directly
-            mock_request = MockRequest()
-            return await self._invocations_handler(mock_request)
-        return {"error": f"Endpoint {path} not found", "source": "error"}
+    async def _health_check(self):
+        """Health check endpoint that real vLLM servers have."""
+        return {"status": "healthy", "service": "vllm"}
+
+    async def _list_models(self):
+        """Model listing endpoint that real vLLM servers have."""
+        return {"data": [{"id": "test-model", "object": "model"}]}
+
+    def get_client(self) -> TestClient:
+        """Get the test client for making requests."""
+        if self.app is None or self.client is None:
+            self._setup_app()
+        return self.client
+
+    def reset(self):
+        """Reset the server for fresh testing."""
+        self.app = None
+        self.client = None
 
 
 # Global server instance
@@ -78,10 +90,30 @@ mock_server = MockVLLMServer()
 
 
 async def call_ping_endpoint() -> Dict[str, Any]:
-    """Simulate calling GET /ping endpoint."""
-    return await mock_server.get("/ping")
+    """Call GET /ping endpoint through real FastAPI routing."""
+    client = mock_server.get_client()
+    response = client.get("/ping")
+    return (
+        response.json()
+        if response.status_code == 200
+        else {
+            "error": f"Endpoint /ping returned {response.status_code}",
+            "source": "error",
+            "detail": response.text,
+        }
+    )
 
 
 async def call_invoke_endpoint() -> Dict[str, Any]:
-    """Simulate calling POST /invocations endpoint."""
-    return await mock_server.post("/invocations", {"prompt": "Hello world"})
+    """Call POST /invocations endpoint through real FastAPI routing."""
+    client = mock_server.get_client()
+    response = client.post("/invocations", json={"prompt": "Hello world"})
+    return (
+        response.json()
+        if response.status_code == 200
+        else {
+            "error": f"Endpoint /invocations returned {response.status_code}",
+            "source": "error",
+            "detail": response.text,
+        }
+    )

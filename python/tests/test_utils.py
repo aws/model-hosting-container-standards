@@ -4,7 +4,6 @@ import inspect
 
 from model_hosting_container_standards.common.handler.decorators import (
     create_override_decorator,
-    create_register_decorator,
 )
 
 
@@ -79,165 +78,24 @@ class TestCreateOverrideDecorator:
         assert inspect.iscoroutinefunction(invoke_registered)
 
 
-class TestCreateRegisterDecorator:
-    """Test create_register_decorator function."""
-
-    def test_register_decorator_no_existing_handler(self):
-        """Test register decorator when no existing handler is found."""
-        registry = MockHandlerRegistry()
-
-        def resolver_no_handler():
-            return None  # No existing handler
-
-        register_ping = create_register_decorator("ping", resolver_no_handler, registry)
-
-        @register_ping
-        async def default_ping_handler():
-            return {"status": "default"}
-
-        # Verify default handler was registered
-        registered_handler = registry.get_handler("ping")
-        assert registered_handler is default_ping_handler
-        assert inspect.iscoroutinefunction(registered_handler)
-
-    def test_register_decorator_existing_handler_takes_precedence(self):
-        """Test register decorator when existing async handler takes precedence."""
-        registry = MockHandlerRegistry()
-
-        async def existing_handler():
-            return {"status": "existing"}
-
-        def resolver_with_handler():
-            return existing_handler
-
-        register_ping = create_register_decorator(
-            "ping", resolver_with_handler, registry
-        )
-
-        @register_ping
-        async def default_ping_handler():
-            return {"status": "default"}  # Should NOT be used
-
-        # The decorator should return the existing handler, not register the default
-        returned_handler = register_ping(default_ping_handler)
-        assert returned_handler is existing_handler
-        assert inspect.iscoroutinefunction(returned_handler)
-
-        # Registry should NOT have the default handler
-        registered_handler = registry.get_handler("ping")
-        assert registered_handler is None  # No handler registered
-
-    def test_register_decorator_with_async_default(self):
-        """Test register decorator with async default handler."""
-        registry = MockHandlerRegistry()
-
-        def resolver_no_handler():
-            return None
-
-        register_ping = create_register_decorator("ping", resolver_no_handler, registry)
-
-        @register_ping
-        async def async_default_handler():
-            return {"status": "async_default"}
-
-        # Verify async default handler was registered and preserved
-        registered_handler = registry.get_handler("ping")
-        assert registered_handler is async_default_handler
-        assert inspect.iscoroutinefunction(registered_handler)
-
-    def test_register_decorator_with_async_existing_handler(self):
-        """Test register decorator with async existing handler taking precedence."""
-        registry = MockHandlerRegistry()
-
-        async def existing_async_handler():
-            return {"status": "existing_async"}
-
-        def resolver_with_async_handler():
-            return existing_async_handler
-
-        register_ping = create_register_decorator(
-            "ping", resolver_with_async_handler, registry
-        )
-
-        @register_ping
-        async def default_async_handler():
-            return {"status": "default_async"}
-
-        # The existing async handler should take precedence
-        returned_handler = register_ping(default_async_handler)
-        assert returned_handler is existing_async_handler
-        assert inspect.iscoroutinefunction(returned_handler)
-
-    def test_register_decorator_called_without_function(self):
-        """Test register decorator when called without function parameter."""
-        registry = MockHandlerRegistry()
-
-        def resolver_no_handler():
-            return None
-
-        register_ping = create_register_decorator("ping", resolver_no_handler, registry)
-
-        # Call decorator without function (returns inner decorator)
-        inner_decorator = register_ping()
-        assert callable(inner_decorator)
-
-        # Now use the inner decorator
-        @inner_decorator
-        async def test_handler():
-            return {"status": "test"}
-
-        # Verify handler was registered
-        registered_handler = registry.get_handler("ping")
-        assert registered_handler is test_handler
-        assert inspect.iscoroutinefunction(registered_handler)
-
-    def test_register_decorator_called_with_function_parameter(self):
-        """Test register decorator when called with function parameter."""
-        registry = MockHandlerRegistry()
-
-        def resolver_no_handler():
-            return None
-
-        register_ping = create_register_decorator("ping", resolver_no_handler, registry)
-
-        async def test_handler():
-            return {"status": "test"}
-
-        # Call decorator with function parameter directly
-        result = register_ping(test_handler)
-
-        # Should register and return the function
-        assert result is test_handler
-        registered_handler = registry.get_handler("ping")
-        assert registered_handler is test_handler
-        assert inspect.iscoroutinefunction(registered_handler)
-
-
 class TestDecoratorIntegration:
-    """Test both decorators working together."""
+    """Test override decorator functionality."""
 
-    def test_override_and_register_decorators_together(self):
-        """Test that override and register decorators can work in the same registry."""
+    def test_multiple_override_decorators(self):
+        """Test that multiple override decorators can work in the same registry."""
         registry = MockHandlerRegistry()
 
-        # Create both types of decorators
+        # Create override decorators for different handler types
         ping_override = create_override_decorator("ping", registry)
+        invoke_override = create_override_decorator("invocation", registry)
 
-        def resolver_no_invoke():
-            return None
-
-        register_invoke = create_register_decorator(
-            "invocation", resolver_no_invoke, registry
-        )
-
-        # Use override decorator for ping
+        # Use override decorators
         @ping_override
         async def custom_ping():
             return {"status": "custom"}
 
-        # Use register decorator for invocation
-        @register_invoke
-        async def default_invoke(data):
+        @invoke_override
+        async def custom_invoke(data):
             return {"result": data}
 
         # Verify both handlers are registered correctly
@@ -245,6 +103,6 @@ class TestDecoratorIntegration:
         invoke_handler = registry.get_handler("invocation")
 
         assert ping_handler is custom_ping
-        assert invoke_handler is default_invoke
+        assert invoke_handler is custom_invoke
         assert inspect.iscoroutinefunction(ping_handler)
         assert inspect.iscoroutinefunction(invoke_handler)
