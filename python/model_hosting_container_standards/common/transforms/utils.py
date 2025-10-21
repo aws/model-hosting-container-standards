@@ -2,7 +2,7 @@ from typing import Any, Dict
 
 import jmespath
 
-from ..logging_config import logger
+from ...logging_config import logger
 
 
 def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:

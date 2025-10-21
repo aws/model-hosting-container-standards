@@ -9,7 +9,7 @@ from .unregister import UnregisterLoRAApiTransform
 logger = logging.getLogger(__name__)
 
 
-def get_transform_cls_from_handler_type(handler_type: str) -> type:
+def resolve_lora_transform(handler_type: str) -> type:
     """Get the appropriate transformer class based on the LoRA handler type.
 
     Maps handler type strings to their corresponding transformer classes that handle
@@ -39,5 +39,5 @@ __all__: List[str] = [
     "InjectToBodyApiTransform",
     "RegisterLoRAApiTransform",
     "UnregisterLoRAApiTransform",
-    "get_transform_cls_from_handler_type",
+    "resolve_lora_transform",
 ]

@@ -6,10 +6,12 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from fastapi import Request
 
+from model_hosting_container_standards.common.transforms.base_factory import (
+    _resolve_transforms,
+)
 from model_hosting_container_standards.sagemaker.lora.constants import LoRAHandlerType
 from model_hosting_container_standards.sagemaker.lora.factory import (
-    _resolve_transforms,
-    create_transform_decorator,
+    create_lora_transform_decorator,
 )
 
 
@@ -17,7 +19,7 @@ class TestResolveTransforms:
     """Test _resolve_transforms function."""
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory.get_transform_cls_from_handler_type"
+        "model_hosting_container_standards.sagemaker.lora.factory.resolve_lora_transform"
     )
     def test_resolve_transforms_register_adapter(self, mock_get_transform_cls):
         """Test _resolve_transforms with register_adapter handler type."""
@@ -32,7 +34,9 @@ class TestResolveTransforms:
         mock_get_transform_cls.return_value = mock_transform_cls
 
         # Act
-        result = _resolve_transforms(handler_type, request_shape, response_shape)
+        result = _resolve_transforms(
+            handler_type, mock_get_transform_cls, request_shape, response_shape
+        )
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
@@ -40,7 +44,7 @@ class TestResolveTransforms:
         assert result == mock_transformer_instance
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory.get_transform_cls_from_handler_type"
+        "model_hosting_container_standards.sagemaker.lora.factory.resolve_lora_transform"
     )
     def test_resolve_transforms_unregister_adapter(self, mock_get_transform_cls):
         """Test _resolve_transforms with unregister_adapter handler type."""
@@ -55,7 +59,9 @@ class TestResolveTransforms:
         mock_get_transform_cls.return_value = mock_transform_cls
 
         # Act
-        result = _resolve_transforms(handler_type, request_shape, response_shape)
+        result = _resolve_transforms(
+            handler_type, mock_get_transform_cls, request_shape, response_shape
+        )
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
@@ -63,13 +69,13 @@ class TestResolveTransforms:
         assert result == mock_transformer_instance
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory.get_transform_cls_from_handler_type"
+        "model_hosting_container_standards.sagemaker.lora.factory.resolve_lora_transform"
     )
     def test_resolve_transforms_inject_adapter_id(self, mock_get_transform_cls):
         """Test _resolve_transforms with inject_adapter_id handler type."""
         # Arrange
         handler_type = LoRAHandlerType.INJECT_ADAPTER_ID
-        request_shape = {"model": "headers.X-Amzn-SageMaker-Adapter-Identifier"}
+        request_shape = {"model": 'headers."X-Amzn-SageMaker-Adapter-Identifier"'}
         response_shape = {}
 
         mock_transform_cls = Mock()
@@ -78,7 +84,9 @@ class TestResolveTransforms:
         mock_get_transform_cls.return_value = mock_transform_cls
 
         # Act
-        result = _resolve_transforms(handler_type, request_shape, response_shape)
+        result = _resolve_transforms(
+            handler_type, mock_get_transform_cls, request_shape, response_shape
+        )
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
@@ -86,7 +94,7 @@ class TestResolveTransforms:
         assert result == mock_transformer_instance
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory.get_transform_cls_from_handler_type"
+        "model_hosting_container_standards.sagemaker.lora.factory.resolve_lora_transform"
     )
     def test_resolve_transforms_empty_shapes(self, mock_get_transform_cls):
         """Test _resolve_transforms with empty request and response shapes."""
@@ -101,7 +109,9 @@ class TestResolveTransforms:
         mock_get_transform_cls.return_value = mock_transform_cls
 
         # Act
-        result = _resolve_transforms(handler_type, request_shape, response_shape)
+        result = _resolve_transforms(
+            handler_type, mock_get_transform_cls, request_shape, response_shape
+        )
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
@@ -109,7 +119,7 @@ class TestResolveTransforms:
         assert result == mock_transformer_instance
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory.get_transform_cls_from_handler_type"
+        "model_hosting_container_standards.sagemaker.lora.factory.resolve_lora_transform"
     )
     def test_resolve_transforms_raises_value_error_for_invalid_handler_type(
         self, mock_get_transform_cls
@@ -124,22 +134,28 @@ class TestResolveTransforms:
 
         # Act & Assert
         with pytest.raises(ValueError):
-            _resolve_transforms(handler_type, request_shape, response_shape)
+            _resolve_transforms(
+                handler_type, mock_get_transform_cls, request_shape, response_shape
+            )
 
 
 class TestCreateTransformDecorator:
-    """Test create_transform_decorator function."""
+    """Test create_lora_transform_decorator function."""
 
-    def test_create_transform_decorator_returns_decorator_factory(self):
-        """Test that create_transform_decorator returns a decorator factory function."""
+    def test_create_lora_transform_decorator_returns_decorator_factory(self):
+        """Test that create_lora_transform_decorator returns a decorator factory function."""
         # Act
-        decorator_factory = create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)
+        decorator_factory = create_lora_transform_decorator(
+            LoRAHandlerType.REGISTER_ADAPTER
+        )
 
         # Assert
         assert callable(decorator_factory)
 
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.handler_registry")
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.logger")
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory.handler_registry"
+    )
+    @patch("model_hosting_container_standards.common.transforms.base_factory.logger")
     def test_decorator_with_no_shapes_registers_passthrough_handler(
         self, mock_logger, mock_registry
     ):
@@ -150,7 +166,7 @@ class TestCreateTransformDecorator:
         mock_func.__name__ = "test_handler"
 
         # Act
-        decorator_factory = create_transform_decorator(handler_type)
+        decorator_factory = create_lora_transform_decorator(handler_type)
         decorator = decorator_factory()
         result = decorator(mock_func)
 
@@ -166,12 +182,17 @@ class TestCreateTransformDecorator:
         assert result == mock_func
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory._resolve_transforms"
+        "model_hosting_container_standards.sagemaker.lora.factory.resolve_lora_transform"
     )
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.handler_registry")
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.logger")
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory._resolve_transforms"
+    )
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory.handler_registry"
+    )
+    @patch("model_hosting_container_standards.common.transforms.base_factory.logger")
     def test_decorator_with_shapes_creates_wrapper_function(
-        self, mock_logger, mock_registry, mock_resolve_transforms
+        self, mock_logger, mock_registry, mock_resolve_transforms, mock_lora_transform
     ):
         """Test decorator with shapes creates a wrapped function with transformations."""
         # Arrange
@@ -196,13 +217,13 @@ class TestCreateTransformDecorator:
         mock_resolve_transforms.return_value = mock_transformer
 
         # Act
-        decorator_factory = create_transform_decorator(handler_type)
+        decorator_factory = create_lora_transform_decorator(handler_type)
         decorator = decorator_factory(request_shape, response_shape)
         wrapped_func = decorator(mock_func)
 
         # Assert
         mock_resolve_transforms.assert_called_once_with(
-            handler_type, request_shape, response_shape
+            handler_type, mock_lora_transform, request_shape, response_shape
         )
         mock_logger.info.assert_any_call(
             f"[{handler_type.upper()}] Transform decorator applied to: {mock_func.__name__}"
@@ -211,10 +232,12 @@ class TestCreateTransformDecorator:
         assert callable(wrapped_func)
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory._resolve_transforms"
+        "model_hosting_container_standards.common.transforms.base_factory._resolve_transforms"
     )
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.handler_registry")
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.logger")
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory.handler_registry"
+    )
+    @patch("model_hosting_container_standards.common.transforms.base_factory.logger")
     @pytest.mark.asyncio
     async def test_wrapped_function_with_transformed_request(
         self, mock_logger, mock_registry, mock_resolve_transforms
@@ -237,13 +260,14 @@ class TestCreateTransformDecorator:
         mock_transformer.transform_request = AsyncMock(
             return_value=mock_transform_output
         )
+        mock_transformer.intercept = AsyncMock(return_value={"result": "success"})
         mock_transformer.transform_response = Mock(
             return_value={"transformed": "response"}
         )
         mock_resolve_transforms.return_value = mock_transformer
 
         # Act
-        decorator_factory = create_transform_decorator(handler_type)
+        decorator_factory = create_lora_transform_decorator(handler_type)
         decorator = decorator_factory(request_shape, response_shape)
         wrapped_func = decorator(mock_func)
 
@@ -251,22 +275,22 @@ class TestCreateTransformDecorator:
 
         # Assert
         mock_transformer.transform_request.assert_called_once_with(mock_raw_request)
-        # Verify the function was called with SimpleNamespace for structured access
-        call_args = mock_func.call_args
-        assert len(call_args[0]) == 2  # Two positional arguments
-        assert isinstance(call_args[0][0], SimpleNamespace)
-        assert call_args[0][0].model == "test-adapter"
-        assert call_args[0][1] == mock_raw_request
+        # Verify intercept was called with the function and transform output
+        mock_transformer.intercept.assert_called_once_with(
+            mock_func, mock_transform_output
+        )
         mock_transformer.transform_response.assert_called_once_with(
             {"result": "success"}, mock_transform_output
         )
         assert result == {"transformed": "response"}
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory._resolve_transforms"
+        "model_hosting_container_standards.common.transforms.base_factory._resolve_transforms"
     )
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.handler_registry")
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.logger")
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory.handler_registry"
+    )
+    @patch("model_hosting_container_standards.common.transforms.base_factory.logger")
     @pytest.mark.asyncio
     async def test_wrapped_function_with_none_transformed_request(
         self, mock_logger, mock_registry, mock_resolve_transforms
@@ -289,13 +313,14 @@ class TestCreateTransformDecorator:
         mock_transformer.transform_request = AsyncMock(
             return_value=mock_transform_output
         )
+        mock_transformer.intercept = AsyncMock(return_value={"result": "success"})
         mock_transformer.transform_response = Mock(
             return_value={"transformed": "response"}
         )
         mock_resolve_transforms.return_value = mock_transformer
 
         # Act
-        decorator_factory = create_transform_decorator(handler_type)
+        decorator_factory = create_lora_transform_decorator(handler_type)
         decorator = decorator_factory(request_shape, response_shape)
         wrapped_func = decorator(mock_func)
 
@@ -303,18 +328,22 @@ class TestCreateTransformDecorator:
 
         # Assert
         mock_transformer.transform_request.assert_called_once_with(mock_raw_request)
-        # Verify the function was called with only the raw request
-        mock_func.assert_called_once_with(mock_raw_request)
+        # Verify intercept was called with the function and transform output
+        mock_transformer.intercept.assert_called_once_with(
+            mock_func, mock_transform_output
+        )
         mock_transformer.transform_response.assert_called_once_with(
             {"result": "success"}, mock_transform_output
         )
         assert result == {"transformed": "response"}
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory._resolve_transforms"
+        "model_hosting_container_standards.common.transforms.base_factory._resolve_transforms"
     )
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.handler_registry")
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.logger")
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory.handler_registry"
+    )
+    @patch("model_hosting_container_standards.common.transforms.base_factory.logger")
     @pytest.mark.asyncio
     async def test_wrapped_function_handles_exceptions(
         self, mock_logger, mock_registry, mock_resolve_transforms
@@ -337,10 +366,11 @@ class TestCreateTransformDecorator:
         mock_transformer.transform_request = AsyncMock(
             return_value=mock_transform_output
         )
+        mock_transformer.intercept = AsyncMock(side_effect=ValueError("Handler error"))
         mock_resolve_transforms.return_value = mock_transformer
 
         # Act
-        decorator_factory = create_transform_decorator(handler_type)
+        decorator_factory = create_lora_transform_decorator(handler_type)
         decorator = decorator_factory(request_shape, response_shape)
         wrapped_func = decorator(mock_func)
 
@@ -351,13 +381,13 @@ class TestCreateTransformDecorator:
     def test_multiple_handler_types_create_different_decorators(self):
         """Test that different handler types create different decorator factories."""
         # Act
-        register_decorator_factory = create_transform_decorator(
+        register_decorator_factory = create_lora_transform_decorator(
             LoRAHandlerType.REGISTER_ADAPTER
         )
-        unregister_decorator_factory = create_transform_decorator(
+        unregister_decorator_factory = create_lora_transform_decorator(
             LoRAHandlerType.UNREGISTER_ADAPTER
         )
-        inject_adapter_id_decorator_factory = create_transform_decorator(
+        inject_adapter_id_decorator_factory = create_lora_transform_decorator(
             LoRAHandlerType.INJECT_ADAPTER_ID
         )
 
@@ -371,10 +401,12 @@ class TestCreateTransformDecorator:
         assert unregister_decorator_factory != inject_adapter_id_decorator_factory
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory._resolve_transforms"
+        "model_hosting_container_standards.common.transforms.base_factory._resolve_transforms"
     )
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.handler_registry")
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.logger")
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory.handler_registry"
+    )
+    @patch("model_hosting_container_standards.common.transforms.base_factory.logger")
     def test_decorator_called_multiple_times_with_same_shapes(
         self, mock_logger, mock_registry, mock_resolve_transforms
     ):
@@ -393,7 +425,7 @@ class TestCreateTransformDecorator:
         mock_resolve_transforms.return_value = mock_transformer
 
         # Act
-        decorator_factory = create_transform_decorator(handler_type)
+        decorator_factory = create_lora_transform_decorator(handler_type)
         decorator = decorator_factory(request_shape, response_shape)
 
         wrapped_func1 = decorator(mock_func1)
@@ -413,10 +445,12 @@ class TestIntegration:
     """Integration tests for the factory module."""
 
     @patch(
-        "model_hosting_container_standards.sagemaker.lora.factory.get_transform_cls_from_handler_type"
+        "model_hosting_container_standards.sagemaker.lora.factory.resolve_lora_transform"
     )
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.handler_registry")
-    @patch("model_hosting_container_standards.sagemaker.lora.factory.logger")
+    @patch(
+        "model_hosting_container_standards.common.transforms.base_factory.handler_registry"
+    )
+    @patch("model_hosting_container_standards.common.transforms.base_factory.logger")
     @pytest.mark.asyncio
     async def test_end_to_end_decorator_flow(
         self, mock_logger, mock_registry, mock_get_transform_cls
@@ -441,12 +475,15 @@ class TestIntegration:
         mock_transformer.transform_request = AsyncMock(
             return_value=mock_transform_output
         )
+        mock_transformer.intercept = AsyncMock(
+            return_value={"original": "Processing test-adapter from s3://test"}
+        )
         mock_transformer.transform_response = Mock(
             return_value={"status": "registered"}
         )
 
         # Define a test handler function
-        @create_transform_decorator(handler_type)(request_shape, response_shape)
+        @create_lora_transform_decorator(handler_type)(request_shape, response_shape)
         async def test_handler(request: SimpleNamespace, raw_request: Request):
             return {"original": f"Processing {request.model} from {request.source}"}
 
@@ -460,6 +497,7 @@ class TestIntegration:
 
         # Verify transformation flow
         mock_transformer.transform_request.assert_called_once_with(mock_raw_request)
+        mock_transformer.intercept.assert_called_once()
         mock_transformer.transform_response.assert_called_once()
 
         # Verify handler registration

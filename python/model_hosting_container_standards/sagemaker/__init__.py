@@ -17,7 +17,12 @@ from ..logging_config import logger
 from .handler_resolver import get_invoke_handler, get_ping_handler
 
 # Import LoRA Handler factory and handler types
-from .lora import LoRAHandlerType, SageMakerLoRAApiHeader, create_transform_decorator
+from .lora import (
+    LoRAHandlerType,
+    SageMakerLoRAApiHeader,
+    create_lora_transform_decorator,
+)
+from .lora.transforms import resolve_lora_transform
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router, setup_ping_invoke_routes
 
@@ -35,7 +40,7 @@ invoke = create_override_decorator("invoke", handler_registry)
 def register_load_adapter_handler(request_shape: dict, response_shape: dict = {}):
     # TODO: validate and preprocess request shape
     # TODO: validate and preprocess response shape
-    return create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
+    return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
         request_shape, response_shape
     )
 
@@ -43,7 +48,7 @@ def register_load_adapter_handler(request_shape: dict, response_shape: dict = {}
 def register_unload_adapter_handler(request_shape: dict, response_shape: dict = {}):
     # TODO: validate and preprocess request shape
     # TODO: validate and preprocess response shape
-    return create_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
+    return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
         request_shape, response_shape
     )
 
@@ -58,10 +63,8 @@ def inject_adapter_id(request_shape: dict, response_shape: dict = {}):
         )
     for k in request_shape.keys():
         # Overwrite placeholder value
-        request_shape[k] = (
-            f'headers."{SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER.value}"'
-        )
-    return create_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)(
+        request_shape[k] = f'headers."{SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER}"'
+    return create_lora_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)(
         request_shape, response_shape
     )
 

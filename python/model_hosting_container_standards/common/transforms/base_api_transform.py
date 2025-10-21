@@ -1,13 +1,22 @@
 import abc
-from typing import Any, Dict, Optional
+from types import SimpleNamespace
+from typing import Any, Callable, Dict, Optional
 
 import jmespath
 from fastapi import Request, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from ..logging_config import logger
-from .fastapi.utils import serialize_request
+from ...logging_config import logger
+from ..fastapi.utils import serialize_request
 from .utils import _compile_jmespath_expressions
+
+
+class BaseTransformRequestOutput(BaseModel):
+    """Output model for generic request transformation."""
+
+    request: Optional[Any] = None
+    raw_request: Optional[Any] = None
+    intercept_func: Optional[Callable[..., Any]] = Field(default=None)
 
 
 class BaseApiTransform(abc.ABC):
@@ -56,6 +65,28 @@ class BaseApiTransform(abc.ABC):
                     f"Request/response mapping must be a dictionary of strings (nested allowed), not {type(nested_or_compiled)}. This value will be ignored."
                 )
         return transformed_request
+
+    async def intercept(
+        self,
+        func: Callable[..., Any],
+        transform_request_output: BaseTransformRequestOutput,
+    ):
+        transformed_request = transform_request_output.request
+        transformed_raw_request = transform_request_output.raw_request
+        func_to_call = transform_request_output.intercept_func or func
+
+        if not transformed_request:
+            logger.debug("No transformed request data, passing raw request only")
+            # If transformed_request is None, only pass the modified raw request
+            response = await func_to_call(transformed_raw_request)
+        else:
+            logger.debug("Passing transformed request data and raw request to handler")
+            # Pass both transformed data and original request for context
+            # Convert dict to SimpleNamespace for attribute access
+            response = await func_to_call(
+                SimpleNamespace(**transformed_request), transformed_raw_request
+            )
+        return response
 
     @abc.abstractmethod
     async def transform_request(self, raw_request: Request):

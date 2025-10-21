@@ -2,10 +2,12 @@
 
 This guide provides practical examples of using the LoRA decorator factory to implement LoRA adapter management handlers in your SageMaker model hosting container.
 
+> **Note:** This guide focuses on LoRA-specific usage. For details on how the underlying transform decorator infrastructure works (the decorator factory pattern, request flow, JMESPath basics, etc.), see the [Transform Decorator Usage Guide](../../common/transforms/BASE_FACTORY_USAGE.md).
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-- [How the Factory Works](#how-the-factory-works)
+- [Understanding the LoRA Factory](#understanding-the-lora-factory)
 - [Using the Convenience Functions](#using-the-convenience-functions)
 - [Basic Examples](#basic-examples)
 - [Setting Up Your FastAPI Application](#setting-up-your-fastapi-application)
@@ -48,121 +50,48 @@ bootstrap(app)
 # Your app now automatically has: POST /adapters -> load_lora_adapter
 ```
 
-## How the Factory Works
+## Understanding the LoRA Factory
 
-Understanding the factory mechanism helps you use it effectively and troubleshoot issues when they arise.
+### The `create_lora_transform_decorator` Function
 
-### The Decorator Factory Pattern
-
-The LoRA module uses a **decorator factory pattern** to create handler decorators. Here's what happens step by step:
-
-**1. Creating a Decorator (`create_transform_decorator`)**
-
-When you call `create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)`, you're creating a specialized decorator factory for that specific handler type (register, unregister, or adapter_id). This factory knows which transformer class to use based on the handler type you specify.
+The LoRA module provides `create_lora_transform_decorator(handler_type)` which is a specialized factory for creating LoRA handler decorators. It's built on top of the generic transform decorator infrastructure.
 
 ```python
-# This creates a decorator factory for register operations
-register_load = create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)
-# At this point, register_load is a function that can create decorators
-```
+from model_hosting_container_standards.sagemaker.lora import (
+    create_lora_transform_decorator,
+    LoRAHandlerType
+)
 
-**2. Configuring the Decorator (Calling the Factory)**
+# Creates a decorator factory for register operations
+register_decorator = create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)
 
-When you call the factory with `request_shape` and/or `response_shape`, you're configuring how data should be transformed:
-
-```python
-# This creates an actual decorator configured with your transformation rules
-@register_load(request_shape={...}, response_shape={...})
-```
-
-At this point, the factory:
-- Looks up the appropriate transformer class (e.g., `RegisterLoRAApiTransform`)
-- Creates an instance of that transformer with your shapes
-- Compiles your JMESPath expressions for efficient execution
-- Returns a decorator that will wrap your handler function
-
-**3. Wrapping Your Handler (Applying the Decorator)**
-
-When the decorator is applied to your handler function, it creates a wrapper function that:
-- Intercepts incoming requests before they reach your handler
-- Applies request transformations using the compiled JMESPath expressions
-- Calls your handler with the transformed data
-- Applies response transformations to your handler's return value
-- Registers the wrapped function in the handler registry
-
-```python
-@register_load(request_shape={...})
+# Configure with your transformation shapes
+@register_decorator(request_shape={...}, response_shape={...})
 async def my_handler(data: SimpleNamespace, raw_request: Request):
-    # Your code here
-    pass
-
-# The decorator has now wrapped my_handler with transformation logic
-# and registered it in the system
-```
-
-### The Request Flow
-
-When a request comes in, here's what happens:
-
-1. **Request Arrives**: FastAPI receives the HTTP request with headers, body, path parameters, etc.
-
-2. **Serialization**: The raw request is serialized into a dictionary structure:
-   ```python
-   {
-       "body": {...},           # Request body as JSON
-       "headers": {...},        # HTTP headers
-       "path_params": {...},    # URL path parameters
-       "query_params": {...}    # Query string parameters
-   }
-   ```
-
-3. **JMESPath Transformation**: Each JMESPath expression in your `request_shape` is applied to extract data:
-   ```python
-   # Your request_shape
-   {"adapter_id": "body.name", "source": "body.src"}
-
-   # Becomes
-   {"adapter_id": "my-adapter", "source": "s3://..."}
-   ```
-
-4. **SimpleNamespace Creation**: The transformed dictionary is converted to a `SimpleNamespace` object so you can access fields using dot notation (`data.adapter_id` instead of `data["adapter_id"]`).
-
-5. **Handler Invocation**: Your handler is called with:
-   - `data`: The transformed data as a SimpleNamespace
-   - `raw_request`: The original FastAPI Request object (for accessing anything not in the transformation)
-
-6. **Response Transformation**: If you provided a `response_shape`, your handler's response is transformed before being returned to the client.
-
-### Passthrough vs Transform Mode
-
-The decorator behaves differently based on whether you provide transformation shapes:
-
-**Transform Mode** (shapes provided):
-```python
-@register_load(request_shape={"adapter_id": "body.name"})
-async def handler(data: SimpleNamespace, raw_request: Request):
-    # data.adapter_id is already extracted
     pass
 ```
-- Handler receives transformed data as first argument
-- Handler receives raw request as second argument
-- Request and response transformations are applied
 
-**Passthrough Mode** (no shapes):
-```python
-@register_load()
-async def handler(raw_request: Request):
-    # No transformations, parse request yourself
-    body = await raw_request.json()
-    pass
-```
-- Handler receives only the raw request
-- No transformations are applied
-- Handler is still registered in the system
+**What it does:**
+- Takes a `LoRAHandlerType` (REGISTER_ADAPTER, UNREGISTER_ADAPTER, or INJECT_ADAPTER_ID)
+- Returns a decorator factory that knows which LoRA transformer class to use
+- Handles request/response transformations specific to LoRA operations
+- Registers your handler in the system
+
+> **For details on how the decorator factory pattern works**, see [How the Decorator Factory Works](../../common/transforms/BASE_FACTORY_USAGE.md#how-the-decorator-factory-works) in the Transform Decorator Usage Guide.
+
+### LoRA Handler Types
+
+The LoRA module defines three handler types:
+
+1. **`LoRAHandlerType.REGISTER_ADAPTER`** - For loading/registering LoRA adapters
+2. **`LoRAHandlerType.UNREGISTER_ADAPTER`** - For unloading/unregistering LoRA adapters
+3. **`LoRAHandlerType.INJECT_ADAPTER_ID`** - For injecting adapter IDs from headers into request body
+
+Each handler type uses a different transformer class under the hood, but you typically don't need to worry about this when using the convenience functions.
 
 ## Using the Convenience Functions
 
-The `sagemaker` module provides convenience functions that wrap `create_transform_decorator` for easier use. These are the recommended way to create LoRA handlers in most cases.
+The `sagemaker` module provides convenience functions that wrap `create_lora_transform_decorator` for easier use. These are the recommended way to create LoRA handlers in most cases.
 
 ```python
 from model_hosting_container_standards.sagemaker import (
@@ -255,7 +184,7 @@ This makes it foolproof - you don't need to remember the exact header name or ho
 
 ### When to Use Direct Factory Access
 
-You should only use `create_transform_decorator` directly when:
+You should only use `create_lora_transform_decorator` directly when:
 
 1. **Creating custom handler types**: You've implemented a new transformer class and handler type
 2. **Advanced use cases**: You need fine-grained control over the factory behavior
@@ -441,108 +370,66 @@ Body:
 
 ## Troubleshooting
 
-### Common Issues
+### JMESPath Expression Issues
 
-#### 1. JMESPath Expression Not Working
+For general JMESPath troubleshooting (expressions not working, handling hyphens in headers, testing expressions), see the [Troubleshooting section](../../common/transforms/BASE_FACTORY_USAGE.md#troubleshooting) in the Transform Decorator Usage Guide.
 
-**Problem:** Your JMESPath expression doesn't extract the expected data.
+### LoRA-Specific Issues
 
-**Cause:** Incorrect path or data structure mismatch.
+#### SageMaker Header Not Found
 
-**Solution:** Test your JMESPath expressions:
+**Problem:** The `X-Amzn-SageMaker-Adapter-Identifier` header is not being extracted.
 
-```python
-import jmespath
+**Solutions:**
+1. Verify the header is present in the request
+2. Use `inject_adapter_id()` convenience function instead of manually specifying the header path
+3. Check that the header name is correctly escaped if specifying manually:
+   ```python
+   "headers.\"X-Amzn-SageMaker-Adapter-Identifier\""
+   ```
 
-# Test your expression
-request_data = {
-    "body": {"name": "test-adapter"},
-    "headers": {"X-Custom-Header": "value"}
-}
+#### Adapter Source Validation
 
-result = jmespath.search("body.name", request_data)
-print(result)  # Should print: "test-adapter"
-```
+**Problem:** Invalid adapter source paths cause errors.
 
-#### 2. JMESPath with Hyphens in Field Names
-
-**Problem:** Your JMESPath expression fails when extracting fields with hyphens (e.g., HTTP headers like `X-Amzn-SageMaker-Adapter-Identifier`).
-
-**Cause:** JMESPath interprets hyphens as subtraction operators, not as part of the field name.
-
-**Solution:** Wrap field names containing hyphens in escaped double quotes:
+**Solution:** Add validation in your handler:
 
 ```python
-# Wrong - will fail
-request_shape = {
-    "adapter_id": "headers.X-Amzn-SageMaker-Adapter-Identifier"  # Syntax error!
-}
+@register_load_adapter_handler(request_shape={...})
+async def load_adapter(data: SimpleNamespace, raw_request: Request):
+    # Validate S3 paths
+    if data.adapter_source.startswith('s3://'):
+        if not is_valid_s3_path(data.adapter_source):
+            raise HTTPException(400, "Invalid S3 path format")
 
-# Correct - escape the hyphenated field name
-request_shape = {
-    "adapter_id": "headers.\"X-Amzn-SageMaker-Adapter-Identifier\""  # Works!
-}
-```
+    # Validate local paths
+    elif data.adapter_source.startswith('/'):
+        if not os.path.exists(data.adapter_source):
+            raise HTTPException(400, "Adapter file not found")
 
-**Examples of correctly escaping hyphens:**
-
-```python
-# For headers with hyphens
-request_shape = {
-    "adapter_id": "headers.\"X-Amzn-SageMaker-Adapter-Identifier\"",
-    "adapter_alias": "headers.\"X-Amzn-SageMaker-Adapter-Alias\"",
-    "request_id": "headers.\"X-Request-Id\"",
-    "content_type": "headers.\"Content-Type\""
-}
-
-# For body fields with hyphens (less common but possible)
-request_shape = {
-    "special_field": "body.\"my-special-field\""
-}
-
-# Testing with jmespath
-import jmespath
-
-test_data = {
-    "headers": {
-        "X-Amzn-SageMaker-Adapter-Identifier": "my-adapter"
-    }
-}
-
-# This works
-result = jmespath.search("headers.\"X-Amzn-SageMaker-Adapter-Identifier\"", test_data)
-print(result)  # Prints: "my-adapter"
+    else:
+        raise HTTPException(400, "Adapter source must be S3 or local path")
 ```
 
 ### Debug Tips
 
-1. **Enable Logging:**
-   ```python
-   import logging
-   logging.basicConfig(level=logging.DEBUG)
-   ```
+For general debugging tips (enabling logging, inspecting transformed data, testing transformations separately), see the [Debug Tips section](../../common/transforms/BASE_FACTORY_USAGE.md#debug-tips) in the Transform Decorator Usage Guide.
 
-2. **Inspect Transformed Data:**
-   ```python
-   @register_load(request_shape={...})
-   async def handler(data: SimpleNamespace, raw_request: Request):
-       print(f"Transformed data: {vars(data)}")
-       # Your logic
-   ```
+**LoRA-Specific Debugging:**
 
-3. **Test Transformations Separately:**
-   ```python
-   from model_hosting_container_standards.sagemaker.lora.transforms import RegisterLoRAApiTransform
+```python
+@register_load_adapter_handler(request_shape={...})
+async def load_adapter(data: SimpleNamespace, raw_request: Request):
+    # Log the LoRA adapter details
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Loading LoRA adapter: {data.model} from {data.source}")
 
-   transformer = RegisterLoRAApiTransform(
-       request_shape={"adapter_id": "body.name"},
-       response_shape={}
-   )
+    # Inspect what was extracted
+    print(f"Transformed data: {vars(data)}")
 
-   # Test with mock data
-   result = transformer._transform(test_data, transformer._request_shape)
-   print(result)
-   ```
+    # Your logic here
+```
 
 ## Setting Up Your FastAPI Application
 
@@ -602,16 +489,51 @@ bootstrap(app)
 
 ## Best Practices
 
-1. **Use the Convenience Functions:** Unless you are creating a new handler, always use `register_load_adapter_handler`, `register_unload_adapter_handler`, and `inject_adapter_id` from the `sagemaker` module instead of directly using `create_transform_decorator`. They provide better error messages, validation, and automatic header handling.
+### LoRA-Specific Best Practices
 
-2. **Use Descriptive Field Names:** Choose clear names for your transformed fields that match your backend's API.
+1. **Use the Convenience Functions:** Always use `register_load_adapter_handler`, `register_unload_adapter_handler`, and `inject_adapter_id` from the `sagemaker` module instead of directly using `create_lora_transform_decorator`. They provide better error messages, validation, and automatic header handling.
 
-3. **Validate Early:** Add validation in your handler to catch issues early.
+2. **Validate Adapter Sources:** Always validate that adapter sources are accessible and in the correct format (S3 paths, local paths, etc.).
 
-4. **Handle Errors Gracefully:** Always wrap backend calls in try-except blocks.
+3. **Handle Adapter Loading Errors:** Wrap adapter loading in try-except blocks and return appropriate HTTP status codes:
+   - 400 for invalid requests
+   - 404 for adapter not found
+   - 500 for backend errors
 
-5. **Document Your Transformations:** Add comments explaining your transformation mappings, especially for complex JMESPath expressions.
+4. **Track Loaded Adapters:** Maintain a registry of loaded adapters for debugging and management:
+   ```python
+   loaded_adapters = {}
 
-6. **Remember to Escape Hyphens:** When extracting from headers with hyphens, wrap field names in escaped double quotes (e.g., `headers.\"X-Request-Id\"`).
+   @register_load_adapter_handler(request_shape={...})
+   async def load_adapter(data: SimpleNamespace, request: Request):
+       result = await my_backend.load_adapter(data.model, data.source)
+       loaded_adapters[data.model] = {
+           "source": data.source,
+           "loaded_at": datetime.now()
+       }
+       return Response(status_code=200)
+   ```
 
-For more information, see the main [README.md](./README.md).
+5. **Log Adapter Operations:** Log all adapter operations for troubleshooting:
+   ```python
+   import logging
+   logger = logging.getLogger(__name__)
+
+   @register_load_adapter_handler(request_shape={...})
+   async def load_adapter(data: SimpleNamespace, request: Request):
+       logger.info(f"Loading adapter {data.model} from {data.source}")
+       # ... your logic
+       logger.info(f"Successfully loaded adapter {data.model}")
+   ```
+
+### General Best Practices
+
+For general transform decorator best practices (descriptive field names, documenting transformations, validation, handling missing fields, escaping special characters), see the [Best Practices section](../../common/transforms/BASE_FACTORY_USAGE.md#best-practices) in the Transform Decorator Usage Guide.
+
+## See Also
+
+- **Transform Decorator Usage Guide**: [../../common/transforms/BASE_FACTORY_USAGE.md](../../common/transforms/BASE_FACTORY_USAGE.md) - Understanding the underlying decorator infrastructure
+- **LoRA README**: [README.md](./README.md) - Overview of the LoRA module
+- **JMESPath Documentation**: [https://jmespath.org/](https://jmespath.org/)
+
+For more information on the LoRA module, see the main [README.md](./README.md).

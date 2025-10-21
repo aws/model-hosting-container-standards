@@ -235,7 +235,7 @@ class TestBaseLoRAApiTransform:
         assert result == expected
 
     @patch(
-        "model_hosting_container_standards.common.base_api_transform.serialize_request"
+        "model_hosting_container_standards.common.transforms.base_api_transform.serialize_request"
     )
     def test_transform_request_calls_utils(self, mock_get_data):
         """Test that _transform_request calls utility function."""

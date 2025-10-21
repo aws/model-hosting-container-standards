@@ -9,7 +9,7 @@ class LoRAHandlerType(str, Enum):
 
 
 # SageMaker API Headers for LoRA API
-class SageMakerLoRAApiHeader(str, Enum):
+class SageMakerLoRAApiHeader:
     ADAPTER_IDENTIFIER = "X-Amzn-SageMaker-Adapter-Identifier"
     ADAPTER_ALIAS = "X-Amzn-SageMaker-Adapter-Alias"
 

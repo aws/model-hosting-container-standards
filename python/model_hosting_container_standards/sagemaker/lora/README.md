@@ -23,29 +23,43 @@ The LoRA (Low-Rank Adaptation) module provides a flexible framework for handling
 This module provides:
 
 - **Automatic Request/Response Transformations**: JMESPath-based mapping between different API shapes
-- **Decorator Factory Pattern**: Easy integration of LoRA handlers with minimal boilerplate
+- **LoRA-Specific Decorators**: Easy integration of LoRA handlers with minimal boilerplate
+- **Built on Generic Infrastructure**: Uses the reusable transform decorator framework from `common/transforms`
 - **Extensible Architecture**: Base classes for implementing custom transformations
 - **Type-Safe Request Validation**: Pydantic models for request validation
+
+> **Note:** The LoRA module is built on top of the generic transform decorator infrastructure in `common/transforms`. For details on how the underlying decorator factory pattern works, see the [Transform Decorator Usage Guide](../../common/transforms/BASE_FACTORY_USAGE.md).
 
 ## Architecture
 
 The module consists of several key components:
 
 ```
-lora/
-├── factory.py                    # Decorator factory for creating LoRA handlers
-├── base_lora_api_transform.py   # Abstract base class for transformations
+common/transforms/                # Generic transform infrastructure (shared)
+├── decorator.py                  # Generic decorator factory (create_transform_decorator)
+├── base_api_transform.py         # Abstract base class for all transformations
+└── utils.py                      # JMESPath utilities
+
+lora/                             # LoRA-specific implementation
+├── factory.py                    # LoRA decorator factory (wraps generic decorator)
+├── base_lora_api_transform.py   # LoRA-specific base transform class
 ├── models/                       # Pydantic models for requests and responses
 │   ├── request.py
 │   ├── response.py
 │   └── transform.py
-├── transforms/                   # Concrete transformer implementations
+├── transforms/                   # Concrete LoRA transformer implementations
+│   ├── __init__.py              # resolve_lora_transform function
 │   ├── register.py              # Register adapter transformer
 │   ├── unregister.py            # Unregister adapter transformer
 │   └── inject_to_body.py        # Inject data to body transformer
-├── constants.py                  # Constants and enums
-└── utils.py                      # Utility functions
+├── constants.py                  # LoRA-specific constants and enums
+└── utils.py                      # LoRA-specific utility functions
 ```
+
+**Key architectural layers:**
+- **Generic Infrastructure** (`common/transforms`): Reusable decorator factory and base classes
+- **LoRA Implementation** (`lora`): LoRA-specific transformers and handlers
+- **Public API** (`sagemaker/__init__.py`): Convenience functions for users
 
 ## Request Response Transformations
 
@@ -136,21 +150,28 @@ request_shape = {
 
 ## LoRA Handler Decorator Factory
 
-The decorator factory (`create_transform_decorator`) is the core mechanism for creating LoRA handlers with automatic transformations.
-
-### Available Decorators
-
-The module pre-configures decorators for common LoRA operations:
+The LoRA module provides `create_lora_transform_decorator`, which creates LoRA-specific handler decorators. This function is a specialized wrapper around the generic `create_transform_decorator` from `common/transforms`.
 
 ```python
-from model_hosting_container_standards.sagemaker.lora.factory import create_transform_decorator
+from model_hosting_container_standards.sagemaker.lora.factory import create_lora_transform_decorator
 from model_hosting_container_standards.sagemaker.lora.constants import LoRAHandlerType
 
 # Create decorators for each handler type
-register_load = create_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)
-register_unload = create_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)
-inject_adapter_id = create_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)
+register_load = create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)
+register_unload = create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)
+inject_adapter_id = create_lora_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)
 ```
+
+**How it works:**
+```python
+# In lora/factory.py
+def create_lora_transform_decorator(handler_type: str):
+    return create_transform_decorator(handler_type, resolve_lora_transform)
+```
+
+The `resolve_lora_transform` function maps LoRA handler types to their specific transformer classes.
+
+> **For details on the underlying decorator factory pattern**, see [How the Decorator Factory Works](../../common/transforms/BASE_FACTORY_USAGE.md#how-the-decorator-factory-works) in the Transform Decorator Usage Guide.
 
 ### Handler Types
 
@@ -278,7 +299,7 @@ lora/transforms/* (Transformer Implementations)
 
 ### Convenience Function Implementation
 
-The convenience functions are thin wrappers around `create_transform_decorator` that provide:
+The convenience functions are thin wrappers around `create_lora_transform_decorator` that provide:
 
 1. **Cleaner imports**: Users import from `sagemaker` instead of `sagemaker.lora.factory`
 2. **Validation and preprocessing**: Input validation before passing to the factory
@@ -295,9 +316,9 @@ The convenience functions are thin wrappers around `create_transform_decorator` 
 4. **Future Extensions**: Easy to add preprocessing, logging, or metrics without changing the factory
 5. **User Experience**: Simpler, more intuitive API for common use cases
 
-**Why not just export `create_transform_decorator`?**
+**Why not just export `create_lora_transform_decorator`?**
 
-While `create_transform_decorator` is available for advanced use cases, the convenience functions:
+While `create_lora_transform_decorator` is available for advanced use cases, the convenience functions:
 - Hide internal enums (`LoRAHandlerType`) from typical users
 - Provide type-specific validation that isn't possible with a generic factory
 - Allow handler-specific behavior without complicating the factory
@@ -322,7 +343,7 @@ class LoRAHandlerType(str, Enum):
 **Step 3: Map it in `transforms/__init__.py`:**
 
 ```python
-def get_transform_cls_from_handler_type(handler_type: str) -> type:
+def resolve_lora_transform(handler_type: str) -> type:
     match handler_type:
         case LoRAHandlerType.MY_NEW_OPERATION:
             return MyNewOperationTransform
@@ -346,7 +367,7 @@ def register_my_new_operation_handler(request_shape: dict, response_shape: dict 
     # Add any preprocessing specific to this operation
     processed_request_shape = preprocess_if_needed(request_shape)
 
-    return create_transform_decorator(LoRAHandlerType.MY_NEW_OPERATION)(
+    return create_lora_transform_decorator(LoRAHandlerType.MY_NEW_OPERATION)(
         processed_request_shape,
         response_shape
     )
@@ -589,12 +610,17 @@ class LoRAHandlerType(str, Enum):
     MY_CUSTOM_HANDLER = "my_custom_handler"  # New handler type
 ```
 
-### Step 3: Register Transformer in Factory
+### Step 3: Register Transformer in Resolver
 
-Update `transforms/__init__.py` to map your handler type to the transformer:
+Update the `resolve_lora_transform` function in `transforms/__init__.py` to map your handler type to the transformer:
 
 ```python
-def get_transform_cls_from_handler_type(handler_type: str) -> type:
+def resolve_lora_transform(handler_type: str) -> type:
+    """Resolve LoRA handler type to transformer class.
+
+    This function is passed to create_transform_decorator to map
+    handler types to their corresponding transformer implementations.
+    """
     match handler_type:
         case LoRAHandlerType.REGISTER_ADAPTER:
             return RegisterLoRAApiTransform
@@ -611,9 +637,9 @@ def get_transform_cls_from_handler_type(handler_type: str) -> type:
 ### Step 4: Create and Use Decorator
 
 ```python
-from model_hosting_container_standards.sagemaker.lora.factory import create_transform_decorator
+from model_hosting_container_standards.sagemaker.lora.factory import create_lora_transform_decorator
 
-register_my_handler = create_transform_decorator(LoRAHandlerType.MY_CUSTOM_HANDLER)
+register_my_handler = create_lora_transform_decorator(LoRAHandlerType.MY_CUSTOM_HANDLER)
 
 @register_my_handler(
     request_shape={"model": "body.name"},
@@ -632,7 +658,7 @@ For better user experience, add a convenience function in `sagemaker/__init__.py
 def register_my_custom_handler(request_shape: dict, response_shape: dict = {}):
     """Convenience function for my custom operation."""
     # Add validation as needed
-    return create_transform_decorator(LoRAHandlerType.MY_CUSTOM_HANDLER)(
+    return create_lora_transform_decorator(LoRAHandlerType.MY_CUSTOM_HANDLER)(
         request_shape,
         response_shape
     )
@@ -707,7 +733,7 @@ def _transform_error_response(self, response: Response, **kwargs):
 ### SageMaker LoRA API Headers
 
 ```python
-class SageMakerLoRAApiHeader(str, Enum):
+class SageMakerLoRAApiHeader:
     ADAPTER_IDENTIFIER = "X-Amzn-SageMaker-Adapter-Identifier"
     ADAPTER_ALIAS = "X-Amzn-SageMaker-Adapter-Alias"
 ```
@@ -716,9 +742,25 @@ These headers are used to pass adapter information in inference requests:
 - `X-Amzn-SageMaker-Adapter-Identifier`: The name/ID of the adapter to use
 - `X-Amzn-SageMaker-Adapter-Alias`: A human-readable alias for the adapter
 
-## Examples
+## Examples and Documentation
 
-See [FACTORY_USAGE.md](./FACTORY_USAGE.md) for detailed examples of using the decorator factory in real-world scenarios.
+### LoRA-Specific Documentation
+
+- **[FACTORY_USAGE.md](./FACTORY_USAGE.md)** - Detailed examples of using the LoRA decorators in real-world scenarios, including:
+  - Quick start guide
+  - Using convenience functions (`register_load_adapter_handler`, etc.)
+  - Complete handler examples
+  - LoRA-specific troubleshooting
+  - Best practices for adapter management
+
+### Generic Transform Decorator Documentation
+
+- **[Transform Decorator Usage Guide](../../common/transforms/BASE_FACTORY_USAGE.md)** - Understanding the underlying infrastructure:
+  - How the decorator factory pattern works
+  - Request transformation flow
+  - JMESPath expression guide
+  - General troubleshooting and debugging
+  - Best practices for transformations
 
 ## Testing
 

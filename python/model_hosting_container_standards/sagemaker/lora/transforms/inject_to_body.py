@@ -5,7 +5,7 @@ from typing import Any, Dict
 from fastapi import HTTPException, Request, Response
 
 from ....common.fastapi.utils import serialize_request
-from ....common.utils import set_value
+from ....common.transforms.utils import set_value
 from ....logging_config import logger
 from ..base_lora_api_transform import BaseLoRAApiTransform
 from ..models import BaseLoRATransformRequestOutput
