@@ -5,16 +5,12 @@ from typing import List
 from fastapi import FastAPI
 
 # Import routing utilities (generic)
-from ..common.fastapi.routing import RouteConfig
-from ..common.handler.decorators import (
-    create_override_decorator,
-    create_register_decorator,
-)
-from ..common.handler.registry import handler_registry
+from ..common.fastapi.routing import RouteConfig, safe_include_router
+from ..common.handler.decorators import override_handler, register_handler
 from ..logging_config import logger
 
 # Import the real resolver functions
-from .handler_resolver import get_invoke_handler, get_ping_handler
+from .handler_resolver import register_sagemaker_overrides
 
 # Import LoRA Handler factory and handler types
 from .lora import (
@@ -22,18 +18,16 @@ from .lora import (
     SageMakerLoRAApiHeader,
     create_lora_transform_decorator,
 )
-from .lora.transforms import resolve_lora_transform
 from .sagemaker_loader import SageMakerFunctionLoader
-from .sagemaker_router import create_sagemaker_router, setup_ping_invoke_routes
+from .sagemaker_router import create_sagemaker_router
 
 # SageMaker decorator instances - created using utility functions
 
 # Override decorators - immediately register customer handlers
-# Register decorators - created using create_register_decorator
-register_ping_handler = create_register_decorator("ping", handler_registry)
-register_invocation_handler = create_register_decorator("invoke", handler_registry)
-ping = create_override_decorator("ping", handler_registry)
-invoke = create_override_decorator("invoke", handler_registry)
+register_ping_handler = register_handler("ping")
+register_invocation_handler = register_handler("invoke")
+ping = override_handler("ping")
+invoke = override_handler("invoke")
 
 
 # Transform decorators - for LoRA handling
@@ -75,8 +69,7 @@ def bootstrap(app: FastAPI) -> FastAPI:
     This function sets up all necessary SageMaker integrations on the provided
     FastAPI application, including:
     - Container standards middlewares
-    - /ping and /invocations routes (if custom handlers are registered)
-    - LoRA router paths and other SageMaker features
+    - All SageMaker routes (/ping, /invocations, LoRA routes, etc.)
 
     Args:
         app: The FastAPI application instance to configure
@@ -99,12 +92,10 @@ def bootstrap(app: FastAPI) -> FastAPI:
     sagemaker_function_loader = SageMakerFunctionLoader.get_function_loader()
     core_load_middlewares(app, sagemaker_function_loader)
 
-    # Setup ping and invoke routes directly
-    setup_ping_invoke_routes(app)
-
-    # Mount the SageMaker router with registered handlers (for LoRA, etc.)
+    # Create and include the unified SageMaker router
+    register_sagemaker_overrides()
     sagemaker_router = create_sagemaker_router()
-    app.include_router(sagemaker_router)
+    safe_include_router(app, sagemaker_router)
 
     logger.info("SageMaker bootstrap completed successfully")
     return app
@@ -113,15 +104,12 @@ def bootstrap(app: FastAPI) -> FastAPI:
 __all__: List[str] = [
     "ping",
     "invoke",
-    "get_ping_handler",
-    "get_invoke_handler",
     "register_load_adapter_handler",
     "register_unload_adapter_handler",
+    "register_handler",
     "register_ping_handler",
     "register_invocation_handler",
     "inject_adapter_id",
-    "load_middlewares",
     "bootstrap",
-    "setup_ping_invoke_routes",
     "RouteConfig",
 ]

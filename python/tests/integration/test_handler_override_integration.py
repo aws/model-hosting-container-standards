@@ -48,15 +48,6 @@ class TestHandlerOverrideIntegration:
         """Clear caches and reload mock server to pick up new handlers."""
         self._clear_caches()
 
-        # Trigger natural loading of customer scripts by creating the function loader
-        # This simulates real server startup where customer scripts are loaded before
-        # the server's register decorators run
-        from model_hosting_container_standards.sagemaker.sagemaker_loader import (
-            SageMakerFunctionLoader,
-        )
-
-        SageMakerFunctionLoader.get_function_loader()
-
         from ..resources import mock_vllm_server
 
         # Reset the mock server to create a fresh FastAPI app

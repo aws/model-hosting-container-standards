@@ -3,6 +3,7 @@
 from typing import Any, Callable, Optional
 
 from ...logging_config import logger
+from .registry import handler_registry
 
 
 def create_override_decorator(
@@ -28,7 +29,7 @@ def create_override_decorator(
             handler_type,
             func.__name__,
         )
-        handler_registry.set_handler(handler_type, func)
+        handler_registry.set_decorator_handler(handler_type, func)
         logger.info(
             "[%s] Customer override registered: %s", handler_type.upper(), func.__name__
         )
@@ -70,7 +71,7 @@ def create_register_decorator(
         )
 
         # Register the handler in the registry with framework prefix to maintain priority order
-        handler_registry.set_handler("framework_" + handler_type, func)
+        handler_registry.set_framework_default(handler_type, func)
 
         logger.info(
             "[%s] Framework handler registered: %s", handler_type.upper(), func.__name__
@@ -79,3 +80,27 @@ def create_register_decorator(
         return func
 
     return register_decorator
+
+
+def register_handler(name: str) -> Callable[..., Any]:
+    """Create a register decorator for a specific handler type.
+
+    Args:
+        name: The handler type name (e.g., 'ping', 'invoke')
+
+    Returns:
+        A register decorator for the specified handler type
+    """
+    return create_register_decorator(name, handler_registry)
+
+
+def override_handler(name: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Create an override decorator for a specific handler type.
+
+    Args:
+        name: The handler type name (e.g., 'ping', 'invoke')
+
+    Returns:
+        An override decorator for the specified handler type
+    """
+    return create_override_decorator(name, handler_registry)

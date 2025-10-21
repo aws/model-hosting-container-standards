@@ -12,6 +12,7 @@ class MockHandlerRegistry:
 
     def __init__(self):
         self.handlers = {}
+        self.decorator_handlers = {}
 
     def set_handler(self, handler_type: str, handler_func):
         """Set a handler in the registry."""
@@ -20,6 +21,14 @@ class MockHandlerRegistry:
     def get_handler(self, handler_type: str):
         """Get a handler from the registry."""
         return self.handlers.get(handler_type)
+
+    def set_decorator_handler(self, handler_type: str, handler_func):
+        """Set a decorator handler in the registry."""
+        self.decorator_handlers[handler_type] = handler_func
+
+    def get_decorator_handler(self, handler_type: str):
+        """Get a decorator handler from the registry."""
+        return self.decorator_handlers.get(handler_type)
 
 
 class TestCreateOverrideDecorator:
@@ -35,7 +44,7 @@ class TestCreateOverrideDecorator:
             return {"status": "healthy", "async": True}
 
         # Verify registration and async nature preservation
-        registered_handler = registry.get_handler("ping")
+        registered_handler = registry.get_decorator_handler("ping")
         assert registered_handler is async_ping_handler
         assert inspect.iscoroutinefunction(registered_handler)
 
@@ -49,7 +58,7 @@ class TestCreateOverrideDecorator:
             return {"result": data * 2, "context": context}
 
         # Verify registration and function signature preservation
-        registered_handler = registry.get_handler("invocation")
+        registered_handler = registry.get_decorator_handler("invocation")
         assert registered_handler is invoke_handler
         assert registered_handler.__name__ == "invoke_handler"
         assert inspect.iscoroutinefunction(registered_handler)
@@ -69,8 +78,8 @@ class TestCreateOverrideDecorator:
             return {"prediction": data}
 
         # Verify both handlers are registered correctly
-        ping_registered = registry.get_handler("ping")
-        invoke_registered = registry.get_handler("invocation")
+        ping_registered = registry.get_decorator_handler("ping")
+        invoke_registered = registry.get_decorator_handler("invocation")
 
         assert ping_registered is ping_handler
         assert invoke_registered is invoke_handler
@@ -99,8 +108,8 @@ class TestDecoratorIntegration:
             return {"result": data}
 
         # Verify both handlers are registered correctly
-        ping_handler = registry.get_handler("ping")
-        invoke_handler = registry.get_handler("invocation")
+        ping_handler = registry.get_decorator_handler("ping")
+        invoke_handler = registry.get_decorator_handler("invocation")
 
         assert ping_handler is custom_ping
         assert invoke_handler is custom_invoke

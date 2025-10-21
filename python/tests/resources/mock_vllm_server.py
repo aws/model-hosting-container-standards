@@ -13,9 +13,11 @@ from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.testclient import TestClient
 
 import model_hosting_container_standards.sagemaker as sagemaker_standards
-from model_hosting_container_standards.sagemaker.sagemaker_router import (
-    setup_ping_invoke_routes,
-)
+
+# Import removed - setup_ping_invoke_routes no longer exists
+# from model_hosting_container_standards.sagemaker.sagemaker_router import (
+#     setup_ping_invoke_routes,
+# )
 
 # Create router like real vLLM does
 router = APIRouter()
@@ -89,7 +91,7 @@ class MockVLLMServer:
 
         # Bootstrap SageMaker routes at the end (like real vLLM does)
         # This will replace the default routes if custom handlers are found
-        setup_ping_invoke_routes(self.app)
+        sagemaker_standards.bootstrap(self.app)
 
         # Create test client
         self.client = TestClient(self.app)

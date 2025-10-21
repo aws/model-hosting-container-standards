@@ -2,7 +2,8 @@ import logging
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, FastAPI
+from fastapi.routing import APIRoute
 
 from ..handler import handler_registry
 
@@ -153,3 +154,138 @@ def create_router(
     logger.info(f"Router created with {len(router.routes)} routes")
 
     return router
+
+
+def remove_conflicting_routes(
+    app: FastAPI, router: APIRouter, prefix: str = ""
+) -> None:
+    """Remove conflicting routes from app before including router.
+
+    Args:
+        app: The FastAPI application
+        router: The router to be included
+        prefix: URL prefix that will be applied to router routes
+    """
+    from fastapi.routing import APIRoute
+
+    # Get routes that will be added by the router
+    incoming_routes = set()
+    for route in router.routes:
+        if isinstance(route, APIRoute):
+            router_path = f"{prefix}{route.path}" if prefix else route.path
+            router_methods = tuple(sorted(route.methods))
+            incoming_routes.add((router_path, router_methods))
+
+    if not incoming_routes:
+        return
+
+    # Remove conflicting routes from app
+    app_routes = app.router.routes
+    removed_count = 0
+    i = 0
+    while i < len(app_routes):
+        route = app_routes[i]
+        if isinstance(route, APIRoute):
+            route_path = route.path
+            route_methods = tuple(sorted(route.methods))
+
+            if (route_path, route_methods) in incoming_routes:
+                logger.info(f"Removing conflicting route: {route_methods} {route_path}")
+                del app_routes[i]
+                removed_count += 1
+                continue
+        i += 1
+
+    if removed_count > 0:
+        # Refresh OpenAPI schema
+        app.openapi_schema = None
+        logger.info(f"Removed {removed_count} conflicting routes")
+
+
+def check_route_conflicts(
+    app: FastAPI, router: APIRouter, prefix: str = ""
+) -> List[str]:
+    """Check for route conflicts between existing app routes and router routes.
+
+    Args:
+        app: The FastAPI application to check
+        router: The router to be included
+        prefix: URL prefix that will be applied to router routes
+
+    Returns:
+        List of conflict descriptions (empty if no conflicts)
+    """
+    # Get existing routes from the app
+    existing_paths = set()
+    for route in app.router.routes:
+        if isinstance(route, APIRoute):
+            existing_paths.add((route.path, tuple(sorted(route.methods))))
+
+    # Get routes from the router to be included
+    conflicts = []
+    for route in router.routes:
+        if isinstance(route, APIRoute):
+            router_path = f"{prefix}{route.path}" if prefix else route.path
+            router_methods = tuple(sorted(route.methods))
+
+            if (router_path, router_methods) in existing_paths:
+                methods_str = ", ".join(router_methods)
+                conflicts.append(f"{methods_str} {router_path}")
+
+    return conflicts
+
+
+def safe_include_router(
+    app: FastAPI,
+    router: APIRouter,
+    prefix: str = "",
+    **include_kwargs,
+) -> None:
+    """Safely include a router in a FastAPI app with automatic conflict resolution.
+
+    This function automatically replaces any conflicting routes and warns about
+    conflicts in the logs. This ensures predictable behavior where the most
+    recently included router takes precedence.
+
+    Args:
+        app: The FastAPI application
+        router: The router to include
+        prefix: Optional URL prefix for router routes
+        **include_kwargs: Additional arguments passed to app.include_router()
+
+    Example:
+        # Simple inclusion with automatic conflict resolution
+        safe_include_router(app, my_router)
+
+        # With prefix to organize routes
+        safe_include_router(app, my_router, prefix="/api/v1")
+    """
+    logger.info(f"Including router with prefix '{prefix}'")
+
+    # Check for conflicts and warn user
+    conflicts = check_route_conflicts(app, router, prefix)
+    if conflicts:
+        conflict_list = "\n  - ".join(conflicts)
+        logger.warning(
+            f"Route conflicts detected. The following existing routes will be replaced:\n  - {conflict_list}"
+        )
+        # Remove conflicting routes
+        remove_conflicting_routes(app, router, prefix)
+    else:
+        logger.debug("No route conflicts detected")
+
+    # Include the router
+    app.include_router(router, prefix=prefix, **include_kwargs)
+
+    route_count = len([r for r in router.routes if isinstance(r, APIRoute)])
+    logger.info(f"Successfully included router with {route_count} routes")
+
+
+__all__ = [
+    "RouteConfig",
+    "mount_handlers",
+    "create_router",
+    "remove_conflicting_routes",
+    "check_route_conflicts",
+    "safe_include_router",
+]

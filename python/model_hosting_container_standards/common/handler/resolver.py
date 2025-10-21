@@ -144,7 +144,7 @@ class GenericHandlerResolver:
         logger.debug(f"No env {handler_type} handler found")
         return None
 
-    def _try_registry_handler(self, handler_type: str) -> Optional[Callable]:
+    def _try_decorator_handler(self, handler_type: str) -> Optional[Callable]:
         """Try to resolve handler from registry decorators.
 
         Args:
@@ -153,15 +153,15 @@ class GenericHandlerResolver:
         Returns:
             Handler function if found, None otherwise
         """
-        decorated_handler = self.registry.get_handler(handler_type)
+        decorated_handler = self.registry.get_decorator_handler(handler_type)
         if decorated_handler:
             handler_name = getattr(
                 decorated_handler, "__name__", str(decorated_handler)
             )
-            logger.debug(f"Found registry {handler_type} handler: {handler_name}")
+            logger.debug(f"Found decorator {handler_type} handler: {handler_name}")
             return decorated_handler
 
-        logger.debug(f"No registry {handler_type} handler found")
+        logger.debug(f"No decorator {handler_type} handler found")
         return None
 
     def _try_customer_script_handler(self, handler_type: str) -> Optional[Callable]:
@@ -213,7 +213,7 @@ class GenericHandlerResolver:
         # Try each resolution method in priority order
         for resolver_method in [
             self._try_env_handler,
-            self._try_registry_handler,
+            self._try_decorator_handler,
             self._try_customer_script_handler,
         ]:
             handler = resolver_method(handler_type)
@@ -221,7 +221,7 @@ class GenericHandlerResolver:
                 return handler
 
         # No handler found anywhere, use the framework default
-        handler = self.registry.get_handler("framework_" + handler_type)
+        handler = self.registry.get_framework_default(handler_type)
         if handler:
             logger.info(f"Use {handler_type} handler registered in framework")
             return handler
