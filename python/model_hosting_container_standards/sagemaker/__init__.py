@@ -6,7 +6,10 @@ from fastapi import FastAPI
 
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig
-from ..common.handler.decorators import create_override_decorator
+from ..common.handler.decorators import (
+    create_override_decorator,
+    create_register_decorator,
+)
 from ..common.handler.registry import handler_registry
 from ..logging_config import logger
 
@@ -21,6 +24,9 @@ from .sagemaker_router import create_sagemaker_router, setup_ping_invoke_routes
 # SageMaker decorator instances - created using utility functions
 
 # Override decorators - immediately register customer handlers
+# Register decorators - created using create_register_decorator
+register_ping_handler = create_register_decorator("ping", handler_registry)
+register_invocation_handler = create_register_decorator("invoke", handler_registry)
 ping = create_override_decorator("ping", handler_registry)
 invoke = create_override_decorator("invoke", handler_registry)
 
@@ -108,6 +114,8 @@ __all__: List[str] = [
     "get_invoke_handler",
     "register_load_adapter_handler",
     "register_unload_adapter_handler",
+    "register_ping_handler",
+    "register_invocation_handler",
     "inject_adapter_id",
     "load_middlewares",
     "bootstrap",

@@ -1,7 +1,7 @@
 """Mock vLLM server for integration testing using real FastAPI.
 
 This simulates exactly how a real vLLM server works:
-- Uses @router.get("/ping") and @router.post("/invocations") decorators like real vLLM
+- Uses @register_ping_handler and @register_invocation_handler decorators (new desired workflow)
 - Defines default vLLM ping and invocations functions
 - Creates FastAPI app and includes the router
 - Calls SageMaker bootstrap at the end to setup handler overrides
@@ -12,6 +12,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.testclient import TestClient
 
+import model_hosting_container_standards.sagemaker as sagemaker_standards
 from model_hosting_container_standards.sagemaker.sagemaker_router import (
     setup_ping_invoke_routes,
 )
@@ -20,8 +21,8 @@ from model_hosting_container_standards.sagemaker.sagemaker_router import (
 router = APIRouter()
 
 
-@router.get("/ping", response_class=Response)
-@router.post("/ping", response_class=Response)
+# Use the new desired workflow with register decorators
+@sagemaker_standards.register_ping_handler
 async def ping(raw_request: Request) -> Response:
     """Ping check. Endpoint required for SageMaker"""
     return Response(
@@ -30,11 +31,33 @@ async def ping(raw_request: Request) -> Response:
     )
 
 
-@router.post("/invocations", response_class=Response)
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
 async def invocations(raw_request: Request) -> Response:
-    """Model invocations endpoint like real vLLM"""
+    """Model invocations endpoint like real vLLM with LoRA adapter injection"""
+    import json
+
+    # Get the request body to check for injected adapter ID
+    body_bytes = await raw_request.body()
+    try:
+        body = json.loads(body_bytes.decode()) if body_bytes else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        body = {}
+
+    # Check if adapter ID was injected by the decorator
+    adapter_id = body.get("model")
+    if adapter_id is None:
+        adapter_id = "base-model"
+
+    response_data = {
+        "predictions": ["Default vLLM response"],
+        "source": "vllm_default",
+        "adapter_id": adapter_id,
+        "message": f"Response using adapter: {adapter_id}",
+    }
+
     return Response(
-        content='{"predictions": ["Default vLLM response"], "source": "vllm_default"}',
+        content=json.dumps(response_data),
         media_type="application/json",
     )
 
@@ -54,6 +77,13 @@ class MockVLLMServer:
         # Add other vLLM-like routes
         self.app.add_api_route("/health", self._health_check, methods=["GET"])
         self.app.add_api_route("/v1/models", self._list_models, methods=["GET"])
+
+        # Re-register framework handlers (in case registry was cleared)
+        import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+        # Re-register the handlers to ensure they're in the registry
+        sagemaker_standards.register_ping_handler(ping)
+        sagemaker_standards.register_invocation_handler(invocations)
 
         # Include the router with default vLLM endpoints (like real vLLM does)
         self.app.include_router(router)

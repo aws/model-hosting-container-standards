@@ -200,7 +200,7 @@ class GenericHandlerResolver:
         1. Environment variable specified function
         2. Registry @decorated function
         3. Customer script function
-        4. Default handler (if any)
+        4. Default handler registered by the framework
 
         Args:
             handler_type: Type of handler to resolve (e.g., "ping", "invoke")
@@ -220,6 +220,11 @@ class GenericHandlerResolver:
             if handler:
                 return handler
 
-        # No handler found anywhere
+        # No handler found anywhere, use the framework default
+        handler = self.registry.get_handler("framework_" + handler_type)
+        if handler:
+            logger.info(f"Use {handler_type} handler registered in framework")
+            return handler
+
         logger.debug(f"No {handler_type} handler found anywhere")
         return None

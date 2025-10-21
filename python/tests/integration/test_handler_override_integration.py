@@ -119,50 +119,6 @@ async def invoke(request: Request):
         finally:
             os.unlink(script_path)
 
-    def test_customer_script_auto_loaded_by_server(self):
-        """Test customer scenario: server automatically loads customer script file."""
-        import asyncio
-
-        # Customer writes a script file with ping() and invoke() functions
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
-from fastapi import Request
-
-async def ping():
-    return {"status": "healthy", "source": "auto_loaded_script"}
-
-async def invoke(request: Request):
-    return {"predictions": ["Auto loaded response"], "source": "auto_loaded_script"}
-"""
-            )
-            script_path = f.name
-
-        try:
-            script_dir = os.path.dirname(script_path)
-            script_name = os.path.basename(script_path)
-
-            # Customer sets SageMaker environment variables to point to their script
-            with patch.dict(
-                os.environ,
-                {
-                    SageMakerEnvVars.SAGEMAKER_MODEL_PATH: script_dir,
-                    SageMakerEnvVars.CUSTOM_SCRIPT_FILENAME: script_name,
-                },
-            ):
-                # Clear cache and reload mock server to pick up new handlers
-                mock_vllm_server = self._reload_mock_server()
-
-                # Test that server responses use customer's handlers from the loaded script
-                ping_response = asyncio.run(mock_vllm_server.call_ping_endpoint())
-                invoke_response = asyncio.run(mock_vllm_server.call_invoke_endpoint())
-
-                # Verify the script was automatically loaded and handlers are working
-                assert ping_response["source"] == "auto_loaded_script"
-                assert invoke_response["source"] == "auto_loaded_script"
-        finally:
-            os.unlink(script_path)
-
     def test_environment_variable_overrides_decorators(self):
         """Test customer scenario: environment variables override decorators."""
         import asyncio
@@ -410,6 +366,171 @@ async def ping():
                 )  # Decorator works for invoke
         finally:
             os.unlink(script_path)
+
+    def test_register_handlers_priority_vs_script_functions(self):
+        """Test priority: @ping/@invoke decorators vs script functions vs framework register decorators."""
+        import asyncio
+
+        # Customer writes a script with @ping decorator and regular functions
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(
+                """
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import Request, Response
+import json
+
+# Customer uses @ping decorator (higher priority than script functions)
+@sagemaker_standards.ping
+async def decorated_ping(raw_request: Request) -> Response:
+    response_data = {
+        "status": "healthy",
+        "source": "ping_decorator_in_script",
+        "priority": "decorator"
+    }
+    return Response(
+        content=json.dumps(response_data),
+        media_type="application/json",
+        status_code=200
+    )
+
+# Customer also has a regular function (lower priority than @ping decorator)
+async def ping():
+    return {
+        "status": "healthy",
+        "source": "script_function",
+        "priority": "function"
+    }
+
+# Customer has a regular invoke function (higher priority than framework register decorator)
+async def invoke(request: Request):
+    return {
+        "predictions": ["Script function response"],
+        "source": "script_invoke_function",
+        "priority": "function"
+    }
+"""
+            )
+            script_path = f.name
+
+        try:
+            script_dir = os.path.dirname(script_path)
+            script_name = os.path.basename(script_path)
+
+            # Customer sets SageMaker environment variables to point to their script
+            with patch.dict(
+                os.environ,
+                {
+                    SageMakerEnvVars.SAGEMAKER_MODEL_PATH: script_dir,
+                    SageMakerEnvVars.CUSTOM_SCRIPT_FILENAME: script_name,
+                },
+            ):
+                # Clear cache and reload mock server to pick up new handlers
+                mock_vllm_server = self._reload_mock_server()
+
+                # Test priority order: @ping decorator has higher priority than script functions
+                ping_response = asyncio.run(mock_vllm_server.call_ping_endpoint())
+                invoke_response = asyncio.run(mock_vllm_server.call_invoke_endpoint())
+
+                # @ping decorator has higher priority than script function
+                assert ping_response["source"] == "ping_decorator_in_script"
+                assert ping_response["priority"] == "decorator"
+
+                # Script function is used for invoke (higher priority than framework register decorator)
+                assert invoke_response["source"] == "script_invoke_function"
+                assert invoke_response["priority"] == "function"
+        finally:
+            os.unlink(script_path)
+
+    def test_framework_routes_are_created_automatically(self):
+        """Test that framework @register_ping_handler creates routes and works when no customer overrides exist."""
+        import asyncio
+
+        # Clear any existing handlers
+        self._clear_caches()
+
+        # Use the mock vLLM server which has @register_ping_handler and @register_invocation_handler
+        # This simulates the real vLLM server behavior
+        mock_vllm_server = self._reload_mock_server()
+
+        # Initialize the app by getting the client
+        mock_vllm_server.mock_server.get_client()
+
+        # Get the FastAPI app to inspect routes
+        app = mock_vllm_server.mock_server.app
+
+        # Check that /ping and /invocations routes exist
+        ping_routes = [
+            route
+            for route in app.routes
+            if hasattr(route, "path") and route.path == "/ping"
+        ]
+        invocations_routes = [
+            route
+            for route in app.routes
+            if hasattr(route, "path") and route.path == "/invocations"
+        ]
+
+        # Should have ping routes (the mock server creates them)
+        assert (
+            len(ping_routes) > 0
+        ), f"No /ping routes found. Available routes: {[r.path for r in app.routes if hasattr(r, 'path')]}"
+
+        # Should have invocations route (the mock server creates them)
+        assert (
+            len(invocations_routes) > 0
+        ), f"No /invocations routes found. Available routes: {[r.path for r in app.routes if hasattr(r, 'path')]}"
+
+        # Test that the routes actually work and call framework code
+        ping_response = asyncio.run(mock_vllm_server.call_ping_endpoint())
+        invoke_response = asyncio.run(mock_vllm_server.call_invoke_endpoint())
+
+        # Verify framework handlers are called (from mock_vllm_server.py)
+        assert ping_response["status"] == "healthy"
+        assert ping_response["source"] == "vllm_default"
+        assert ping_response["message"] == "Default ping from vLLM server"
+
+        assert invoke_response["predictions"] == ["Default vLLM response"]
+        assert invoke_response["source"] == "vllm_default"
+
+    def test_framework_inject_adapter_id_decorator(self):
+        """Test that @inject_adapter_id decorator works in framework code."""
+        import asyncio
+
+        # Clear any existing handlers
+        self._clear_caches()
+
+        # Use the mock vLLM server which has @inject_adapter_id on invocations
+        mock_vllm_server = self._reload_mock_server()
+
+        # Test 1: Call invocations without adapter header (should use base-model)
+        invoke_response_no_adapter = asyncio.run(
+            mock_vllm_server.call_invoke_endpoint()
+        )
+
+        # Should use base-model when no adapter header is provided
+        assert invoke_response_no_adapter["adapter_id"] == "base-model"
+        assert (
+            invoke_response_no_adapter["message"]
+            == "Response using adapter: base-model"
+        )
+
+        # Test 2: Call invocations with adapter header
+        client = mock_vllm_server.mock_server.get_client()
+
+        # Make request with LoRA adapter header
+        response_with_adapter = client.post(
+            "/invocations",
+            json={"prompt": "test"},
+            headers={"X-Amzn-SageMaker-Adapter-Identifier": "my-custom-adapter"},
+        )
+
+        assert response_with_adapter.status_code == 200
+        response_data = response_with_adapter.json()
+
+        # The inject_adapter_id decorator should have injected the adapter ID into the body
+        assert response_data["adapter_id"] == "my-custom-adapter"
+        assert response_data["message"] == "Response using adapter: my-custom-adapter"
+        assert response_data["source"] == "vllm_default"
 
 
 if __name__ == "__main__":
