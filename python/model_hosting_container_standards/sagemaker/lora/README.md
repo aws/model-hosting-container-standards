@@ -203,25 +203,16 @@ Used for injecting adapter information into the request body from various source
 
 **Example Usage:**
 ```python
-from model_hosting_container_standards.sagemaker import inject_adapter_id_handler
+from model_hosting_container_standards.sagemaker import inject_adapter_id
 
-@inject_adapter_id_handler(
-    request_shape={
-        "adapter_id": 'headers."x-adapter-id"',           # Inject to top-level
-        "config.adapter_name": 'headers."x-adapter-name"', # Inject to nested path
-        "config.priority": 'headers."x-priority"'          # Inject to nested path
-    }
-)
+@inject_adapter_id("adapter_id")
 async def inference_handler(raw_request: Request):
     # Request body is automatically modified before reaching this handler
     body = await raw_request.json()
     # body now contains:
     # {
-    #   "adapter_id": "<value-from-header>",
-    #   "config": {
-    #     "adapter_name": "<value-from-header>",
-    #     "priority": "<value-from-header>"
-    #   }
+    #   "adapter_id": "<value-from-sagemaker-header>",
+    #   "original_field": "original_value"  # Other fields preserved
     # }
     return Response(status_code=200)
 ```

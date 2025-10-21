@@ -47,19 +47,40 @@ def register_unload_adapter_handler(request_shape: dict, response_shape: dict = 
     )
 
 
-def inject_adapter_id(request_shape: dict, response_shape: dict = {}):
-    # validate and preprocess request shape
-    if len(request_shape.keys()) > 1:
-        raise ValueError(f"Invalid {request_shape=} for register_adapter_id")
-    if response_shape:
-        logger.warning(
-            f"Handler type {LoRAHandlerType.INJECT_ADAPTER_ID} does not take response_shape, but {response_shape=}"
-        )
-    for k in request_shape.keys():
-        # Overwrite placeholder value
-        request_shape[k] = f'headers."{SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER}"'
+def inject_adapter_id(adapter_path: str):
+    """Create a decorator that injects adapter ID from SageMaker headers into request body.
+
+    This decorator extracts the adapter identifier from the SageMaker LoRA API header
+    (X-Amzn-SageMaker-Adapter-Identifier) and injects it into the specified path
+    within the request body using JMESPath syntax.
+
+    Args:
+        adapter_path: The JSON path where the adapter ID should be injected in the
+                     request body (e.g., "model", "body.model.lora_name", etc.).
+                     Supports both simple keys and nested paths using dot notation.
+
+    Returns:
+        A decorator function that can be applied to FastAPI route handlers to
+        automatically inject adapter IDs from headers into the request body.
+
+    Note:
+        This is a transform-only decorator that does not create its own route.
+        It must be applied to existing route handlers.
+    """
+    # validate and preprocess
+    if not adapter_path:
+        logger.exception("adapter_path cannot be empty")
+        raise ValueError("adapter_path cannot be empty")
+    if not isinstance(adapter_path, str):
+        logger.exception("adapter_path must be a string")
+        raise ValueError("adapter_path must be a string")
+    # create request_shape
+    request_shape = {}
+    request_shape[adapter_path] = (
+        f'headers."{SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER}"'
+    )
     return create_lora_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)(
-        request_shape, response_shape
+        request_shape=request_shape, response_shape={}
     )
 
 

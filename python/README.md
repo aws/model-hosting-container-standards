@@ -30,7 +30,7 @@ async def ping(raw_request: Request) -> Response:
     )
 
 @sagemaker_standards.register_invocation_handler
-@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+@sagemaker_standards.inject_adapter_id("model")
 async def invocations(raw_request: Request) -> Response:
     """Model invocations endpoint with LoRA adapter injection"""
     body_bytes = await raw_request.body()
@@ -98,7 +98,7 @@ async def invocations(request: Request) -> dict:
 
 # Optional: Add LoRA adapter support
 @sagemaker_standards.register_invocation_handler
-@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+@sagemaker_standards.inject_adapter_id("model")
 async def invocations_with_lora(request: Request) -> dict:
     """Invocation handler with LoRA adapter ID injection."""
     body = await request.json()
@@ -180,7 +180,7 @@ The system automatically resolves handlers in this order:
 @sagemaker_standards.register_invocation_handler
 
 # LoRA adapter support
-@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+@sagemaker_standards.inject_adapter_id("model")
 ```
 
 ### Customer Decorators (for model customization)
@@ -219,7 +219,7 @@ async def ping(raw_request: Request) -> Response:
     )
 
 @sagemaker_standards.register_invocation_handler
-@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+@sagemaker_standards.inject_adapter_id("model")
 async def invocations(raw_request: Request) -> Response:
     """Default vLLM invocation handler with LoRA support."""
     # Get request body safely

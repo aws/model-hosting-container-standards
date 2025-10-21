@@ -140,38 +140,33 @@ async def unload_adapter(data: SimpleNamespace, raw_request: Request):
     return Response(status_code=200)
 ```
 
-**3. `inject_adapter_id(request_shape, response_shape={})`**
+**3. `inject_adapter_id(adapter_path)`**
 
-Creates a decorator for injecting adapter IDs from headers into the request body. This function has **special behavior**:
+Creates a decorator for injecting adapter IDs from headers into the request body. Takes a simple string path specifying where to inject the adapter ID:
 
 ```python
 from model_hosting_container_standards.sagemaker import inject_adapter_id
 
-@inject_adapter_id(
-    request_shape={
-        "lora_id": None  # Value is ignored - automatically filled with the SageMaker header
-    }
-)
+@inject_adapter_id("lora_id")
 async def inject_adapter_id(raw_request: Request):
     # The request body now contains the adapter ID from the header
     return Response(status_code=200)
 ```
 
-**Special behavior of `inject_adapter_id`:**
-- Only accepts a **single key** in `request_shape` (raises `ValueError` if more than one)
-- **Ignores the value** you provide - it automatically replaces it with the correct JMESPath expression for the SageMaker adapter identifier header: `headers."X-Amzn-SageMaker-Adapter-Identifier"`
-- Logs a warning if you provide a `response_shape` (since this handler type doesn't use response transformations)
-
-This makes it foolproof - you don't need to remember the exact header name or how to escape the hyphens:
+**How `inject_adapter_id` works:**
+- Takes a single `adapter_path` string parameter specifying where to inject the adapter ID in the request body
+- Supports both simple keys (e.g., `"model"`) and nested paths using dot notation (e.g., `"body.model.lora_name"`)
+- Automatically extracts the adapter ID from the SageMaker header `X-Amzn-SageMaker-Adapter-Identifier`
+- Raises `ValueError` if `adapter_path` is empty or if `adapter_path` is not a string
 
 ```python
-# These are all equivalent and produce the same result:
-@inject_adapter_id(request_shape={"lora_id": None})
-@inject_adapter_id(request_shape={"lora_id": ""})
-@inject_adapter_id(request_shape={"lora_id": "any_value"})
+# Simple path - injects at top level
+@inject_adapter_id("model")
+# Results in: {"model": "<adapter_id>"}
 
-# The function automatically converts all of these to:
-# request_shape={"lora_id": "headers.\"X-Amzn-SageMaker-Adapter-Identifier\""}
+# Nested path - supports dot notation
+@inject_adapter_id("body.model.lora_name")
+# Results in: {"body": {"model": {"lora_name": "<adapter_id>"}}}
 ```
 
 ### Benefits of Convenience Functions

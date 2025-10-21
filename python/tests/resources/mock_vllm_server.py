@@ -33,7 +33,7 @@ async def ping(raw_request: Request) -> Response:
 
 
 @sagemaker_standards.register_invocation_handler
-@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+@sagemaker_standards.inject_adapter_id("model")
 async def invocations(raw_request: Request) -> Response:
     """Model invocations endpoint like real vLLM with LoRA adapter injection"""
     import json

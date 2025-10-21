@@ -15,8 +15,6 @@ Key Testing Pattern:
     3. Check that both happen in combination through the full request pipeline
 """
 
-from unittest.mock import patch
-
 import pytest
 from fastapi import APIRouter, FastAPI, Request
 from fastapi.responses import Response
@@ -158,7 +156,7 @@ class BaseLoRAIntegrationTest:
         # Handler 3: Invocations with adapter injection
         # The decorator injects adapter ID from header into body: header -> body["model"]
         @self.router.post("/invocations")
-        @sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+        @sagemaker_standards.inject_adapter_id("model")
         async def invocations(request: Request):
             body_bytes = await request.body()
             import json
@@ -332,9 +330,7 @@ class TestLoRARequestResponseTransformation(BaseLoRAIntegrationTest):
         router = APIRouter()
 
         @router.post("/invocations")
-        @sagemaker_standards.inject_adapter_id(
-            request_shape={"body.model.lora_name": None}  # Inject into nested path
-        )
+        @sagemaker_standards.inject_adapter_id("body.model.lora_name")
         async def invocations(request: Request):
             body_bytes = await request.body()
             import json
@@ -442,43 +438,33 @@ class TestLoRAErrorCases(BaseLoRAIntegrationTest):
     These tests verify that the system handles errors gracefully.
     """
 
-    def test_inject_adapter_id_invalid_request_shape(self):
-        """Test that loading an invalid request shape with inject_adapter_id raises error"""
+    def test_inject_adapter_id_invalid_adapter_path(self):
+        """Test that passing an invalid adapter_path with inject_adapter_id raises error"""
         handler_registry.clear()
 
-        with pytest.raises(ValueError) as e:
+        with pytest.raises(ValueError):
 
-            @sagemaker_standards.inject_adapter_id(
-                request_shape={"more": None, "than_one": None}
-            )
-            async def invocations(request: Request):
+            @sagemaker_standards.inject_adapter_id("")
+            async def invocations_empty(request: Request):
                 pass
 
-            assert "invalid request_shape" in str(e).lower()
+        handler_registry.clear()
 
-    @patch(
-        "model_hosting_container_standards.sagemaker.lora.transforms.inject_to_body.logger"
-    )
-    def test_inject_adapter_id_response_shape_warning(self, mock_logger):
-        """Test that passing response_shape to inject_adapter_id logs a warning.
+        with pytest.raises(ValueError):
 
-        inject_adapter_id doesn't use response_shape, so passing it should
-        trigger a warning to help users identify configuration mistakes.
-        """
-        response_shape = {"has": "shape"}
+            @sagemaker_standards.inject_adapter_id(1234)
+            async def invocations_nonstr(request: Request):
+                pass
 
-        @sagemaker_standards.inject_adapter_id(
-            request_shape={"model": None}, response_shape=response_shape
-        )
-        async def invocations(request: Request):
-            pass
+    def test_inject_adapter_id_valid_path(self):
+        """Test that inject_adapter_id accepts valid adapter paths."""
+        # Test that the function works correctly with a simple path
+        decorator = sagemaker_standards.inject_adapter_id("model")
+        assert callable(decorator)
 
-        # Verify warning was called (assert_called_once raises if not called exactly once)
-        mock_logger.warning.assert_called_once()
-
-        # Verify the warning message contains the response_shape
-        warning_message = mock_logger.warning.call_args[0][0]
-        assert "response_shape" in warning_message
+        # Test that it works with nested paths too
+        decorator_nested = sagemaker_standards.inject_adapter_id("body.model.lora_name")
+        assert callable(decorator_nested)
 
     def test_load_adapter_missing_required_field(self):
         """Test loading adapter with missing required field.
