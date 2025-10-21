@@ -48,7 +48,7 @@ def create_sagemaker_router() -> APIRouter:
     return router
 
 
-def _swap_route(
+def _swap_or_add_route(
     app: FastAPI,
     path: str,
     handler,
@@ -57,45 +57,53 @@ def _swap_route(
     tags: Optional[list[str]] = None,
     summary: Optional[str] = None,
 ) -> None:
-    """Replace route at path with handler.
+    """Remove any existing routes at path and add new route with handler.
 
-    - Only call once during startup/lifespan phase
-    - Maintain original route order
-    - Refresh OpenAPI schema
+    This function provides a clean way to replace routes by:
+    1. Removing all existing routes at the specified path
+    2. Adding the new route with the specified handler and configuration
+    3. Refreshing the OpenAPI schema
+
+    Args:
+        app: FastAPI application instance
+        path: Route path (e.g., "/ping", "/invocations")
+        handler: Handler function to use for the route
+        methods: HTTP methods for the route (defaults to ["GET"])
+        tags: OpenAPI tags for the route
+        summary: OpenAPI summary for the route
+
+    Note: Only call once during startup/lifespan phase
     """
     from fastapi.routing import APIRoute
 
     router = app.router
     routes = router.routes
-    want = {m.upper() for m in (methods or ["GET"])}
 
-    # 1) Find old route and its position (subset match to handle auto HEAD/OPTIONS)
-    old_idx, old = None, None
-    for i, r in enumerate(routes):
-        if isinstance(r, APIRoute) and r.path == path and want.issubset(r.methods):
-            old_idx, old = i, r
-            break
+    # 1) Remove all existing routes at this path
+    removed_count = 0
+    i = 0
+    while i < len(routes):
+        route = routes[i]
+        if isinstance(route, APIRoute) and route.path == path:
+            logger.info(f"Removing existing {path} route: {route.endpoint.__name__}")
+            del routes[i]
+            removed_count += 1
+        else:
+            i += 1
 
-    # 2) Assemble minimal add_api_route parameters: methods/tags/summary
-    add_kwargs = {
-        "methods": list(old.methods if old else want),
-        "tags": list(getattr(old, "tags", tags or [])),
-        "summary": summary if summary is not None else getattr(old, "summary", None),
-    }
+    # 2) Add the new route
+    router.add_api_route(
+        path,
+        handler,
+        methods=methods or ["GET"],
+        tags=tags or [],
+        summary=summary,
+    )
 
-    # 3) Remove old, append new, then insert back at original position (preserve order)
-    if old is not None:
-        del routes[old_idx]
-        logger.info(f"Removed existing {path} route: {old.endpoint.__name__}")
-
-    router.add_api_route(path, handler, **add_kwargs)
-    new_route = routes.pop()  # The just-added route at the end
-    routes.insert(old_idx if old_idx is not None else len(routes), new_route)
-
-    # 4) Refresh documentation
+    # 3) Refresh OpenAPI schema
     app.openapi_schema = None
 
-    action = "Replaced" if old else "Added new"
+    action = "Replaced" if removed_count > 0 else "Added new"
     logger.info(f"{action} {path} route: {handler.__name__}")
 
 
@@ -128,7 +136,7 @@ def setup_ping_invoke_routes(app: FastAPI) -> FastAPI:
 
     # Step 3: Handle overrides - check existing routes and replace/add as needed
     if ping_handler:
-        _swap_route(
+        _swap_or_add_route(
             app=app,
             path="/ping",
             handler=ping_handler,
@@ -138,7 +146,7 @@ def setup_ping_invoke_routes(app: FastAPI) -> FastAPI:
         )
 
     if invoke_handler:
-        _swap_route(
+        _swap_or_add_route(
             app=app,
             path="/invocations",
             handler=invoke_handler,
