@@ -1,7 +1,7 @@
 """Unit tests for sagemaker_router module.
 
 Tests the core routing functionality including:
-- _swap_or_add_route function for route replacement/addition
+- _replace_route function for route replacement
 - setup_ping_invoke_routes function for SageMaker endpoint setup
 """
 
@@ -12,8 +12,8 @@ from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 
 
-class TestSwapOrAddRoute:
-    """Test _swap_or_add_route function."""
+class TestReplaceRoute:
+    """Test _replace_route function."""
 
     def setup_method(self):
         """Setup for each test."""
@@ -28,9 +28,9 @@ class TestSwapOrAddRoute:
         return {"message": "new"}
 
     def test_adds_new_route_when_none_exists(self):
-        """Test that _swap_or_add_route adds a new route when no existing route is found."""
+        """Test that _replace_route adds a new route when no existing route is found."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # FastAPI automatically adds default routes (openapi, docs, etc.)
@@ -41,7 +41,7 @@ class TestSwapOrAddRoute:
         assert len(initial_api_routes) == 0
 
         # Add new route
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.dummy_handler,
@@ -62,9 +62,9 @@ class TestSwapOrAddRoute:
         assert route.endpoint == self.dummy_handler
 
     def test_replaces_existing_route_completely(self):
-        """Test that _swap_or_add_route completely replaces existing route with new configuration."""
+        """Test that _replace_route completely replaces existing route with new configuration."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Add initial routes
@@ -78,7 +78,7 @@ class TestSwapOrAddRoute:
         assert len(initial_api_routes) == 3
 
         # Replace the test route completely
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.new_handler,
@@ -111,9 +111,9 @@ class TestSwapOrAddRoute:
         assert len(after_routes) == 1
 
     def test_uses_default_methods_when_not_specified(self):
-        """Test that _swap_or_add_route uses default GET method when methods not specified."""
+        """Test that _replace_route uses default GET method when methods not specified."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Add route with multiple methods
@@ -122,7 +122,7 @@ class TestSwapOrAddRoute:
             return {"original": True}
 
         # Replace without specifying methods (should default to GET)
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.new_handler,
@@ -135,16 +135,16 @@ class TestSwapOrAddRoute:
         assert test_route.endpoint == self.new_handler
 
     def test_uses_empty_tags_when_not_specified(self):
-        """Test that _swap_or_add_route uses empty tags when tags not specified."""
+        """Test that _replace_route uses empty tags when tags not specified."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Add route with tags
         self.app.get("/test", tags=["original", "test"])(self.dummy_handler)
 
         # Replace without specifying tags (should use empty list)
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.new_handler,
@@ -157,16 +157,16 @@ class TestSwapOrAddRoute:
         assert test_route.endpoint == self.new_handler
 
     def test_uses_none_summary_when_not_specified(self):
-        """Test that _swap_or_add_route uses None summary when summary not specified."""
+        """Test that _replace_route uses None summary when summary not specified."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Add route with summary
         self.app.get("/test", summary="Original summary")(self.dummy_handler)
 
         # Replace without specifying summary (should use None)
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.new_handler,
@@ -179,16 +179,16 @@ class TestSwapOrAddRoute:
         assert test_route.endpoint == self.new_handler
 
     def test_overrides_route_properties_when_specified(self):
-        """Test that _swap_or_add_route properly overrides all properties when specified."""
+        """Test that _replace_route properly overrides all properties when specified."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Add route with original properties
         self.app.get("/test", tags=["original"], summary="Original")(self.dummy_handler)
 
         # Replace with new properties
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.new_handler,
@@ -210,16 +210,16 @@ class TestSwapOrAddRoute:
         assert test_route.endpoint == self.new_handler  # New handler used
 
     def test_replaces_route_regardless_of_methods(self):
-        """Test that _swap_or_add_route replaces route regardless of HTTP methods."""
+        """Test that _replace_route replaces route regardless of HTTP methods."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Add route with GET method
         self.app.get("/test", tags=["original"])(self.dummy_handler)
 
         # Replace with POST method (should completely replace the GET route)
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.new_handler,
@@ -241,16 +241,16 @@ class TestSwapOrAddRoute:
         assert test_route.summary == "New summary"
 
     def test_clears_openapi_schema(self):
-        """Test that _swap_or_add_route clears the OpenAPI schema for regeneration."""
+        """Test that _replace_route clears the OpenAPI schema for regeneration."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Set a mock OpenAPI schema
         self.app.openapi_schema = {"mock": "schema"}
 
         # Add and replace route
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.dummy_handler,
@@ -260,9 +260,9 @@ class TestSwapOrAddRoute:
         assert self.app.openapi_schema is None
 
     def test_replaces_route_with_exact_methods_specified(self):
-        """Test that _swap_or_add_route uses exactly the methods specified."""
+        """Test that _replace_route uses exactly the methods specified."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Add route with multiple methods including HEAD and OPTIONS (auto-added by FastAPI)
@@ -271,7 +271,7 @@ class TestSwapOrAddRoute:
             return {"original": True}
 
         # Replace specifying only GET (should use exactly GET, not preserve old methods)
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/test",
             handler=self.new_handler,
@@ -290,13 +290,13 @@ class TestSwapOrAddRoute:
 
     @patch("model_hosting_container_standards.sagemaker.sagemaker_router.logger")
     def test_logs_route_operations(self, mock_logger):
-        """Test that _swap_or_add_route logs appropriate messages."""
+        """Test that _replace_route logs appropriate messages."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
-            _swap_or_add_route,
+            _replace_route,
         )
 
         # Test adding new route
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/new",
             handler=self.dummy_handler,
@@ -310,7 +310,7 @@ class TestSwapOrAddRoute:
 
         # Add existing route and replace it
         self.app.get("/existing")(self.dummy_handler)
-        _swap_or_add_route(
+        _replace_route(
             app=self.app,
             path="/existing",
             handler=self.new_handler,
@@ -376,10 +376,10 @@ class TestSetupPingInvokeRoutes:
         "model_hosting_container_standards.sagemaker.sagemaker_router.get_invoke_handler"
     )
     @patch(
-        "model_hosting_container_standards.sagemaker.sagemaker_router._swap_or_add_route"
+        "model_hosting_container_standards.sagemaker.sagemaker_router._replace_route"
     )
     def test_sets_up_ping_route_when_handler_exists(
-        self, mock_swap_or_add_route, mock_get_invoke, mock_get_ping
+        self, mock_replace_route, mock_get_invoke, mock_get_ping
     ):
         """Test that setup_ping_invoke_routes sets up /ping route when ping handler exists."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
@@ -396,8 +396,8 @@ class TestSetupPingInvokeRoutes:
         # Verify app is returned
         assert result is self.app
 
-        # Verify _swap_or_add_route was called for ping only
-        mock_swap_or_add_route.assert_called_once_with(
+        # Verify _replace_route was called for ping only
+        mock_replace_route.assert_called_once_with(
             app=self.app,
             path="/ping",
             handler=self.mock_ping_handler,
@@ -413,10 +413,10 @@ class TestSetupPingInvokeRoutes:
         "model_hosting_container_standards.sagemaker.sagemaker_router.get_invoke_handler"
     )
     @patch(
-        "model_hosting_container_standards.sagemaker.sagemaker_router._swap_or_add_route"
+        "model_hosting_container_standards.sagemaker.sagemaker_router._replace_route"
     )
     def test_sets_up_invoke_route_when_handler_exists(
-        self, mock_swap_or_add_route, mock_get_invoke, mock_get_ping
+        self, mock_replace_route, mock_get_invoke, mock_get_ping
     ):
         """Test that setup_ping_invoke_routes sets up /invocations route when invoke handler exists."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
@@ -433,8 +433,8 @@ class TestSetupPingInvokeRoutes:
         # Verify app is returned
         assert result is self.app
 
-        # Verify _swap_or_add_route was called for invoke only
-        mock_swap_or_add_route.assert_called_once_with(
+        # Verify _replace_route was called for invoke only
+        mock_replace_route.assert_called_once_with(
             app=self.app,
             path="/invocations",
             handler=self.mock_invoke_handler,
@@ -450,10 +450,10 @@ class TestSetupPingInvokeRoutes:
         "model_hosting_container_standards.sagemaker.sagemaker_router.get_invoke_handler"
     )
     @patch(
-        "model_hosting_container_standards.sagemaker.sagemaker_router._swap_or_add_route"
+        "model_hosting_container_standards.sagemaker.sagemaker_router._replace_route"
     )
     def test_sets_up_both_routes_when_both_handlers_exist(
-        self, mock_swap_or_add_route, mock_get_invoke, mock_get_ping
+        self, mock_replace_route, mock_get_invoke, mock_get_ping
     ):
         """Test that setup_ping_invoke_routes sets up both routes when both handlers exist."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
@@ -470,11 +470,11 @@ class TestSetupPingInvokeRoutes:
         # Verify app is returned
         assert result is self.app
 
-        # Verify _swap_or_add_route was called for both routes
-        assert mock_swap_or_add_route.call_count == 2
+        # Verify _replace_route was called for both routes
+        assert mock_replace_route.call_count == 2
 
         # Check ping route call
-        ping_call = mock_swap_or_add_route.call_args_list[0]
+        ping_call = mock_replace_route.call_args_list[0]
         assert ping_call[1]["app"] is self.app
         assert ping_call[1]["path"] == "/ping"
         assert ping_call[1]["handler"] == self.mock_ping_handler
@@ -483,7 +483,7 @@ class TestSetupPingInvokeRoutes:
         assert ping_call[1]["summary"] == "Health check endpoint"
 
         # Check invoke route call
-        invoke_call = mock_swap_or_add_route.call_args_list[1]
+        invoke_call = mock_replace_route.call_args_list[1]
         assert invoke_call[1]["app"] is self.app
         assert invoke_call[1]["path"] == "/invocations"
         assert invoke_call[1]["handler"] == self.mock_invoke_handler
@@ -541,10 +541,8 @@ class TestSetupPingInvokeRoutes:
     @patch(
         "model_hosting_container_standards.sagemaker.sagemaker_router.get_invoke_handler"
     )
-    def test_integration_with_real_swap_or_add_route(
-        self, mock_get_invoke, mock_get_ping
-    ):
-        """Test integration between setup_ping_invoke_routes and _swap_or_add_route without mocking _swap_or_add_route."""
+    def test_integration_with_real_replace_route(self, mock_get_invoke, mock_get_ping):
+        """Test integration between setup_ping_invoke_routes and _replace_route without mocking _replace_route."""
         from model_hosting_container_standards.sagemaker.sagemaker_router import (
             setup_ping_invoke_routes,
         )

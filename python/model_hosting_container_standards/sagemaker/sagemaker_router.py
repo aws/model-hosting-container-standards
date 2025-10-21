@@ -48,7 +48,7 @@ def create_sagemaker_router() -> APIRouter:
     return router
 
 
-def _swap_or_add_route(
+def _replace_route(
     app: FastAPI,
     path: str,
     handler,
@@ -57,7 +57,7 @@ def _swap_or_add_route(
     tags: Optional[list[str]] = None,
     summary: Optional[str] = None,
 ) -> None:
-    """Remove any existing routes at path and add new route with handler.
+    """Replace any existing routes at path with new route using the specified handler.
 
     This function provides a clean way to replace routes by:
     1. Removing all existing routes at the specified path
@@ -136,7 +136,7 @@ def setup_ping_invoke_routes(app: FastAPI) -> FastAPI:
 
     # Step 3: Handle overrides - check existing routes and replace/add as needed
     if ping_handler:
-        _swap_or_add_route(
+        _replace_route(
             app=app,
             path="/ping",
             handler=ping_handler,
@@ -146,7 +146,7 @@ def setup_ping_invoke_routes(app: FastAPI) -> FastAPI:
         )
 
     if invoke_handler:
-        _swap_or_add_route(
+        _replace_route(
             app=app,
             path="/invocations",
             handler=invoke_handler,
