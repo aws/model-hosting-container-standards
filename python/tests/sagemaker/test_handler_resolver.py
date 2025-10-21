@@ -53,7 +53,7 @@ class TestHandlerResolver:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
-def ping():
+def custom_sagemaker_ping_handler():
     return "customer ping"
 """
             )
@@ -91,7 +91,7 @@ def ping():
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
-def ping():
+def custom_sagemaker_ping_handler():
     return "customer"
 """
             )
@@ -184,7 +184,7 @@ def ping():
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
-def invoke(data):
+def custom_sagemaker_invocation_handler(data):
     return f"customer invoke: {data}"
 """
             )

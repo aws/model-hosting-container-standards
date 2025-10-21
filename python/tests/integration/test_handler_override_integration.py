@@ -1,9 +1,9 @@
 """Integration tests for handler override functionality.
 
 Tests real customer usage scenarios:
-- Using @ping and @invoke decorators to override handlers
+- Using @custom_ping_handler and @custom_invocation_handler decorators to override handlers
 - Setting environment variables for handler specifications
-- Writing customer scripts with ping() and invoke() functions
+- Writing customer scripts with custom_sagemaker_ping_handler() and custom_sagemaker_invocation_handler() functions
 - Priority: env vars > decorators > customer script files > framework defaults
 
 Note: These tests focus on validating server responses rather than directly calling
@@ -25,9 +25,9 @@ class TestHandlerOverrideIntegration:
     """Integration tests simulating real customer usage scenarios.
 
     Each test simulates a fresh server startup where customers:
-    - Use @ping and @invoke decorators
+    - Use @custom_ping_handler and @custom_invocation_handler decorators
     - Set environment variables (CUSTOM_FASTAPI_PING_HANDLER, etc.)
-    - Write customer scripts with ping() and invoke() functions
+    - Write customer scripts with custom_sagemaker_ping_handler() and custom_sagemaker_invocation_handler() functions
     """
 
     def setup_method(self):
@@ -64,14 +64,14 @@ class TestHandlerOverrideIntegration:
                 """
 from fastapi import Request
 
-async def ping():
+async def custom_sagemaker_ping_handler():
     return {
         "status": "healthy",
         "source": "customer_override",
         "message": "Custom ping from customer script"
     }
 
-async def invoke(request: Request):
+async def custom_sagemaker_invocation_handler(request: Request):
     return {
         "predictions": ["Custom response from customer script"],
         "source": "customer_override"
@@ -121,7 +121,7 @@ async def invoke(request: Request):
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 from fastapi import Request
 
-@sagemaker_standards.invoke
+@sagemaker_standards.custom_invocation_handler
 async def custom_invoke(request: Request):
     return {
         "predictions": ["Custom response"],
@@ -129,7 +129,7 @@ async def custom_invoke(request: Request):
     }
 
 # Regular ping function
-async def ping():
+async def custom_sagemaker_ping_handler():
     return {"source": "customer_function", "priority": "script_function"}
 """
             )
@@ -173,10 +173,10 @@ async def ping():
                 """
 from fastapi import Request
 
-async def ping():
+async def custom_sagemaker_ping_handler():
     return {"source": "script_ping", "type": "script_function"}
 
-async def invoke(request: Request):
+async def custom_sagemaker_invocation_handler(request: Request):
     return {"source": "script_invoke", "type": "script_function"}
 
 async def env_ping():
@@ -226,10 +226,10 @@ async def env_invoke(request=None):
                 """
 from fastapi import Request
 
-async def ping():
+async def custom_sagemaker_ping_handler():
     return {"status": "healthy", "source": "file_customer_script"}
 
-async def invoke(request: Request):
+async def custom_sagemaker_invocation_handler(request: Request):
     return {"predictions": ["file customer response"], "source": "file_customer_script"}
 """
             )
@@ -274,12 +274,12 @@ async def invoke(request: Request):
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 
 # Decorator handler (higher priority than script functions)
-@sagemaker_standards.ping
+@sagemaker_standards.custom_ping_handler
 async def decorator_ping():
     return {"source": "decorator", "priority": "high"}
 
 # Script function handler (lower priority than decorators)
-async def ping():
+async def custom_sagemaker_ping_handler():
     return {"source": "script_function", "priority": "low"}
 """
             )
@@ -308,7 +308,7 @@ async def ping():
             os.unlink(script_path)
 
     def test_customer_decorator_usage_with_server_response(self):
-        """Test customer scenario: using @ping and @invoke decorators and seeing server responses."""
+        """Test customer scenario: using @custom_ping_handler and @custom_invocation_handler decorators and seeing server responses."""
         import asyncio
 
         # Customer writes a script file with decorators and regular functions
@@ -319,12 +319,12 @@ import model_hosting_container_standards.sagemaker as sagemaker_standards
 from fastapi import Request
 
 # Customer uses decorators for some handlers
-@sagemaker_standards.invoke
+@sagemaker_standards.custom_invocation_handler
 async def my_invoke(request: Request):
     return {"type": "invoke", "source": "customer_decorator"}
 
 # Customer uses regular function for ping (higher priority than decorators)
-async def ping():
+async def custom_sagemaker_ping_handler():
     return {"type": "ping", "source": "customer_function"}
 """
             )
@@ -359,10 +359,10 @@ async def ping():
             os.unlink(script_path)
 
     def test_register_handlers_priority_vs_script_functions(self):
-        """Test priority: @ping/@invoke decorators vs script functions vs framework register decorators."""
+        """Test priority: @custom_ping_handler/@custom_invocation_handler decorators vs script functions vs framework register decorators."""
         import asyncio
 
-        # Customer writes a script with @ping decorator and regular functions
+        # Customer writes a script with @custom_ping_handler decorator and regular functions
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
@@ -370,8 +370,8 @@ import model_hosting_container_standards.sagemaker as sagemaker_standards
 from fastapi import Request, Response
 import json
 
-# Customer uses @ping decorator (higher priority than script functions)
-@sagemaker_standards.ping
+# Customer uses @custom_ping_handler decorator (higher priority than script functions)
+@sagemaker_standards.custom_ping_handler
 async def decorated_ping(raw_request: Request) -> Response:
     response_data = {
         "status": "healthy",
@@ -384,8 +384,8 @@ async def decorated_ping(raw_request: Request) -> Response:
         status_code=200
     )
 
-# Customer also has a regular function (lower priority than @ping decorator)
-async def ping():
+# Customer also has a regular function (lower priority than @custom_ping_handler decorator)
+async def custom_sagemaker_ping_handler():
     return {
         "status": "healthy",
         "source": "script_function",
@@ -393,7 +393,7 @@ async def ping():
     }
 
 # Customer has a regular invoke function (higher priority than framework register decorator)
-async def invoke(request: Request):
+async def custom_sagemaker_invocation_handler(request: Request):
     return {
         "predictions": ["Script function response"],
         "source": "script_invoke_function",
@@ -418,11 +418,11 @@ async def invoke(request: Request):
                 # Clear cache and reload mock server to pick up new handlers
                 mock_vllm_server = self._reload_mock_server()
 
-                # Test priority order: @ping decorator has higher priority than script functions
+                # Test priority order: @custom_ping_handler decorator has higher priority than script functions
                 ping_response = asyncio.run(mock_vllm_server.call_ping_endpoint())
                 invoke_response = asyncio.run(mock_vllm_server.call_invoke_endpoint())
 
-                # @ping decorator has higher priority than script function
+                # @custom_ping_handler decorator has higher priority than script function
                 assert ping_response["source"] == "ping_decorator_in_script"
                 assert ping_response["priority"] == "decorator"
 
