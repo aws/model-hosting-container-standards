@@ -16,18 +16,48 @@ This package simplifies model deployment by providing:
 # Install
 poetry install
 
-# Basic usage - add to your model.py
+# Framework integration (e.g., in vLLM server code)
 import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import Request, Response
+import json
 
+@sagemaker_standards.register_ping_handler
+async def ping(raw_request: Request) -> Response:
+    """Ping check. Endpoint required for SageMaker"""
+    return Response(
+        content='{"status": "healthy", "source": "vllm_default"}',
+        media_type="application/json",
+    )
+
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+async def invocations(raw_request: Request) -> Response:
+    """Model invocations endpoint with LoRA adapter injection"""
+    body_bytes = await raw_request.body()
+    body = json.loads(body_bytes.decode()) if body_bytes else {}
+
+    # Adapter ID injected by decorator from SageMakerLoRAApiHeader
+    adapter_id = body.get("model", "base-model")
+
+    # Your model inference logic here
+    response_data = {
+        "predictions": ["Generated text response"],
+        "adapter_id": adapter_id,
+    }
+
+    return Response(
+        content=json.dumps(response_data),
+        media_type="application/json",
+    )
+
+# Customer customization (in model.py)
 @sagemaker_standards.ping
-async def health_check(request):
-    return Response(status_code=200, content="OK")
+async def custom_ping(raw_request: Request):
+    return Response(status_code=200, content="Custom OK")
 
-@sagemaker_standards.invoke
-async def process_request(request):
-    body = await request.json()
-    # Your model logic here
-    return {"result": "processed"}
+# Or simple functions (automatically discovered)
+async def ping():
+    return {"status": "healthy"}
 ```
 
 
@@ -45,9 +75,41 @@ poetry build
 
 ## Usage Patterns
 
-### 1. Decorator-Based
+### 1. Framework Integration
 
-The package provides decorators for easy SageMaker endpoint integration. Put this to your model artifact folder as model.py so you can customize ping and invoke:
+For framework developers (e.g., vLLM, TensorRT-LLM), use register decorators to automatically set up routes:
+
+```python
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import Request, Response
+
+# Register decorators - automatically create /ping and /invocations routes
+@sagemaker_standards.register_ping_handler
+async def ping(request: Request) -> Response:
+    """Framework ping handler with automatic routing."""
+    return Response(status_code=200, content="OK")
+
+@sagemaker_standards.register_invocation_handler
+async def invocations(request: Request) -> dict:
+    """Framework invocation handler with automatic routing."""
+    body = await request.json()
+    # Process your model inference here
+    return {"result": "processed"}
+
+# Optional: Add LoRA adapter support
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+async def invocations_with_lora(request: Request) -> dict:
+    """Invocation handler with LoRA adapter ID injection."""
+    body = await request.json()
+    adapter_id = body.get("model", "base-model")  # Injected from header
+    # Use adapter_id for model inference
+    return {"result": f"processed with {adapter_id}"}
+```
+
+### 2. Customer Script Customization
+
+For customers customizing model behavior, put this in your model artifact folder as model.py:
 
 ```python
 import model_hosting_container_standards.sagemaker as sagemaker_standards
@@ -66,9 +128,19 @@ async def custom_invoke(request: Request) -> dict:
     body = await request.json()
     # Process your model inference here
     return {"result": "processed"}
+
+# Or use simple functions (automatically discovered)
+async def ping():
+    """Simple ping function - automatically discovered."""
+    return {"status": "healthy"}
+
+async def invoke(request: Request):
+    """Simple invoke function - automatically discovered."""
+    body = await request.json()
+    return {"result": "processed"}
 ```
 
-### 2. Environment Variable Configuration
+### 3. Environment Variable Configuration
 
 ```bash
 # Point to custom handlers in your code
@@ -83,21 +155,110 @@ export CUSTOM_FASTAPI_INVOCATION_HANDLER="model:my_invoke_function" #`model` is 
 CUSTOM_FASTAPI_PING_HANDLER="vllm.entrypoints.openai.api_server:health"
 ```
 
-### 3. Handler Resolution Priority
+### 4. Handler Resolution Priority
 
 The system automatically resolves handlers in this order:
 1. **Environment Variables** (highest priority)
-2. **Decorator Override** (`@ping`, `@invoke`)
+2. **Registry Decorators** (`@ping`, `@invoke` - customer overrides)
 3. **Function Discovery** (functions in custom script named `ping`, `invoke`)
-4. **Default Handlers** (framework fallbacks)
+4. **Framework Register Decorators** (`@register_ping_handler`, `@register_invocation_handler`)
+
+**Key Differences:**
+- **`@register_ping_handler`**: Used by framework developers, automatically creates routes
+- **`@ping`**: Used by customers to override framework behavior
+- **Function discovery**: Simple functions automatically detected in customer scripts
 
 **Note**: All handler detection and route setup happens automatically during bootstrap
 
+## Decorator Reference
+
+### Framework Decorators (for framework developers)
+
+```python
+# Automatically create routes and register as framework defaults
+@sagemaker_standards.register_ping_handler
+@sagemaker_standards.register_invocation_handler
+
+# LoRA adapter support
+@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+```
+
+### Customer Decorators (for model customization)
+
+```python
+# Override framework defaults (higher priority)
+@sagemaker_standards.ping
+@sagemaker_standards.invoke
+
+# LoRA transform decorators
+@sagemaker_standards.register_load_adapter_handler(request_shape={...}, response_shape={...})
+@sagemaker_standards.register_unload_adapter_handler(request_shape={...}, response_shape={...})
+```
+
 ## Framework Examples
 
-### Integration with vLLM
+### vLLM Framework Integration
 
-To integrate with vLLM, simply add your custom handlers using the `@ping` and `@invoke` decorators. The system automatically detects and sets up your custom routes during bootstrap. Here's a complete working example `model.py`:
+For vLLM framework developers, use register decorators to set up default handlers:
+
+```python
+# In vLLM server code (e.g., vllm/entrypoints/openai/api_server.py)
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import APIRouter, FastAPI, Request, Response
+import json
+
+# Create router like real vLLM does
+router = APIRouter()
+
+@sagemaker_standards.register_ping_handler
+async def ping(raw_request: Request) -> Response:
+    """Default vLLM ping handler with automatic routing."""
+    return Response(
+        content='{"status": "healthy", "source": "vllm_default", "message": "Default ping from vLLM server"}',
+        media_type="application/json",
+    )
+
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.inject_adapter_id(request_shape={"model": None})
+async def invocations(raw_request: Request) -> Response:
+    """Default vLLM invocation handler with LoRA support."""
+    # Get request body safely
+    body_bytes = await raw_request.body()
+    try:
+        body = json.loads(body_bytes.decode()) if body_bytes else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        body = {}
+
+    # Adapter ID injected by decorator from SageMakerLoRAApiHeader
+    adapter_id = body.get("model", "base-model")
+
+    # Process with vLLM engine (your actual vLLM logic here)
+    # result = await vllm_engine.generate(body["prompt"], adapter_id=adapter_id)
+
+    response_data = {
+        "predictions": ["Generated text from vLLM"],
+        "source": "vllm_default",
+        "adapter_id": adapter_id,
+        "message": f"Response using adapter: {adapter_id}",
+    }
+
+    return Response(
+        content=json.dumps(response_data),
+        media_type="application/json",
+    )
+
+# Setup FastAPI app like real vLLM
+app = FastAPI(title="vLLM Server", version="1.0.0")
+app.include_router(router)
+
+# Bootstrap SageMaker routes at the end (IMPORTANT!)
+from model_hosting_container_standards.sagemaker.sagemaker_router import setup_ping_invoke_routes
+setup_ping_invoke_routes(app)
+```
+
+### Customer vLLM Customization
+
+Customers can override vLLM's default behavior using customer scripts (`model.py`):
 
 ```python
 import model_hosting_container_standards.sagemaker as sagemaker_standards
@@ -110,28 +271,16 @@ import pydantic
 from vllm.entrypoints.openai.protocol import CompletionRequest
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 
-# Custom ping handler - automatically replaces vLLM's default /ping route
+# Customer override decorators - higher priority than framework register decorators
 @sagemaker_standards.ping
 async def myping(raw_request: Request):
-    logger.info("Custom ping handler called")
-    return Response(status_code=200, content="Custom ping OK")
+    logger.info("Customer ping handler called")
+    return Response(status_code=200, content="Customer ping OK")
 
-def completion(raw_request: Request) -> OpenAIServingCompletion:
-    """Get completion handler from request."""
-    # This should return your completion handler instance
-    # You'll need to adapt this based on your actual setup
-    return raw_request.app.state.openai_serving_completion
-
-async def create_completion(request: CompletionRequest, raw_request: Request):
-    """Create completion response."""
-    handler = completion(raw_request)
-    return await handler.create_completion(request, raw_request)
-
-# Custom invocation handler - automatically replaces vLLM's default /invocations route
 @sagemaker_standards.invoke
 async def invocations(raw_request: Request):
-    """Custom invocation handler for SageMaker."""
-    logger.info("Custom invocation handler called")
+    """Customer invocation handler for SageMaker."""
+    logger.info("Customer invocation handler called")
     try:
         body = await raw_request.json()
     except json.JSONDecodeError as e:
@@ -140,26 +289,29 @@ async def invocations(raw_request: Request):
             detail=f"JSON decode error: {e}"
         ) from e
 
-    # Validate as CompletionRequest
-    validator = pydantic.TypeAdapter(CompletionRequest)
-    try:
-        request = validator.validate_python(body)
-    except pydantic.ValidationError as e:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST.value,
-            detail=f"Invalid CompletionRequest: {e}"
-        ) from e
+    # Custom processing logic
+    result = await custom_model_processing(body)
+    return result
 
-    return await create_completion(request, raw_request)
+# Or use simple functions (automatically discovered)
+async def ping():
+    """Simple ping function - automatically discovered."""
+    return {"status": "healthy", "custom": True}
 
-logger.info("Custom handlers loaded - will be automatically registered during bootstrap")
+async def invoke(request: Request):
+    """Simple invoke function - automatically discovered."""
+    body = await request.json()
+    # Custom model logic
+    return {"result": "custom processing"}
+
+logger.info("Customer handlers loaded - will override framework defaults")
 ```
 
 **Key Points:**
-- ✅ **No manual registration needed** - handlers are automatically detected and set up
-- ✅ **Simple decorators** - just use `@ping` and `@invoke`
-- ✅ **Automatic route replacement** - your handlers replace vLLM's default routes
-- ✅ **Bootstrap integration** - routes are configured when vLLM calls the bootstrap function
+- ✅ **Framework Integration**: Use `@register_ping_handler` for framework defaults
+- ✅ **Customer Overrides**: Use `@ping`/`@invoke` or simple functions to customize
+- ✅ **Automatic Priority**: Customer handlers automatically override framework defaults
+- ✅ **LoRA Support**: Use `@inject_adapter_id` for adapter ID injection from headers
 
 ### Adding Middleware to vLLM Integration
 

@@ -21,7 +21,6 @@ from model_hosting_container_standards.sagemaker.sagemaker_router import (
 router = APIRouter()
 
 
-# Use the new desired workflow with register decorators
 @sagemaker_standards.register_ping_handler
 async def ping(raw_request: Request) -> Response:
     """Ping check. Endpoint required for SageMaker"""
