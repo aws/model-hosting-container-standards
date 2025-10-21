@@ -166,7 +166,11 @@ def remove_conflicting_routes(
         router: The router to be included
         prefix: URL prefix that will be applied to router routes
     """
-    from fastapi.routing import APIRoute
+    # Normalize prefix to ensure consistent path handling
+    if prefix:
+        prefix = prefix.rstrip("/")  # Remove trailing slash
+        if not prefix.startswith("/"):
+            prefix = f"/{prefix}"  # Ensure leading slash
 
     # Get routes that will be added by the router
     incoming_routes = set()
@@ -182,8 +186,7 @@ def remove_conflicting_routes(
     # Remove conflicting routes from app
     app_routes = app.router.routes
     removed_count = 0
-    i = 0
-    while i < len(app_routes):
+    for i in range(len(app_routes) - 1, -1, -1):
         route = app_routes[i]
         if isinstance(route, APIRoute):
             route_path = route.path
@@ -193,8 +196,6 @@ def remove_conflicting_routes(
                 logger.info(f"Removing conflicting route: {route_methods} {route_path}")
                 del app_routes[i]
                 removed_count += 1
-                continue
-        i += 1
 
     if removed_count > 0:
         # Refresh OpenAPI schema
