@@ -18,6 +18,7 @@ class TestCreateSageMakerRouter:
         """Test that create_sagemaker_router calls create_router with correct resolver."""
         # Arrange
         mock_router = Mock(spec=APIRouter)
+        mock_router.routes = []  # Add routes attribute
         mock_create_router.return_value = mock_router
 
         # Act
@@ -48,6 +49,7 @@ class TestBootstrap:
         """Test that bootstrap creates router and includes it in app."""
         # Arrange
         mock_router = Mock()
+        mock_router.routes = []  # Add routes attribute for safe_include_router
         mock_create_router.return_value = mock_router
         app = FastAPI()
 

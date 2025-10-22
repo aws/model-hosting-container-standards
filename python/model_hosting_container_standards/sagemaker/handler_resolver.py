@@ -17,22 +17,6 @@ handler resolver framework.
 3. **Customer script** def invoke function
 4. **Default** handler (if any)
 
-## Usage Examples
-
-```python
-from model_hosting_container_standards.sagemaker.handler_resolver import (
-    get_ping_handler, get_invoke_handler
-)
-
-# Get resolved handlers
-ping_handler = get_ping_handler()
-invoke_handler = get_invoke_handler()
-
-# Use in FastAPI or other frameworks
-if ping_handler:
-    result = await ping_handler()
-```
-
 ## Error Handling
 
 - Environment variable errors are raised immediately (configuration errors)
@@ -43,6 +27,7 @@ if ping_handler:
 import logging
 from typing import Any, Callable, Optional, Union
 
+from ..common.handler.registry import handler_registry
 from ..common.handler.resolver import GenericHandlerResolver, HandlerConfig
 from ..exceptions import HandlerFileNotFoundError, HandlerNotFoundError
 from .sagemaker_loader import SageMakerFunctionLoader
@@ -84,31 +69,23 @@ class SageMakerHandlerConfig(HandlerConfig):
             raise
 
 
-class SageMakerHandlerResolver:
-    """SageMaker-specific handler resolver using generic resolution logic."""
+class SageMakerHandlerResolver(GenericHandlerResolver):
+    """SageMaker-specific handler resolver inheriting from generic resolution logic."""
 
     def __init__(self) -> None:
         """Initialize the SageMaker handler resolver."""
-        self._generic_resolver = GenericHandlerResolver(SageMakerHandlerConfig())
-
-    def resolve_ping_handler(self) -> Optional[Callable]:
-        """Resolve ping handler using generic resolution logic."""
-        return self._generic_resolver.resolve_handler("ping")
-
-    def resolve_invoke_handler(self) -> Optional[Callable]:
-        """Resolve invoke handler using generic resolution logic."""
-        return self._generic_resolver.resolve_handler("invoke")
+        super().__init__(SageMakerHandlerConfig())
 
 
 # Global resolver instance
 _resolver = SageMakerHandlerResolver()
 
 
-def get_ping_handler() -> Optional[Callable]:
-    """Get the resolved ping handler."""
-    return _resolver.resolve_ping_handler()
+def register_sagemaker_overrides():
+    def set_handler(handler_type):
+        handler_registry.set_handler(
+            handler_type, _resolver.resolve_handler(handler_type)
+        )
 
-
-def get_invoke_handler() -> Optional[Callable]:
-    """Get the resolved invoke handler."""
-    return _resolver.resolve_invoke_handler()
+    set_handler("invoke")
+    set_handler("ping")

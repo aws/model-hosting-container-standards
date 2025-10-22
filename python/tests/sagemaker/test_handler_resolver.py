@@ -11,8 +11,6 @@ from model_hosting_container_standards.common.handler import handler_registry
 from model_hosting_container_standards.sagemaker.config import SageMakerEnvVars
 from model_hosting_container_standards.sagemaker.handler_resolver import (
     SageMakerHandlerResolver,
-    get_invoke_handler,
-    get_ping_handler,
 )
 from model_hosting_container_standards.sagemaker.sagemaker_loader import (
     SageMakerFunctionLoader,
@@ -36,7 +34,7 @@ class TestHandlerResolver:
         with patch.dict(
             os.environ, {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "os.path:exists"}
         ):
-            handler = self.resolver.resolve_ping_handler()
+            handler = self.resolver.resolve_handler("ping")
             assert handler is not None
             assert callable(handler)
 
@@ -44,9 +42,9 @@ class TestHandlerResolver:
         """Test resolving ping handler from registry (decorator)."""
         # Mock a decorated handler
         mock_handler = MagicMock()
-        handler_registry.set_handler("ping", mock_handler)
+        handler_registry.set_decorator_handler("ping", mock_handler)
 
-        handler = self.resolver.resolve_ping_handler()
+        handler = self.resolver.resolve_handler("ping")
         assert handler == mock_handler
 
     def test_resolve_ping_from_customer_script(self):
@@ -76,7 +74,7 @@ def ping():
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_ping_handler()
+                handler = self.resolver.resolve_handler("ping")
                 assert handler is not None
                 assert callable(handler)
                 assert handler() == "customer ping"
@@ -87,7 +85,7 @@ def ping():
         """Test that handlers are resolved in correct priority order."""
         # Setup registry handler
         registry_handler = MagicMock(return_value="registry")
-        handler_registry.set_handler("ping", registry_handler)
+        handler_registry.set_decorator_handler("ping", registry_handler)
 
         # Create customer script with ping function
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
@@ -114,7 +112,7 @@ def ping():
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_ping_handler()
+                handler = self.resolver.resolve_handler("ping")
                 assert handler == registry_handler
 
             # Test: Env var should take precedence over registry
@@ -129,7 +127,7 @@ def ping():
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_ping_handler()
+                handler = self.resolver.resolve_handler("ping")
                 assert handler != registry_handler
                 assert callable(handler)
         finally:
@@ -137,21 +135,21 @@ def ping():
 
     def test_no_handler_found(self):
         """Test when no handler is found."""
-        handler = self.resolver.resolve_ping_handler()
+        handler = self.resolver.resolve_handler("ping")
         assert handler is None
 
-    def test_global_functions(self):
-        """Test global convenience functions."""
+    def test_resolver_methods(self):
+        """Test resolver methods for both ping and invoke handlers."""
         mock_handler = MagicMock()
-        handler_registry.set_handler("ping", mock_handler)
+        handler_registry.set_decorator_handler("ping", mock_handler)
 
-        # Test get_ping_handler
-        handler = get_ping_handler()
+        # Test resolve_handler for ping
+        handler = self.resolver.resolve_handler("ping")
         assert handler == mock_handler
 
-        # Test get_invoke_handler
-        handler_registry.set_handler("invoke", mock_handler)
-        handler = get_invoke_handler()
+        # Test resolve_handler for invoke
+        handler_registry.set_decorator_handler("invoke", mock_handler)
+        handler = self.resolver.resolve_handler("invoke")
         assert handler == mock_handler
 
     def test_router_path_in_env_var(self):
@@ -160,7 +158,7 @@ def ping():
         with patch.dict(
             os.environ, {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/health"}
         ):
-            handler = self.resolver.resolve_ping_handler()
+            handler = self.resolver.resolve_handler("ping")
             # Should fall back to next priority (registry/customer script)
             assert handler is None
 
@@ -168,16 +166,16 @@ def ping():
         with patch.dict(
             os.environ, {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "/api/v1/status"}
         ):
-            handler = self.resolver.resolve_ping_handler()
+            handler = self.resolver.resolve_handler("ping")
             assert handler is None
 
     def test_resolve_invoke_handler(self):
         """Test resolving invoke handler."""
         # Test with registry handler
         mock_handler = MagicMock()
-        handler_registry.set_handler("invoke", mock_handler)
+        handler_registry.set_decorator_handler("invoke", mock_handler)
 
-        handler = self.resolver.resolve_invoke_handler()
+        handler = self.resolver.resolve_handler("invoke")
         assert handler == mock_handler
 
     def test_resolve_invoke_from_customer_script(self):
@@ -207,7 +205,7 @@ def invoke(data):
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_invoke_handler()
+                handler = self.resolver.resolve_handler("invoke")
                 assert handler is not None
                 assert callable(handler)
                 assert handler("test") == "customer invoke: test"
