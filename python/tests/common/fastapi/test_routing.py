@@ -9,6 +9,7 @@ from model_hosting_container_standards.common.fastapi.routing import (
     RouteConfig,
     create_router,
     mount_handlers,
+    normalize_prefix,
     remove_conflicting_routes,
 )
 
@@ -40,6 +41,42 @@ class TestRouteConfig:
         assert config1 == config2
         assert config1 != config3
         assert config1 != config4
+
+
+class TestNormalizePrefix:
+    """Test normalize_prefix function."""
+
+    def test_normalize_prefix_empty_string(self):
+        """Test normalize_prefix with empty string."""
+        assert normalize_prefix("") == ""
+
+    def test_normalize_prefix_none_like_values(self):
+        """Test normalize_prefix with None-like values."""
+        assert normalize_prefix("") == ""
+        assert normalize_prefix("/") == ""
+
+    def test_normalize_prefix_with_leading_slash(self):
+        """Test normalize_prefix with existing leading slash."""
+        assert normalize_prefix("/api/v1") == "/api/v1"
+        assert normalize_prefix("/lora") == "/lora"
+
+    def test_normalize_prefix_without_leading_slash(self):
+        """Test normalize_prefix without leading slash."""
+        assert normalize_prefix("api/v1") == "/api/v1"
+        assert normalize_prefix("lora") == "/lora"
+
+    def test_normalize_prefix_with_trailing_slash(self):
+        """Test normalize_prefix with trailing slash."""
+        assert normalize_prefix("api/v1/") == "/api/v1"
+        assert normalize_prefix("/api/v1/") == "/api/v1"
+        assert normalize_prefix("lora/") == "/lora"
+        assert normalize_prefix("/lora/") == "/lora"
+
+    def test_normalize_prefix_complex_paths(self):
+        """Test normalize_prefix with complex paths."""
+        assert normalize_prefix("api/v1/endpoints") == "/api/v1/endpoints"
+        assert normalize_prefix("/api/v1/endpoints/") == "/api/v1/endpoints"
+        assert normalize_prefix("very/deep/nested/path/") == "/very/deep/nested/path"
 
 
 class TestMountHandlers:

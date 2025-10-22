@@ -56,4 +56,4 @@ When contributing to this repository:
 
 ## License
 
-TBD
+Apache-2.0. See LICENSE.

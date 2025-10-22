@@ -10,6 +10,36 @@ from ..handler import handler_registry
 logger = logging.getLogger(__name__)
 
 
+def normalize_prefix(prefix: str) -> str:
+    """Normalize a URL prefix to ensure consistent path handling.
+
+    Args:
+        prefix: The URL prefix to normalize
+
+    Returns:
+        Normalized prefix with leading slash and no trailing slash,
+        or empty string if input is empty/None
+
+    Examples:
+        normalize_prefix("api/v1/") -> "/api/v1"
+        normalize_prefix("/api/v1") -> "/api/v1"
+        normalize_prefix("api/v1") -> "/api/v1"
+        normalize_prefix("") -> ""
+        normalize_prefix("/") -> ""
+    """
+    if not prefix:
+        return ""
+
+    # Remove trailing slash
+    prefix = prefix.rstrip("/")
+
+    # Ensure leading slash (unless empty after rstrip)
+    if prefix and not prefix.startswith("/"):
+        prefix = f"/{prefix}"
+
+    return prefix
+
+
 @dataclass(frozen=True)
 class RouteConfig:
     """Configuration for a handler route.
@@ -167,10 +197,7 @@ def remove_conflicting_routes(
         prefix: URL prefix that will be applied to router routes
     """
     # Normalize prefix to ensure consistent path handling
-    if prefix:
-        prefix = prefix.rstrip("/")  # Remove trailing slash
-        if not prefix.startswith("/"):
-            prefix = f"/{prefix}"  # Ensure leading slash
+    prefix = normalize_prefix(prefix)
 
     # Get routes that will be added by the router
     incoming_routes = set()
@@ -216,6 +243,9 @@ def check_route_conflicts(
     Returns:
         List of conflict descriptions (empty if no conflicts)
     """
+    # Normalize prefix to ensure consistent path handling
+    prefix = normalize_prefix(prefix)
+
     # Get existing routes from the app
     existing_paths = set()
     for route in app.router.routes:
@@ -239,8 +269,6 @@ def check_route_conflicts(
 def safe_include_router(
     app: FastAPI,
     router: APIRouter,
-    prefix: str = "",
-    **include_kwargs,
 ) -> None:
     """Safely include a router in a FastAPI app with automatic conflict resolution.
 
@@ -251,32 +279,27 @@ def safe_include_router(
     Args:
         app: The FastAPI application
         router: The router to include
-        prefix: Optional URL prefix for router routes
-        **include_kwargs: Additional arguments passed to app.include_router()
 
     Example:
         # Simple inclusion with automatic conflict resolution
         safe_include_router(app, my_router)
-
-        # With prefix to organize routes
-        safe_include_router(app, my_router, prefix="/api/v1")
     """
-    logger.info(f"Including router with prefix '{prefix}'")
+    logger.info("Including router with conflict detection")
 
-    # Check for conflicts and warn user
-    conflicts = check_route_conflicts(app, router, prefix)
+    # Check for conflicts and warn user (no prefix handling)
+    conflicts = check_route_conflicts(app, router)
     if conflicts:
         conflict_list = "\n  - ".join(conflicts)
         logger.warning(
             f"Route conflicts detected. The following existing routes will be replaced:\n  - {conflict_list}"
         )
         # Remove conflicting routes
-        remove_conflicting_routes(app, router, prefix)
+        remove_conflicting_routes(app, router)
     else:
         logger.debug("No route conflicts detected")
 
     # Include the router
-    app.include_router(router, prefix=prefix, **include_kwargs)
+    app.include_router(router)
 
     route_count = len([r for r in router.routes if isinstance(r, APIRoute)])
     logger.info(f"Successfully included router with {route_count} routes")
@@ -284,6 +307,7 @@ def safe_include_router(
 
 __all__ = [
     "RouteConfig",
+    "normalize_prefix",
     "mount_handlers",
     "create_router",
     "remove_conflicting_routes",

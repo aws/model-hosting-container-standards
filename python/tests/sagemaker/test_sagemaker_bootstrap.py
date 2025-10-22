@@ -58,7 +58,7 @@ class TestBootstrap:
 
         # Assert
         mock_create_router.assert_called_once()
-        mock_include_router.assert_called_once_with(mock_router, prefix="")
+        mock_include_router.assert_called_once_with(mock_router)
 
     def test_works_with_real_app(self):
         """Test that bootstrap works with a real FastAPI app."""
