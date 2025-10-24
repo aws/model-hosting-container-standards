@@ -7,7 +7,7 @@ from ....logging_config import logger
 from .source.decorator_loader import decorator_loader
 
 
-def register_middleware(
+def custom_middleware(
     name: str,
 ) -> Callable[[Union[Callable, type]], Union[Callable, type]]:
     """
@@ -20,11 +20,11 @@ def register_middleware(
         name: Middleware name (must be one of: throttle, pre_post_process)
 
     Usage:
-        @register_middleware("throttle")
+        @custom_middleware("throttle")
         def my_throttle_middleware():
             pass
 
-        @register_middleware("pre_post_process")
+        @custom_middleware("pre_post_process")
         class MyPrePostProcessMiddleware:
             pass
 

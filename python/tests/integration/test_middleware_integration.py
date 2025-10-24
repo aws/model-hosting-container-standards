@@ -58,9 +58,9 @@ class TestMiddlewareIntegration:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(
                 """
-from model_hosting_container_standards.common.fastapi.middleware import register_middleware, output_formatter
+from model_hosting_container_standards.common.fastapi.middleware import custom_middleware, output_formatter
 
-@register_middleware("throttle")
+@custom_middleware("throttle")
 async def customer_throttle_middleware(request, call_next):
     response = await call_next(request)
     response.headers["X-Customer-Throttle"] = "applied"

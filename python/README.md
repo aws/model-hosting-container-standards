@@ -51,7 +51,7 @@ async def invocations(raw_request: Request) -> Response:
     )
 
 # Customer customization (in model.py)
-@sagemaker_standards.ping
+@sagemaker_standards.custom_ping_handler
 async def custom_ping(raw_request: Request):
     return Response(status_code=200, content="Custom OK")
 
@@ -117,12 +117,12 @@ from fastapi import Request
 from fastapi.responses import Response
 
 # Override decorators - immediately register handlers
-@sagemaker_standards.ping
+@sagemaker_standards.custom_ping_handler
 async def custom_ping(request: Request) -> Response:
     """Custom ping handler."""
     return Response(status_code=200, content="OK")
 
-@sagemaker_standards.invoke
+@sagemaker_standards.custom_invocation_handler
 async def custom_invoke(request: Request) -> dict:
     """Custom invocation handler."""
     body = await request.json()
@@ -130,11 +130,11 @@ async def custom_invoke(request: Request) -> dict:
     return {"result": "processed"}
 
 # Or use simple functions (automatically discovered)
-async def ping():
+async def custom_sagemaker_ping_handler():
     """Simple ping function - automatically discovered."""
     return {"status": "healthy"}
 
-async def invoke(request: Request):
+async def custom_sagemaker_invocation_handler(request: Request):
     """Simple invoke function - automatically discovered."""
     body = await request.json()
     return {"result": "processed"}
@@ -159,13 +159,13 @@ CUSTOM_FASTAPI_PING_HANDLER="vllm.entrypoints.openai.api_server:health"
 
 The system automatically resolves handlers in this order:
 1. **Environment Variables** (highest priority)
-2. **Registry Decorators** (`@ping`, `@invoke` - customer overrides)
-3. **Function Discovery** (functions in custom script named `ping`, `invoke`)
+2. **Registry Decorators** (`@custom_ping_handler`, `@custom_invocation_handler` - customer overrides)
+3. **Function Discovery** (functions in custom script named `custom_sagemaker_ping_handler`, `custom_sagemaker_invocation_handler`)
 4. **Framework Register Decorators** (`@register_ping_handler`, `@register_invocation_handler`)
 
 **Key Differences:**
 - **`@register_ping_handler`**: Used by framework developers, automatically creates routes
-- **`@ping`**: Used by customers to override framework behavior
+- **`@custom_ping_handler`**: Used by customers to override framework behavior
 - **Function discovery**: Simple functions automatically detected in customer scripts
 
 **Note**: All handler detection and route setup happens automatically during bootstrap
@@ -187,8 +187,8 @@ The system automatically resolves handlers in this order:
 
 ```python
 # Override framework defaults (higher priority)
-@sagemaker_standards.ping
-@sagemaker_standards.invoke
+@sagemaker_standards.custom_ping_handler
+@sagemaker_standards.custom_invocation_handler
 
 # LoRA transform decorators
 @sagemaker_standards.register_load_adapter_handler(request_shape={...}, response_shape={...})
@@ -272,12 +272,12 @@ from vllm.entrypoints.openai.protocol import CompletionRequest
 from vllm.entrypoints.openai.serving_completion import OpenAIServingCompletion
 
 # Customer override decorators - higher priority than framework register decorators
-@sagemaker_standards.ping
+@sagemaker_standards.custom_ping_handler
 async def myping(raw_request: Request):
     logger.info("Customer ping handler called")
     return Response(status_code=200, content="Customer ping OK")
 
-@sagemaker_standards.invoke
+@sagemaker_standards.custom_invocation_handler
 async def invocations(raw_request: Request):
     """Customer invocation handler for SageMaker."""
     logger.info("Customer invocation handler called")
@@ -294,11 +294,11 @@ async def invocations(raw_request: Request):
     return result
 
 # Or use simple functions (automatically discovered)
-async def ping():
+async def custom_sagemaker_ping_handler():
     """Simple ping function - automatically discovered."""
     return {"status": "healthy", "custom": True}
 
-async def invoke(request: Request):
+async def custom_sagemaker_invocation_handler(request: Request):
     """Simple invoke function - automatically discovered."""
     body = await request.json()
     # Custom model logic
@@ -309,7 +309,7 @@ logger.info("Customer handlers loaded - will override framework defaults")
 
 **Key Points:**
 - ✅ **Framework Integration**: Use `@register_ping_handler` for framework defaults
-- ✅ **Customer Overrides**: Use `@ping`/`@invoke` or simple functions to customize
+- ✅ **Customer Overrides**: Use `@custom_ping_handler`/`@custom_invocation_handler` or simple functions to customize
 - ✅ **Automatic Priority**: Customer handlers automatically override framework defaults
 - ✅ **LoRA Support**: Use `@inject_adapter_id` for adapter ID injection from headers
 
@@ -319,11 +319,11 @@ You can also add middleware to your vLLM integration:
 
 ```python
 import model_hosting_container_standards.sagemaker as sagemaker_standards
-from model_hosting_container_standards.common.fastapi.middleware import register_middleware, input_formatter, output_formatter
+from model_hosting_container_standards.common.fastapi.middleware import custom_middleware, input_formatter, output_formatter
 from model_hosting_container_standards.logging_config import logger
 
 # Add throttling middleware
-@register_middleware("throttle")
+@custom_middleware("throttle")
 async def rate_limit_middleware(request, call_next):
     # Simple rate limiting example
     client_ip = request.client.host
@@ -348,12 +348,12 @@ async def postprocess_response(response):
     return response
 
 # Your existing handlers
-@sagemaker_standards.ping
+@sagemaker_standards.custom_ping_handler
 async def myping(raw_request: Request):
     logger.info("Custom ping handler called")
     return Response(status_code=201)
 
-@sagemaker_standards.invoke
+@sagemaker_standards.custom_invocation_handler
 async def invocations(raw_request: Request):
     # Your invocation logic here
     pass
@@ -419,20 +419,20 @@ export CUSTOM_POST_PROCESS="postprocessing.py:post_process_func"
 
 ```python
 from model_hosting_container_standards.common.fastapi.middleware import (
-    register_middleware,
+    custom_middleware,
     input_formatter,
     output_formatter,
 )
 
 # Register throttle middleware
-@register_middleware("throttle")
+@custom_middleware("throttle")
 async def my_throttle_middleware(request, call_next):
     # Rate limiting logic
     response = await call_next(request)
     return response
 
 # Register combined pre/post middleware (function)
-@register_middleware("pre_post_process")
+@custom_middleware("pre_post_process")
 async def my_pre_post_middleware(request, call_next):
     # Pre-processing
     request = await pre_process(request)
@@ -445,7 +445,7 @@ async def my_pre_post_middleware(request, call_next):
     return response
 
 # Register middleware class
-@register_middleware("throttle")
+@custom_middleware("throttle")
 class ThrottleMiddleware:
     def __init__(self, app):
         self.app = app
@@ -476,7 +476,7 @@ Environment variables always take priority over decorator-registered middleware:
 
 ```python
 # This decorator will be ignored if CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE is set
-@register_middleware("throttle")
+@custom_middleware("throttle")
 async def decorator_throttle(request, call_next):
     return await call_next(request)
 

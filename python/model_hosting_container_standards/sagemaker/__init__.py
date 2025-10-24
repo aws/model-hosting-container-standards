@@ -26,8 +26,8 @@ from .sagemaker_router import create_sagemaker_router
 # Override decorators - immediately register customer handlers
 register_ping_handler = register_handler("ping")
 register_invocation_handler = register_handler("invoke")
-ping = override_handler("ping")
-invoke = override_handler("invoke")
+custom_ping_handler = override_handler("ping")
+custom_invocation_handler = override_handler("invoke")
 
 
 # Transform decorators - for LoRA handling
@@ -123,8 +123,8 @@ def bootstrap(app: FastAPI) -> FastAPI:
 
 
 __all__: List[str] = [
-    "ping",
-    "invoke",
+    "custom_ping_handler",
+    "custom_invocation_handler",
     "register_load_adapter_handler",
     "register_unload_adapter_handler",
     "register_handler",

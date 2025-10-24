@@ -7,14 +7,14 @@ handler resolver framework.
 
 ### For Ping Handlers:
 1. **Environment variable** specified function (CUSTOM_FASTAPI_PING_HANDLER)
-2. **Registry** @ping decorated function
-3. **Customer script** def ping function
+2. **Registry** @custom_ping_handler decorated function
+3. **Customer script** def custom_sagemaker_ping_handler function
 4. **Default** handler (if any)
 
 ### For Invoke Handlers:
 1. **Environment variable** specified function (CUSTOM_FASTAPI_INVOCATION_HANDLER)
-2. **Registry** @invoke decorated function
-3. **Customer script** def invoke function
+2. **Registry** @custom_invocation_handler decorated function
+3. **Customer script** def custom_sagemaker_invocation_handler function
 4. **Default** handler (if any)
 
 ## Error Handling
@@ -38,6 +38,12 @@ logger = logging.getLogger(__name__)
 class SageMakerHandlerConfig(HandlerConfig):
     """SageMaker-specific handler configuration."""
 
+    # Mapping from handler type to custom function name
+    HANDLER_TYPE_TO_FUNCTION_NAME = {
+        "invoke": "custom_sagemaker_invocation_handler",
+        "ping": "custom_sagemaker_ping_handler",
+    }
+
     def get_env_handler(
         self, handler_type: str
     ) -> Union[Callable[..., Any], str, None]:
@@ -53,19 +59,26 @@ class SageMakerHandlerConfig(HandlerConfig):
         self, handler_type: str
     ) -> Optional[Callable[..., Any]]:
         """Get handler from SageMaker customer script."""
+        custom_function_name = self.HANDLER_TYPE_TO_FUNCTION_NAME.get(handler_type)
+        if not custom_function_name:
+            logger.debug(f"No mapping found for handler type: {handler_type}")
+            return None
+
         try:
             return SageMakerFunctionLoader.load_function_from_spec(
-                f"model:{handler_type}"
+                f"model:{custom_function_name}"
             )
         except (HandlerFileNotFoundError, HandlerNotFoundError) as e:
-            # File doesn't exist or handler not found - continue to next priority
+            # Function not found - continue to next priority
             logger.debug(
-                f"No customer script {handler_type} function found: {type(e).__name__}"
+                f"No customer script {custom_function_name} function found: {type(e).__name__}"
             )
             return None
         except Exception:
             # File exists but has errors (syntax, import, etc.) - this is a real error
-            logger.error(f"Customer script {handler_type} function failed to load")
+            logger.error(
+                f"Customer script {custom_function_name} function failed to load"
+            )
             raise
 
 

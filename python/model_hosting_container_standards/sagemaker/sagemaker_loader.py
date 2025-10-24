@@ -91,24 +91,17 @@ class SageMakerFunctionLoader:
         return function_loader.load_function(spec)
 
     @classmethod
-    def get_ping_handler_from_env(
-        cls, custom_script_path: Optional[str] = None
+    def _get_handler_from_env(
+        cls, env_var: str, custom_script_path: Optional[str] = None
     ) -> Union[Callable[..., Any], str, None]:
-        """Get custom ping handler from CUSTOM_FASTAPI_PING_HANDLER.
-
-        Supported formats:
-        - Function: "myfile.py:ping_function" → Returns callable function
-        - Class method: "myfile.py:MyClass.ping_method" → Returns callable method
-        - Module function: "mymodule:ping_function" → Returns callable function
-        - Module alias: "model:ping_function" → Returns function from SageMaker model.py
-        - Router URL: "/health" → Returns string for router mounting
+        """Generic method to get handler from environment variable.
 
         Returns:
         - Callable: When spec is a function/method specification
         - str: When spec is a router URL (starts with "/")
-        - None: When CUSTOM_FASTAPI_PING_HANDLER is not set
+        - None: When environment variable is not set
         """
-        spec_string = os.getenv(FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER)
+        spec_string = os.getenv(env_var)
         spec = parse_handler_spec(spec_string)
 
         if spec:
@@ -117,46 +110,37 @@ class SageMakerFunctionLoader:
             elif spec.is_function:
                 return cls.load_function_from_spec(spec.spec, custom_script_path)
         return None
+
+    @classmethod
+    def get_ping_handler_from_env(
+        cls, custom_script_path: Optional[str] = None
+    ) -> Union[Callable[..., Any], str, None]:
+        """Get custom ping handler from CUSTOM_FASTAPI_PING_HANDLER."""
+        return cls._get_handler_from_env(
+            FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER, custom_script_path
+        )
 
     @classmethod
     def get_invocation_handler_from_env(
         cls, custom_script_path: Optional[str] = None
     ) -> Union[Callable[..., Any], str, None]:
-        """Get custom invocation handler from CUSTOM_FASTAPI_INVOCATION_HANDLER.
+        """Get custom invocation handler from CUSTOM_FASTAPI_INVOCATION_HANDLER."""
+        return cls._get_handler_from_env(
+            FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER, custom_script_path
+        )
 
-        Supported formats:
-        - Function: "myfile.py:handler_function" → Returns callable function
-        - Class method: "myfile.py:MyClass.pre_process_handler" → Returns callable method
-        - Module function: "mymodule:handler_function" → Returns callable function
-        - Module alias: "model:handler_function" → Returns function from SageMaker model.py
-        - Router URL: "/v1/chat/completions" → Returns string for router mounting
-
-        Returns:
-        - Callable: When spec is a function/method specification
-        - str: When spec is a router URL (starts with "/")
-        - None: When CUSTOM_FASTAPI_INVOCATION_HANDLER is not set
-        """
-        spec_string = os.getenv(FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER)
-        spec = parse_handler_spec(spec_string)
-
-        if spec:
-            if spec.is_router_path:
-                return spec.router_path
-            elif spec.is_function:
-                return cls.load_function_from_spec(spec.spec, custom_script_path)
-        return None
+    @classmethod
+    def _get_handler_spec(cls, env_var: str) -> Optional[HandlerSpec]:
+        """Generic method to get handler specification from environment variable."""
+        spec_string = os.getenv(env_var)
+        return parse_handler_spec(spec_string)
 
     @classmethod
     def get_ping_handler_spec(cls) -> Optional[HandlerSpec]:
         """Get ping handler specification object."""
-        spec_string = os.getenv(FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER)
-        return parse_handler_spec(spec_string)
+        return cls._get_handler_spec(FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER)
 
     @classmethod
     def get_invocation_handler_spec(cls) -> Optional[HandlerSpec]:
         """Get invocation handler specification object."""
-        spec_string = os.getenv(FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER)
-        return parse_handler_spec(spec_string)
-
-
-# Defer initialization to avoid circular imports - will be called after module init
+        return cls._get_handler_spec(FastAPIEnvVars.CUSTOM_FASTAPI_INVOCATION_HANDLER)

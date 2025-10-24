@@ -4,15 +4,15 @@ from .middleware import (
     MiddlewareInfo,
     MiddlewareRegistry,
     create_middleware_object,
+    custom_middleware,
     input_formatter,
     load_middlewares,
     middleware_registry,
     output_formatter,
-    register_middleware,
 )
 
 __all__ = [
-    "register_middleware",
+    "custom_middleware",
     "input_formatter",
     "output_formatter",
     "create_middleware_object",

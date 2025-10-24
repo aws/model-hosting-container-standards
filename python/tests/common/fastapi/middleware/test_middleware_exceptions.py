@@ -3,8 +3,8 @@
 import pytest
 
 from model_hosting_container_standards.common.fastapi.middleware import (
+    custom_middleware,
     input_formatter,
-    register_middleware,
 )
 from model_hosting_container_standards.common.fastapi.middleware.registry import (
     MiddlewareRegistry,
@@ -31,7 +31,7 @@ class TestMiddlewareExceptions:
         """Test MiddlewareRegistrationError for invalid middleware name."""
         with pytest.raises(MiddlewareRegistrationError) as exc_info:
 
-            @register_middleware("invalid_name")
+            @custom_middleware("invalid_name")
             def test_middleware():
                 pass
 
@@ -100,7 +100,7 @@ class TestMiddlewareExceptions:
         """Test that decorator raises MiddlewareRegistrationError."""
         with pytest.raises(MiddlewareRegistrationError):
 
-            @register_middleware("invalid")
+            @custom_middleware("invalid")
             def bad_middleware():
                 pass
 
@@ -129,14 +129,14 @@ class TestMiddlewareExceptions:
         middleware_registry.clear_middlewares()
 
         # First register a middleware using decorator
-        @register_middleware("pre_post_process")
+        @custom_middleware("pre_post_process")
         def first_middleware():
             pass
 
         # Now try to register the same middleware again - this should chain the exception
         with pytest.raises(MiddlewareRegistrationError) as exc_info:
 
-            @register_middleware("pre_post_process")
+            @custom_middleware("pre_post_process")
             def duplicate_middleware():
                 pass
 
