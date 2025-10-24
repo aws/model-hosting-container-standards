@@ -35,12 +35,12 @@ SessionApiTransform  (transform.py)
 
 ### Enabling Sessions in Your Handler
 
-Use the `sticky_routing()` convenience decorator:
+Use the `stateful_session_manager()` convenience decorator:
 
 ```python
-from model_hosting_container_standards.sagemaker import sticky_routing
+from model_hosting_container_standards.sagemaker import stateful_session_manager
 
-@sticky_routing()
+@stateful_session_manager()
 def my_handler(request):
     # Handler logic with session support
     pass

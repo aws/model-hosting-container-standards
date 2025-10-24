@@ -4,7 +4,7 @@ Tests the integration between session management and request/response handling:
 - Session creation via NEW_SESSION requests
 - Session validation on subsequent requests
 - Session closure via CLOSE requests
-- Sticky routing with @sticky_routing() decorator
+- Stateful sessions with @stateful_session_manager() decorator
 - Session expiration handling
 - SageMaker session header handling
 
@@ -101,12 +101,12 @@ class BaseSessionIntegrationTest:
     def setup_handlers(self):
         """Define handlers for session lifecycle tests.
 
-        Sets up a handler that uses sticky_routing to handle
+        Sets up a handler that uses stateful_session_manager to handle
         stateful session requests.
         """
 
         @self.router.post("/invocations")
-        @sagemaker_standards.sticky_routing()
+        @sagemaker_standards.stateful_session_manager()
         async def invocations(request: Request):
             """Stateful invocation handler with session support."""
             body_bytes = await request.body()

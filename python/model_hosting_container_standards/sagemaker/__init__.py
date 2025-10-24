@@ -89,7 +89,7 @@ def inject_adapter_id(adapter_path: str):
     )
 
 
-def sticky_routing():
+def stateful_session_manager():
     """Create a decorator for session-based sticky routing.
 
     This decorator enables stateful session management without JMESPath transformations.
