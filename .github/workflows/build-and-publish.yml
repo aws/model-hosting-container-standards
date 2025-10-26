@@ -89,24 +89,13 @@ jobs:
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
-      contents: read
 
-    defaults:
-      run:
-        working-directory: python
     steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      
       - name: Download wheel artifact
         uses: actions/download-artifact@v4
         with:
           name: wheel
-          path: python/dist/
+          path: dist/
       
       - name: Publish package distributions to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
