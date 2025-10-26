@@ -89,6 +89,7 @@ jobs:
 
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
+      contents: read
 
     defaults:
       run:
