@@ -12,7 +12,7 @@ format:  ## Format code with black and isort
 	poetry run isort .
 
 lint:  ## Run all linters
-	poetry run flake8 .
+	poetry run flake8 . --count --exit-zero --statistics
 	poetry run mypy model_hosting_container_standards/
 	poetry run black --check .
 	poetry run isort --check-only .
