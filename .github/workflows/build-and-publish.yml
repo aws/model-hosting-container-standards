@@ -39,7 +39,9 @@ jobs:
             venv-${{ runner.os }}-
       
       - name: Install dependencies
-        run: make install
+        run: |
+          pwd
+          make install
       
       - name: Build wheel
         run: poetry build
