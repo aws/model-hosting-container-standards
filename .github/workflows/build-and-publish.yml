@@ -106,7 +106,7 @@ jobs:
       - name: check wheel name
         run: |
           pwd
-          ls
+          ls dist/
 
       
       #- name: Publish to PyPI
