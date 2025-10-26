@@ -35,7 +35,7 @@ jobs:
           key: venv-${{ runner.os }}-${{ hashFiles('python/poetry.lock') }}
           restore-keys: venv-${{ runner.os }}-
       
-      - name: Install dependencies
+      - name: Install library and dependencies
         run: make install
       
       - name: Build wheel
@@ -74,10 +74,10 @@ jobs:
           restore-keys: |
             venv-${{ runner.os }}-
       
-      - name: Install dependencies
+      - name: Install library and dependencies
         run: make install
       
-      - name: Run CI checks
+      - name: Lint and Test
         run: make ci
 
   publish:

@@ -161,7 +161,7 @@ class TestCreateTransformDecorator:
     ):
         """Test decorator with no request/response shapes registers as passthrough and returns original function."""
         # Arrange
-        handler_type = LoRAHandlerType.REGISTER_ADAPTER
+        handler_type = str(LoRAHandlerType.REGISTER_ADAPTER)
         mock_func = AsyncMock()
         mock_func.__name__ = "test_handler"
 
@@ -174,7 +174,7 @@ class TestCreateTransformDecorator:
         mock_logger.info.assert_any_call(
             "No transform shapes defined, using passthrough"
         )
-        mock_registry.set_handler.assert_called_once_with(str(handler_type), mock_func)
+        mock_registry.set_handler.assert_called_once_with(handler_type, mock_func)
         mock_logger.info.assert_any_call(
             f"[{handler_type.upper()}] Registered transform handler for {mock_func.__name__}"
         )
