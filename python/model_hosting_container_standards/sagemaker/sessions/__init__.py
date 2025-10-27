@@ -17,4 +17,6 @@ def resolve_session_transform(handler_type: str) -> type:
 
 
 def create_session_transform_decorator():
-    return create_transform_decorator("stateful_session_manager", resolve_session_transform)
+    return create_transform_decorator(
+        "stateful_session_manager", resolve_session_transform
+    )

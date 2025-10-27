@@ -6,7 +6,7 @@ This module provides stateful session management for SageMaker model hosting con
 
 Stateful sessions allow clients to maintain context across multiple inference requests without passing all state in every request. Each session has:
 - **Unique ID**: UUID-based identifier
-- **File-based storage**: Key-value data persisted to disk
+- **File-based storage**: Key-value data stored in-memory (not persistent across restarts)
 - **Automatic expiration**: Configurable TTL (default: 20 minutes)
 - **Thread-safe access**: Concurrent request handling
 

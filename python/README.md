@@ -591,9 +591,10 @@ model_hosting_container_standards/
 │   └── handler/        # Handler specifications & resolution
 │       └── spec/       # Handler interface definitions
 ├── sagemaker/          # SageMaker decorators & handlers
-│   └── lora/           # LoRA adapter support
-│       ├── models/     # LoRA request/response models
-│       └── transforms/ # API transformation logic
+│   ├── lora/           # LoRA adapter support
+│   │   ├── models/     # LoRA request/response models
+│   │   └── transforms/ # API transformation logic
+│   └── sessions/       # Stateful session management
 ├── config.py           # Configuration management
 ├── utils.py            # Utility functions
 └── logging_config.py   # Centralized logging
