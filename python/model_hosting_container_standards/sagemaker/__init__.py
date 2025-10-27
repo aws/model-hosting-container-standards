@@ -149,6 +149,7 @@ __all__: List[str] = [
     "register_ping_handler",
     "register_invocation_handler",
     "inject_adapter_id",
+    "stateful_session_manager",
     "bootstrap",
     "RouteConfig",
 ]
