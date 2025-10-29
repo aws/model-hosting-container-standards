@@ -1,0 +1,173 @@
+"""
+Supervisord configuration generation for ML framework process management.
+
+This module provides functionality to generate supervisord configuration files
+based on environment variables and framework-specific settings.
+"""
+
+import os
+from typing import Optional
+
+from ..logging_config import get_logger
+from .config import (
+    ConfigurationError,
+    SupervisorConfig,
+    parse_environment_variables,
+    validate_config_directory,
+)
+
+logger = get_logger(__name__)
+
+
+# Supervisord configuration template - minimal version
+SUPERVISORD_CONFIG_TEMPLATE = """[supervisord]
+nodaemon=true
+loglevel={log_level}
+logfile=/dev/stdout
+logfile_maxbytes=0
+pidfile=/tmp/supervisord.pid
+
+[program:{program_name}]
+command={framework_command}
+autostart=true
+autorestart={auto_restart}
+startretries={max_recovery_attempts}
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+stderr_logfile=/dev/stderr
+stderr_logfile_maxbytes=0
+"""
+
+
+def generate_supervisord_config(
+    framework_command: str,
+    config: Optional[SupervisorConfig] = None,
+    program_name: str = "framework",
+) -> str:
+    """Generate supervisord configuration content with validation and logging.
+
+    Creates a supervisord configuration file content based on the provided
+    framework command and configuration.
+
+    Args:
+        framework_command: Command to run the ML framework process
+        config: SupervisorConfig instance with supervisor settings.
+                If None, will be parsed from environment variables.
+        program_name: Name for the supervisord program section
+
+    Returns:
+        str: Complete supervisord configuration file content
+
+    Raises:
+        ConfigurationError: If configuration validation fails
+        ValueError: If required parameters are invalid
+    """
+    # Validate required parameters
+    if not framework_command or not framework_command.strip():
+        error_msg = "Framework command cannot be empty"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    if not program_name or not program_name.strip():
+        error_msg = "Program name cannot be empty"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Parse configuration if not provided
+    if config is None:
+        try:
+            config = parse_environment_variables()
+        except ConfigurationError as e:
+            logger.error(f"Failed to parse configuration: {str(e)}")
+            raise
+
+    # Convert boolean auto_recovery to supervisord format
+    auto_restart = "true" if config.auto_recovery else "false"
+
+    try:
+        # Generate configuration content
+        config_content = SUPERVISORD_CONFIG_TEMPLATE.format(
+            log_level=config.log_level,
+            program_name=program_name,
+            framework_command=framework_command,
+            auto_restart=auto_restart,
+            max_recovery_attempts=config.max_recovery_attempts,
+        )
+
+        return config_content
+
+    except Exception as e:
+        error_msg = f"Failed to generate supervisord configuration: {str(e)}"
+        logger.error(error_msg)
+        raise ConfigurationError(error_msg) from e
+
+
+def write_supervisord_config(
+    config_path: str,
+    framework_command: str,
+    config: Optional[SupervisorConfig] = None,
+    program_name: str = "framework",
+) -> None:
+    """Write supervisord configuration to file with comprehensive error handling.
+
+    Generates supervisord configuration content and writes it to the
+    specified file path. Creates parent directories if they don't exist.
+
+    Args:
+        config_path: Path where the configuration file should be written
+        framework_command: Command to run the ML framework process
+        config: SupervisorConfig instance with supervisor settings.
+                If None, will be parsed from environment variables.
+        program_name: Name for the supervisord program section
+
+    Raises:
+        ConfigurationError: If configuration generation or validation fails
+        OSError: If the configuration file cannot be written
+        ValueError: If required parameters are invalid
+    """
+    # Validate config path
+    if not config_path or not config_path.strip():
+        error_msg = "Configuration path cannot be empty"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    # Validate that we can write to the configuration directory
+    is_valid, validation_error = validate_config_directory(config_path)
+    if not is_valid:
+        logger.error(f"Configuration directory validation failed: {validation_error}")
+        raise ConfigurationError(f"Cannot write configuration: {validation_error}")
+
+    try:
+        # Generate configuration content
+        config_content = generate_supervisord_config(
+            framework_command, config, program_name
+        )
+
+        # Create parent directories if they don't exist
+        config_dir = os.path.dirname(config_path)
+        if config_dir and not os.path.exists(config_dir):
+            os.makedirs(config_dir, mode=0o755, exist_ok=True)
+
+        # Write configuration to file
+        with open(config_path, "w", encoding="utf-8") as f:
+            f.write(config_content)
+
+        # Verify the file was written successfully
+        if not os.path.exists(config_path):
+            error_msg = f"Configuration file was not created: {config_path}"
+            logger.error(error_msg)
+            raise OSError(error_msg)
+
+        file_size = os.path.getsize(config_path)
+        logger.info(
+            f"Successfully wrote supervisord configuration ({file_size} bytes) to '{config_path}'"
+        )
+
+    except (OSError, IOError) as e:
+        error_msg = f"Failed to write configuration file '{config_path}': {str(e)}"
+        logger.error(error_msg)
+        raise OSError(error_msg) from e
+    except Exception as e:
+        error_msg = f"Unexpected error writing configuration: {str(e)}"
+        logger.error(error_msg)
+        raise ConfigurationError(error_msg) from e

@@ -1,0 +1,16 @@
+# Include supervisor scripts
+recursive-include model_hosting_container_standards/supervisor/scripts *
+
+# Include documentation
+include README.md
+include LICENSE
+
+# Include configuration files
+include pyproject.toml
+
+# Exclude development files
+exclude .gitignore
+exclude .pre-commit-config.yaml
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store

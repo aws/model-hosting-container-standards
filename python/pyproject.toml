@@ -18,6 +18,15 @@ dependencies = [
 [tool.poetry]
 packages = [{include = "model_hosting_container_standards"}]
 
+# Include supervisor scripts in the package
+include = [
+    "model_hosting_container_standards/supervisor/scripts/*",
+]
+
+# Console scripts for easy access
+[tool.poetry.scripts]
+generate-supervisor-config = "model_hosting_container_standards.supervisor.scripts.generate_supervisor_config:main"
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
