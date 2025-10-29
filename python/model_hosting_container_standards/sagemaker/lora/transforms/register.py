@@ -26,7 +26,7 @@ def validate_sagemaker_register_request(
         return sagemaker_request
     except ValidationError as e:
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail=e.errors(include_url=False)
+            status_code=HTTPStatus.BAD_REQUEST, detail=e.json(include_url=False)
         )
 
 
