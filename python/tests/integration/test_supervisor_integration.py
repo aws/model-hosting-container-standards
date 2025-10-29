@@ -52,7 +52,6 @@ class TestSupervisorIntegration:
             # Set up environment for vLLM
             env_vars = {
                 "FRAMEWORK_COMMAND": "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080",
-                "FRAMEWORK_NAME": "vllm",
                 "ENGINE_AUTO_RECOVERY": "true",
                 "ENGINE_MAX_RECOVERY_ATTEMPTS": "3",
                 "ENGINE_RECOVERY_BACKOFF_SECONDS": "5",
@@ -102,7 +101,6 @@ class TestSupervisorIntegration:
         # Test with TensorRT-LLM framework
         env_vars = {
             "FRAMEWORK_COMMAND": "python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080",
-            "FRAMEWORK_NAME": "tensorrt-llm",
             "ENGINE_AUTO_RECOVERY": "false",
             "ENGINE_MAX_RECOVERY_ATTEMPTS": "1",
             "SUPERVISOR_LOG_LEVEL": "debug",
@@ -144,17 +142,14 @@ class TestSupervisorIntegration:
             get_framework_command,
         )
 
-        # Test priority: FRAMEWORK_COMMAND > FRAMEWORK_NAME
-        env_vars = {"FRAMEWORK_COMMAND": "explicit command", "FRAMEWORK_NAME": "vllm"}
-
+        # Test explicit FRAMEWORK_COMMAND has highest priority
+        env_vars = {"FRAMEWORK_COMMAND": "explicit command"}
         with patch.dict(os.environ, env_vars, clear=True):
             command = get_framework_command()
             assert command == "explicit command"
 
-        # Test that empty FRAMEWORK_COMMAND returns None
-        env_vars = {"FRAMEWORK_COMMAND": "   ", "FRAMEWORK_NAME": "vllm"}
-
-        with patch.dict(os.environ, env_vars, clear=True):
+        # Test that empty environment returns None
+        with patch.dict(os.environ, {}, clear=True):
             command = get_framework_command()
             assert command is None
 
@@ -193,19 +188,12 @@ class TestSupervisorIntegration:
         """Test configuration generation for multiple supported frameworks."""
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
-            get_supported_frameworks,
         )
         from model_hosting_container_standards.supervisor.supervisor_config import (
             generate_supervisord_config,
         )
 
-        supported_frameworks = get_supported_frameworks()
-
-        # Test framework validation
-        assert "vllm" in supported_frameworks
-        assert "tensorrt-llm" in supported_frameworks
-
-        # Test with explicit framework commands
+        # Test with explicit framework commands for different frameworks
         test_cases = [
             (
                 "vllm",
@@ -222,7 +210,6 @@ class TestSupervisorIntegration:
                 os.environ,
                 {
                     "FRAMEWORK_COMMAND": framework_command,
-                    "FRAMEWORK_NAME": framework_name,
                 },
                 clear=True,
             ):
@@ -249,7 +236,6 @@ class TestSupervisorIntegration:
             "ENGINE_MAX_RECOVERY_ATTEMPTS": "5",
             "ENGINE_RECOVERY_BACKOFF_SECONDS": "15",
             "SUPERVISOR_LOG_LEVEL": "warn",
-            "FRAMEWORK_NAME": "vllm",
         }
 
         with patch.dict(os.environ, valid_env, clear=True):
@@ -264,7 +250,6 @@ class TestSupervisorIntegration:
             {"ENGINE_AUTO_RECOVERY": "invalid"},
             {"ENGINE_MAX_RECOVERY_ATTEMPTS": "-1"},
             {"SUPERVISOR_LOG_LEVEL": "invalid"},
-            {"FRAMEWORK_NAME": "unsupported"},
         ]
 
         for invalid_env in invalid_env_cases:

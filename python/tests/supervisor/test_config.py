@@ -6,26 +6,11 @@ from unittest.mock import patch
 import pytest
 
 from model_hosting_container_standards.supervisor.config import (
-    FrameworkName,
     SupervisorConfig,
-    get_framework_name,
     parse_environment_variables,
     validate_config_directory,
     validate_environment_variable,
 )
-
-
-class TestFrameworkName:
-    """Test FrameworkName enum."""
-
-    def test_enum_values(self):
-        """Test that enum has expected values."""
-        assert FrameworkName.VLLM.value == "vllm"
-        assert FrameworkName.TENSORRT_LLM.value == "tensorrt-llm"
-
-    def test_enum_count(self):
-        """Test that enum has exactly 2 values."""
-        assert len(FrameworkName) == 2
 
 
 class TestSupervisorConfig:
@@ -41,7 +26,6 @@ class TestSupervisorConfig:
         assert config.framework_command is None
         assert config.config_path == "/opt/aws/supervisor/conf.d/supervisord.conf"
         assert config.log_level == "info"
-        assert config.framework_name is None
 
 
 class TestValidateEnvironmentVariable:
@@ -170,7 +154,6 @@ class TestParseEnvironmentVariables:
             assert config.framework_command is None
             assert config.config_path == "/opt/aws/supervisor/conf.d/supervisord.conf"
             assert config.log_level == "info"
-            assert config.framework_name is None
 
     def test_all_environment_variables_set(self):
         """Test parsing with all environment variables set."""
@@ -181,7 +164,6 @@ class TestParseEnvironmentVariables:
             "FRAMEWORK_COMMAND": "python -m vllm.entrypoints.api_server",
             "SUPERVISOR_CONFIG_PATH": "/custom/path/supervisord.conf",
             "SUPERVISOR_LOG_LEVEL": "debug",
-            "FRAMEWORK_NAME": "vllm",
         }
 
         with patch.dict(os.environ, env_vars, clear=True):
@@ -193,13 +175,11 @@ class TestParseEnvironmentVariables:
             assert config.framework_command == "python -m vllm.entrypoints.api_server"
             assert config.config_path == "/custom/path/supervisord.conf"
             assert config.log_level == "debug"
-            assert config.framework_name == FrameworkName.VLLM
 
     def test_partial_environment_variables(self):
         """Test parsing with only some environment variables set."""
         env_vars = {
             "ENGINE_AUTO_RECOVERY": "false",
-            "FRAMEWORK_NAME": "tensorrt-llm",
         }
 
         with patch.dict(os.environ, env_vars, clear=True):
@@ -207,7 +187,6 @@ class TestParseEnvironmentVariables:
 
             # Changed values
             assert config.auto_recovery is False
-            assert config.framework_name == FrameworkName.TENSORRT_LLM
 
             # Default values
             assert config.max_recovery_attempts == 3
@@ -235,7 +214,6 @@ class TestParseEnvironmentVariables:
             "ENGINE_AUTO_RECOVERY": "invalid_bool",
             "ENGINE_MAX_RECOVERY_ATTEMPTS": "invalid_int",
             "SUPERVISOR_LOG_LEVEL": "invalid_level",
-            "FRAMEWORK_NAME": "invalid_framework",
         }
 
         with patch.dict(os.environ, env_vars, clear=True):
@@ -246,120 +224,6 @@ class TestParseEnvironmentVariables:
             assert config.auto_recovery is True  # default
             assert config.max_recovery_attempts == 3  # default
             assert config.log_level == "info"  # default
-            assert config.framework_name is None  # default
-
-
-class TestGetFrameworkName:
-    """Test get_framework_name function."""
-
-    def test_default_framework_name(self):
-        """Test default framework name when env var is not set."""
-        with patch.dict(os.environ, {}, clear=True):
-            result = get_framework_name()
-            assert result is None
-
-    @pytest.mark.parametrize(
-        "value,expected",
-        [
-            ("vllm", FrameworkName.VLLM),
-            ("tensorrt-llm", FrameworkName.TENSORRT_LLM),
-        ],
-    )
-    def test_valid_framework_names(self, value, expected):
-        """Test parsing of valid framework names."""
-        with patch.dict(os.environ, {"FRAMEWORK_NAME": value}):
-            result = get_framework_name()
-            assert result == expected
-
-    def test_invalid_framework_name_returns_none(self):
-        """Test that invalid framework names return None."""
-        with patch.dict(os.environ, {"FRAMEWORK_NAME": "invalid"}):
-            result = get_framework_name()
-            assert result is None
-
-
-class TestSupervisorConfigGeneration:
-    """Test supervisor_config module functions."""
-
-    def test_generate_supervisord_config_basic(self):
-        """Test basic supervisord configuration generation."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
-            generate_supervisord_config,
-        )
-
-        config = generate_supervisord_config("python app.py")
-
-        assert "[supervisord]" in config
-        assert "[program:framework]" in config
-        assert "command=python app.py" in config
-        assert "autostart=true" in config
-        assert "autorestart=true" in config
-        assert "startretries=3" in config
-
-    def test_generate_supervisord_config_with_custom_program_name(self):
-        """Test configuration generation with custom program name."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
-            generate_supervisord_config,
-        )
-
-        config = generate_supervisord_config("python app.py", program_name="my-service")
-
-        assert "[program:my-service]" in config
-        assert "command=python app.py" in config
-
-    def test_generate_supervisord_config_with_custom_config(self):
-        """Test configuration generation with custom SupervisorConfig."""
-        from model_hosting_container_standards.supervisor.config import SupervisorConfig
-        from model_hosting_container_standards.supervisor.supervisor_config import (
-            generate_supervisord_config,
-        )
-
-        custom_config = SupervisorConfig(
-            auto_recovery=False, max_recovery_attempts=5, log_level="debug"
-        )
-
-        config = generate_supervisord_config("python app.py", custom_config)
-
-        assert "autorestart=false" in config
-        assert "startretries=5" in config
-        assert "loglevel=debug" in config
-
-    def test_write_supervisord_config(self):
-        """Test writing configuration to file."""
-        import os
-        import tempfile
-
-        from model_hosting_container_standards.supervisor.supervisor_config import (
-            write_supervisord_config,
-        )
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "supervisord.conf")
-
-            write_supervisord_config(config_path, "python app.py")
-
-            assert os.path.exists(config_path)
-
-            with open(config_path, "r") as f:
-                content = f.read()
-                assert "[supervisord]" in content
-                assert "command=python app.py" in content
-
-    def test_write_supervisord_config_creates_directories(self):
-        """Test that write_supervisord_config creates parent directories."""
-        import os
-        import tempfile
-
-        from model_hosting_container_standards.supervisor.supervisor_config import (
-            write_supervisord_config,
-        )
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            config_path = os.path.join(temp_dir, "nested", "dir", "supervisord.conf")
-
-            write_supervisord_config(config_path, "python app.py")
-
-            assert os.path.exists(config_path)
 
 
 class TestFrameworkConfig:
@@ -381,7 +245,7 @@ class TestFrameworkConfig:
             get_framework_command,
         )
 
-        with patch.dict(os.environ, {"FRAMEWORK_NAME": "vllm"}, clear=True):
+        with patch.dict(os.environ, {}, clear=True):
             result = get_framework_command()
             assert result is None
 
@@ -401,7 +265,7 @@ class TestFrameworkConfig:
             get_framework_command,
         )
 
-        env_vars = {"FRAMEWORK_COMMAND": "explicit command", "FRAMEWORK_NAME": "vllm"}
+        env_vars = {"FRAMEWORK_COMMAND": "explicit command"}
 
         with patch.dict(os.environ, env_vars, clear=True):
             result = get_framework_command()
@@ -557,109 +421,6 @@ class TestSupervisorConfigModule:
             write_supervisord_config("   ", "python app.py")
 
 
-class TestFrameworkConfigModule:
-    """Test framework_config module functions."""
-
-    def test_get_framework_command_with_explicit_command(self):
-        """Test getting framework command from FRAMEWORK_COMMAND env var."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            get_framework_command,
-        )
-
-        with patch.dict(os.environ, {"FRAMEWORK_COMMAND": "custom command"}):
-            result = get_framework_command()
-            assert result == "custom command"
-
-    def test_get_framework_command_without_command_returns_none(self):
-        """Test getting framework command when no FRAMEWORK_COMMAND is set."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            get_framework_command,
-        )
-
-        with patch.dict(os.environ, {"FRAMEWORK_NAME": "vllm"}, clear=True):
-            result = get_framework_command()
-            assert result is None
-
-    def test_get_framework_command_no_framework(self):
-        """Test getting framework command when no framework is specified."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            get_framework_command,
-        )
-
-        with patch.dict(os.environ, {}, clear=True):
-            result = get_framework_command()
-            assert result is None
-
-    def test_get_framework_command_explicit_overrides_framework(self):
-        """Test that explicit FRAMEWORK_COMMAND overrides framework defaults."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            get_framework_command,
-        )
-
-        env_vars = {"FRAMEWORK_COMMAND": "explicit command", "FRAMEWORK_NAME": "vllm"}
-
-        with patch.dict(os.environ, env_vars, clear=True):
-            result = get_framework_command()
-            assert result == "explicit command"
-
-    def test_get_framework_command_strips_whitespace(self):
-        """Test that framework command is stripped of whitespace."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            get_framework_command,
-        )
-
-        with patch.dict(os.environ, {"FRAMEWORK_COMMAND": "  python app.py  "}):
-            result = get_framework_command()
-            assert result == "python app.py"
-
-    def test_get_framework_command_empty_explicit_command(self):
-        """Test that empty FRAMEWORK_COMMAND falls back to framework detection."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            get_framework_command,
-        )
-
-        env_vars = {"FRAMEWORK_COMMAND": "   ", "FRAMEWORK_NAME": "vllm"}
-
-        with patch.dict(os.environ, env_vars, clear=True):
-            result = get_framework_command()
-            assert result is None
-
-    @pytest.mark.parametrize(
-        "command,expected",
-        [
-            ("python app.py", True),
-            ("python -m vllm.entrypoints.api_server", True),
-            ("/usr/bin/python3 script.py", True),
-            ("./run_server.sh", True),
-            ("java -jar app.jar", True),
-            ("node server.js", True),
-            ("bash start.sh", True),
-            ("", False),
-            ("   ", False),
-        ],
-    )
-    def test_validate_framework_command(self, command, expected):
-        """Test framework command validation."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            validate_framework_command,
-        )
-
-        result = validate_framework_command(command)
-        assert result == expected
-
-    def test_get_supported_frameworks(self):
-        """Test getting supported frameworks mapping."""
-        from model_hosting_container_standards.supervisor.framework_config import (
-            get_supported_frameworks,
-        )
-
-        frameworks = get_supported_frameworks()
-
-        assert isinstance(frameworks, set)
-        assert "vllm" in frameworks
-        assert "tensorrt-llm" in frameworks
-
-
 class TestIntegration:
     """Test integration between supervisor modules."""
 
@@ -674,7 +435,6 @@ class TestIntegration:
 
         env_vars = {
             "FRAMEWORK_COMMAND": "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080",
-            "FRAMEWORK_NAME": "vllm",
             "ENGINE_AUTO_RECOVERY": "false",
             "ENGINE_MAX_RECOVERY_ATTEMPTS": "5",
             "SUPERVISOR_LOG_LEVEL": "debug",
