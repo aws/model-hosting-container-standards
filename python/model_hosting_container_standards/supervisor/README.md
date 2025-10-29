@@ -9,29 +9,44 @@ Provides supervisord-based process management for ML frameworks with automatic r
 pip install model-hosting-container-standards
 ```
 
-### 2. Copy the Entrypoint Script
-Copy `supervisor-entrypoint.sh` to your container and make it executable:
+### 2. Extract the Entrypoint Script
+Extract the entrypoint script from the installed package:
+```bash
+# In your Dockerfile (extracts to default: /opt/aws/supervisor-entrypoint.sh)
+RUN extract-supervisor-entrypoint
+```
+
+Or specify a custom location:
 ```bash
 # In your Dockerfile
-COPY supervisor-entrypoint.sh /opt/aws/
-RUN chmod +x /opt/aws/supervisor-entrypoint.sh
+RUN extract-supervisor-entrypoint -o /usr/local/bin/supervisor-entrypoint.sh
 ```
 
 ### 3. Set as Container Entrypoint
 ```dockerfile
-# In your Dockerfile
+# In your Dockerfile (using default path)
 ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
+```
+
+### Alternative: One-line Setup
+```dockerfile
+# Install and extract in one step (uses default path: /opt/aws/supervisor-entrypoint.sh)
+RUN pip install model-hosting-container-standards && extract-supervisor-entrypoint
 ```
 
 ## Configuration
 
 Set environment variables to configure your framework:
 
-### Set Your Framework Command
+### Default Paths
+- **Entrypoint script**: `/opt/aws/supervisor-entrypoint.sh` (extracted by `extract-supervisor-entrypoint`)
+- **Config file**: `/tmp/supervisord.conf` (generated automatically)
+
+### Set Your Launch Command
 ```bash
-export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 # or
-export FRAMEWORK_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
+export LAUNCH_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
 # or any other framework start command
 ```
 
@@ -39,9 +54,8 @@ export FRAMEWORK_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --
 ```bash
 export ENGINE_AUTO_RECOVERY=true        # Auto-restart on failure (default: true)
 export ENGINE_MAX_RECOVERY_ATTEMPTS=3   # Max restart attempts (default: 3)
-export ENGINE_RECOVERY_BACKOFF_SECONDS=10  # Wait between restarts (default: 10)
 export SUPERVISOR_LOG_LEVEL=info        # Log level (default: info)
-export SUPERVISOR_CONFIG_PATH=/tmp/supervisord.conf  # Config file path
+export SUPERVISOR_CONFIG_PATH=/tmp/supervisord.conf  # Config file path (default: /tmp/supervisord.conf)
 ```
 
 ## What You Get
@@ -56,17 +70,16 @@ Your container will now:
 ```dockerfile
 FROM python:3.10
 
-# Install your ML framework
+# Install your ML framework and supervisor package
 RUN pip install vllm model-hosting-container-standards
 
-# Copy the entrypoint script
-COPY supervisor-entrypoint.sh /opt/aws/
-RUN chmod +x /opt/aws/supervisor-entrypoint.sh
+# Extract the entrypoint script from the package (default: /opt/aws/supervisor-entrypoint.sh)
+RUN extract-supervisor-entrypoint
 
 # Set environment
-ENV FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+ENV LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 
-# Use supervisor entrypoint
+# Use supervisor entrypoint (default path)
 ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
 ```
 
@@ -74,35 +87,34 @@ ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
 
 ### vLLM Example
 ```bash
-export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 export ENGINE_AUTO_RECOVERY=true
-./supervisor-entrypoint.sh
+/opt/aws/supervisor-entrypoint.sh  # Using default path
 ```
 
 ### TensorRT-LLM Example
 ```bash
-export FRAMEWORK_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
+export LAUNCH_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
 export ENGINE_MAX_RECOVERY_ATTEMPTS=5
-./supervisor-entrypoint.sh
+/opt/aws/supervisor-entrypoint.sh  # Using default path
 ```
 
-### Debug Mode
+### Minimal Recovery Mode
 ```bash
-export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
-export SUPERVISOR_DEBUG=true
-export SUPERVISOR_LOG_LEVEL=debug
+export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+export ENGINE_AUTO_RECOVERY=false
 export ENGINE_MAX_RECOVERY_ATTEMPTS=1
-./supervisor-entrypoint.sh
+/opt/aws/supervisor-entrypoint.sh  # Using default path
 ```
 
 ## Troubleshooting
 
 ### Common Errors
 
-**"No framework command available"**
+**"No launch command available"**
 ```bash
-# Fix: Set FRAMEWORK_COMMAND with your framework's start command
-export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+# Fix: Set LAUNCH_COMMAND with your framework's start command
+export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 ```
 
 **"supervisord command not found"**
@@ -113,8 +125,8 @@ pip install supervisor
 
 **Process keeps restarting**
 ```bash
-# Fix: Enable debug mode and check logs
-export SUPERVISOR_DEBUG=true
+# Fix: Disable auto-recovery to see the actual error
+export ENGINE_AUTO_RECOVERY=false
 export ENGINE_MAX_RECOVERY_ATTEMPTS=1
 ```
 
@@ -123,27 +135,28 @@ export ENGINE_MAX_RECOVERY_ATTEMPTS=1
 ```python
 from model_hosting_container_standards.supervisor import (
     generate_supervisord_config,
-    get_framework_command,
+    write_supervisord_config,
     SupervisorConfig
 )
 
-# Get framework command
-command = get_framework_command()
-
-# Generate configuration
-config_content = generate_supervisord_config(command)
-
-# Custom configuration
+# Create configuration
 config = SupervisorConfig(
     auto_recovery=True,
     max_recovery_attempts=5,
-    framework_command="python -m vllm.entrypoints.api_server"
+    launch_command="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 )
+
+# Generate configuration content
+config_content = generate_supervisord_config(config)
+
+# Write configuration to file
+write_supervisord_config("/tmp/supervisord.conf", config)
 ```
 
 ## Key Files
 
-- `scripts/supervisor-entrypoint.sh` - Main entrypoint script to copy to your container
+- `scripts/supervisor-entrypoint.sh` - Main entrypoint script for your container
+- `scripts/extract_entrypoint.py` - CLI tool to extract the entrypoint script (`extract-supervisor-entrypoint`)
 - `scripts/generate_supervisor_config.py` - Configuration generator (used internally)
 
 That's all you need! The supervisor system handles the rest automatically.

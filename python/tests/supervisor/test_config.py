@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from model_hosting_container_standards.supervisor.config import (
+from model_hosting_container_standards.supervisor.models import (
     SupervisorConfig,
     parse_environment_variables,
     validate_config_directory,
@@ -24,7 +24,7 @@ class TestSupervisorConfig:
         assert config.max_recovery_attempts == 3
         assert config.recovery_backoff_seconds == 10
         assert config.framework_command is None
-        assert config.config_path == "/opt/aws/supervisor/conf.d/supervisord.conf"
+        assert config.config_path == "/tmp/supervisord.conf"
         assert config.log_level == "info"
 
 
@@ -152,7 +152,7 @@ class TestParseEnvironmentVariables:
             assert config.max_recovery_attempts == 3
             assert config.recovery_backoff_seconds == 10
             assert config.framework_command is None
-            assert config.config_path == "/opt/aws/supervisor/conf.d/supervisord.conf"
+            assert config.config_path == "/tmp/supervisord.conf"
             assert config.log_level == "info"
 
     def test_all_environment_variables_set(self):
@@ -192,7 +192,7 @@ class TestParseEnvironmentVariables:
             assert config.max_recovery_attempts == 3
             assert config.recovery_backoff_seconds == 10
             assert config.framework_command is None
-            assert config.config_path == "/opt/aws/supervisor/conf.d/supervisord.conf"
+            assert config.config_path == "/tmp/supervisord.conf"
             assert config.log_level == "info"
 
     def test_string_trimming(self):
@@ -306,7 +306,7 @@ class TestSupervisorConfigModule:
 
     def test_generate_supervisord_config_basic(self):
         """Test basic supervisord configuration generation."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 
@@ -321,7 +321,7 @@ class TestSupervisorConfigModule:
 
     def test_generate_supervisord_config_with_custom_program_name(self):
         """Test configuration generation with custom program name."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 
@@ -332,10 +332,10 @@ class TestSupervisorConfigModule:
 
     def test_generate_supervisord_config_with_custom_config(self):
         """Test configuration generation with custom SupervisorConfig."""
-        from model_hosting_container_standards.supervisor.config import SupervisorConfig
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
+        from model_hosting_container_standards.supervisor.models import SupervisorConfig
 
         custom_config = SupervisorConfig(
             auto_recovery=False, max_recovery_attempts=5, log_level="debug"
@@ -349,7 +349,7 @@ class TestSupervisorConfigModule:
 
     def test_generate_supervisord_config_empty_command_raises_error(self):
         """Test that empty framework command raises ValueError."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 
@@ -361,7 +361,7 @@ class TestSupervisorConfigModule:
 
     def test_generate_supervisord_config_empty_program_name_raises_error(self):
         """Test that empty program name raises ValueError."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 
@@ -376,7 +376,7 @@ class TestSupervisorConfigModule:
         import os
         import tempfile
 
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             write_supervisord_config,
         )
 
@@ -397,7 +397,7 @@ class TestSupervisorConfigModule:
         import os
         import tempfile
 
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             write_supervisord_config,
         )
 
@@ -410,7 +410,7 @@ class TestSupervisorConfigModule:
 
     def test_write_supervisord_config_empty_path_raises_error(self):
         """Test that empty config path raises ValueError."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             write_supervisord_config,
         )
 
@@ -429,7 +429,7 @@ class TestIntegration:
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
         )
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 
@@ -459,7 +459,7 @@ class TestIntegration:
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
         )
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 

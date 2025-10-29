@@ -35,15 +35,15 @@ class TestSupervisorIntegration:
 
     def test_end_to_end_config_generation_and_validation(self):
         """Test complete configuration generation and validation workflow."""
-        from model_hosting_container_standards.supervisor.config import (
-            parse_environment_variables,
-        )
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
         )
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
             write_supervisord_config,
+        )
+        from model_hosting_container_standards.supervisor.models import (
+            parse_environment_variables,
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -88,14 +88,14 @@ class TestSupervisorIntegration:
 
     def test_framework_integration_with_environment_variables(self):
         """Test framework integration with various environment variable combinations."""
-        from model_hosting_container_standards.supervisor.config import (
-            parse_environment_variables,
-        )
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
         )
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
+        )
+        from model_hosting_container_standards.supervisor.models import (
+            parse_environment_variables,
         )
 
         # Test with TensorRT-LLM framework
@@ -125,7 +125,7 @@ class TestSupervisorIntegration:
 
     def test_configuration_error_handling(self):
         """Test error handling in configuration generation."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 
@@ -155,7 +155,7 @@ class TestSupervisorIntegration:
 
     def test_configuration_file_permissions_and_structure(self):
         """Test that generated configuration files have correct permissions and structure."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             write_supervisord_config,
         )
 
@@ -189,7 +189,7 @@ class TestSupervisorIntegration:
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
         )
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
 
@@ -226,7 +226,7 @@ class TestSupervisorIntegration:
 
     def test_environment_variable_validation_integration(self):
         """Test integration of environment variable validation across modules."""
-        from model_hosting_container_standards.supervisor.config import (
+        from model_hosting_container_standards.supervisor.models import (
             parse_environment_variables,
         )
 
@@ -260,12 +260,12 @@ class TestSupervisorIntegration:
 
     def test_module_consistency_across_functions(self):
         """Test that different module functions produce consistent results."""
-        from model_hosting_container_standards.supervisor.config import (
-            parse_environment_variables,
-        )
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
             write_supervisord_config,
+        )
+        from model_hosting_container_standards.supervisor.models import (
+            parse_environment_variables,
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -309,7 +309,7 @@ class TestSupervisorIntegration:
 
     def test_directory_creation_integration(self):
         """Test that configuration directory creation works across modules."""
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             write_supervisord_config,
         )
 
@@ -329,10 +329,10 @@ class TestSupervisorIntegration:
 
     def test_configuration_template_completeness(self):
         """Test that generated configuration includes all required supervisord sections."""
-        from model_hosting_container_standards.supervisor.config import SupervisorConfig
-        from model_hosting_container_standards.supervisor.supervisor_config import (
+        from model_hosting_container_standards.supervisor.generator import (
             generate_supervisord_config,
         )
+        from model_hosting_container_standards.supervisor.models import SupervisorConfig
 
         config = SupervisorConfig(
             auto_recovery=True,

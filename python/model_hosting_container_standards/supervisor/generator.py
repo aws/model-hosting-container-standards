@@ -6,15 +6,9 @@ based on environment variables and framework-specific settings.
 """
 
 import os
-from typing import Optional
 
 from ..logging_config import get_logger
-from .config import (
-    ConfigurationError,
-    SupervisorConfig,
-    parse_environment_variables,
-    validate_config_directory,
-)
+from .models import ConfigurationError, SupervisorConfig, validate_config_directory
 
 logger = get_logger(__name__)
 
@@ -40,19 +34,16 @@ stderr_logfile_maxbytes=0
 
 
 def generate_supervisord_config(
-    framework_command: str,
-    config: Optional[SupervisorConfig] = None,
-    program_name: str = "framework",
+    config: SupervisorConfig,
+    program_name: str = "llm-engine",
 ) -> str:
     """Generate supervisord configuration content with validation and logging.
 
     Creates a supervisord configuration file content based on the provided
-    framework command and configuration.
+    configuration.
 
     Args:
-        framework_command: Command to run the ML framework process
         config: SupervisorConfig instance with supervisor settings.
-                If None, will be parsed from environment variables.
         program_name: Name for the supervisord program section
 
     Returns:
@@ -63,23 +54,16 @@ def generate_supervisord_config(
         ValueError: If required parameters are invalid
     """
     # Validate required parameters
-    if not framework_command or not framework_command.strip():
-        error_msg = "Framework command cannot be empty"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
     if not program_name or not program_name.strip():
         error_msg = "Program name cannot be empty"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Parse configuration if not provided
-    if config is None:
-        try:
-            config = parse_environment_variables()
-        except ConfigurationError as e:
-            logger.error(f"Failed to parse configuration: {str(e)}")
-            raise
+    # Validate launch command from config
+    if not config.launch_command or not config.launch_command.strip():
+        error_msg = "Launch command in configuration cannot be empty"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
 
     # Convert boolean auto_recovery to supervisord format
     auto_restart = "true" if config.auto_recovery else "false"
@@ -89,7 +73,7 @@ def generate_supervisord_config(
         config_content = SUPERVISORD_CONFIG_TEMPLATE.format(
             log_level=config.log_level,
             program_name=program_name,
-            framework_command=framework_command,
+            framework_command=config.launch_command,
             auto_restart=auto_restart,
             max_recovery_attempts=config.max_recovery_attempts,
         )
@@ -104,9 +88,8 @@ def generate_supervisord_config(
 
 def write_supervisord_config(
     config_path: str,
-    framework_command: str,
-    config: Optional[SupervisorConfig] = None,
-    program_name: str = "framework",
+    config: SupervisorConfig,
+    program_name: str = "llm-engine",
 ) -> None:
     """Write supervisord configuration to file with comprehensive error handling.
 
@@ -115,9 +98,7 @@ def write_supervisord_config(
 
     Args:
         config_path: Path where the configuration file should be written
-        framework_command: Command to run the ML framework process
         config: SupervisorConfig instance with supervisor settings.
-                If None, will be parsed from environment variables.
         program_name: Name for the supervisord program section
 
     Raises:
@@ -139,9 +120,7 @@ def write_supervisord_config(
 
     try:
         # Generate configuration content
-        config_content = generate_supervisord_config(
-            framework_command, config, program_name
-        )
+        config_content = generate_supervisord_config(config, program_name)
 
         # Create parent directories if they don't exist
         config_dir = os.path.dirname(config_path)
