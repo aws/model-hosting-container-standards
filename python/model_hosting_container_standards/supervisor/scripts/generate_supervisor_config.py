@@ -68,7 +68,7 @@ def main() -> int:
         framework_command = args.command or get_framework_command()
 
         if not framework_command:
-            error_msg = "No framework command available. Set FRAMEWORK_COMMAND or FRAMEWORK_NAME environment variables."
+            error_msg = "No framework command available. Set FRAMEWORK_COMMAND environment variable."
             logger.error(error_msg)
             print(f"ERROR: {error_msg}", file=sys.stderr)
             return 1

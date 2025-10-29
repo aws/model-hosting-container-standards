@@ -35,11 +35,6 @@ export FRAMEWORK_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --
 # or any other framework start command
 ```
 
-### Optional: Set Framework Name for Validation
-```bash
-export FRAMEWORK_NAME=vllm  # or tensorrt-llm (for validation purposes)
-```
-
 ### Optional Settings
 ```bash
 export ENGINE_AUTO_RECOVERY=true        # Auto-restart on failure (default: true)

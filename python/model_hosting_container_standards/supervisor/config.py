@@ -7,19 +7,11 @@ parsing for the supervisord-based process management system.
 
 import os
 from dataclasses import dataclass
-from enum import Enum
 from typing import List, Optional, Tuple
 
 from ..logging_config import get_logger
 
 logger = get_logger(__name__)
-
-
-class FrameworkName(Enum):
-    """Supported ML framework names for supervisor management."""
-
-    VLLM = "vllm"
-    TENSORRT_LLM = "tensorrt-llm"
 
 
 class ConfigurationError(Exception):
@@ -52,7 +44,6 @@ class SupervisorConfig:
     framework_command: Optional[str] = None
     config_path: str = "/opt/aws/supervisor/conf.d/supervisord.conf"
     log_level: str = "info"
-    framework_name: Optional[FrameworkName] = None
 
 
 def validate_environment_variable(
@@ -206,17 +197,6 @@ def parse_environment_variables() -> SupervisorConfig:
             f"Invalid SUPERVISOR_LOG_LEVEL: {error_msg}. Using default: {config.log_level}"
         )
 
-    # Parse framework name with validation
-    framework_name = os.getenv("FRAMEWORK_NAME", "").strip().lower()
-    if framework_name:
-        try:
-            config.framework_name = FrameworkName(framework_name)
-        except ValueError:
-            valid_frameworks = [f.value for f in FrameworkName]
-            validation_warnings.append(
-                f"Invalid FRAMEWORK_NAME '{framework_name}'. Must be one of {valid_frameworks}. Using default: {config.framework_name}"
-            )
-
     # Log all validation warnings
     for warning in validation_warnings:
         logger.warning(warning)
@@ -229,26 +209,6 @@ def parse_environment_variables() -> SupervisorConfig:
         logger.error(error_msg)
         raise ConfigurationError(error_msg)
     return config
-
-
-def get_framework_name() -> Optional[FrameworkName]:
-    """Get the framework name from environment variables with validation.
-
-    Returns:
-        Optional[FrameworkName]: Validated framework name or None if invalid/missing
-    """
-    framework_name = os.getenv("FRAMEWORK_NAME", "").strip().lower()
-    if not framework_name:
-        return None
-
-    try:
-        return FrameworkName(framework_name)
-    except ValueError:
-        valid_frameworks = [f.value for f in FrameworkName]
-        logger.warning(
-            f"Invalid FRAMEWORK_NAME '{framework_name}'. Must be one of {valid_frameworks}"
-        )
-        return None
 
 
 def validate_config_directory(config_path: str) -> Tuple[bool, Optional[str]]:

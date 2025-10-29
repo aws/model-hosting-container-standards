@@ -54,7 +54,6 @@ check_requirements() {
     # Log configuration being used
     log_info "Configuration validation:"
     log_info "  FRAMEWORK_COMMAND: ${FRAMEWORK_COMMAND}"
-    log_info "  FRAMEWORK_NAME: ${FRAMEWORK_NAME:-<not set>}"
     log_info "  ENGINE_AUTO_RECOVERY: ${ENGINE_AUTO_RECOVERY:-true}"
     log_info "  ENGINE_MAX_RECOVERY_ATTEMPTS: ${ENGINE_MAX_RECOVERY_ATTEMPTS:-3}"
     log_info "  ENGINE_RECOVERY_BACKOFF_SECONDS: ${ENGINE_RECOVERY_BACKOFF_SECONDS:-10}"
@@ -224,7 +223,7 @@ main() {
     # Log environment for debugging
     if [[ "${SUPERVISOR_DEBUG:-false}" == "true" ]]; then
         log_debug "Environment variables:"
-        env | grep -E '^(FRAMEWORK|ENGINE|SUPERVISOR)_' | while IFS= read -r line; do
+        env | grep -E '^(FRAMEWORK_COMMAND|ENGINE|SUPERVISOR)_' | while IFS= read -r line; do
             log_debug "  $line"
         done
     fi

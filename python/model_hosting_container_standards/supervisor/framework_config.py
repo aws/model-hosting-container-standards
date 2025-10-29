@@ -9,13 +9,8 @@ import os
 from typing import Optional
 
 from ..logging_config import get_logger
-from .config import FrameworkName
 
 logger = get_logger(__name__)
-
-
-# Supported framework names for validation
-SUPPORTED_FRAMEWORKS = {framework.value for framework in FrameworkName}
 
 
 def get_framework_command() -> Optional[str]:
@@ -74,12 +69,3 @@ def validate_framework_command(command: str) -> bool:
     # Allow other patterns but warn
     logger.warning(f"Framework command executable '{executable}' may not be valid")
     return True
-
-
-def get_supported_frameworks() -> set[str]:
-    """Get a set of supported framework names for validation.
-
-    Returns:
-        set[str]: Set of supported framework names
-    """
-    return SUPPORTED_FRAMEWORKS
