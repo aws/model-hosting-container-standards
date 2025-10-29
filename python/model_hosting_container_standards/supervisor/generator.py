@@ -13,7 +13,16 @@ from .models import ConfigurationError, SupervisorConfig, validate_config_direct
 logger = get_logger(__name__)
 
 
-# Supervisord configuration template - minimal version
+# Supervisord configuration template for LLM service monitoring
+#
+# Key behavior: LLM services are expected to run indefinitely. Any exit is considered an error.
+# - exitcodes=255: Only exit code 255 is "expected" - all other exits (0,1,2...) trigger restart
+# - startsecs=1: Process must run at least 1 second to be considered successfully started
+# - autorestart=true/false: Based on ENGINE_AUTO_RECOVERY setting
+# - startretries=N: Maximum restart attempts before entering FATAL state
+#
+# When a program enters FATAL state (too many restart failures), the entrypoint script
+# will detect this and exit with code 1 to signal container failure.
 SUPERVISORD_CONFIG_TEMPLATE = """[supervisord]
 nodaemon=true
 loglevel={log_level}
@@ -30,6 +39,8 @@ stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
 stderr_logfile_maxbytes=0
+exitcodes=255
+startsecs=1
 """
 
 

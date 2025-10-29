@@ -63,8 +63,21 @@ export SUPERVISOR_CONFIG_PATH=/tmp/supervisord.conf  # Config file path (default
 Your container will now:
 - ✅ Automatically generate supervisor configuration
 - ✅ Start your ML framework with process monitoring
-- ✅ Auto-restart on failures
+- ✅ Auto-restart on failures (up to configurable retry limit)
+- ✅ Exit with code 1 when service fails permanently (after max retries)
 - ✅ Provide structured logging
+
+### Service Monitoring Behavior
+
+**Expected Behavior**: LLM services should run indefinitely. Any exit is treated as an error.
+
+**Restart Logic**:
+1. If your service exits for any reason (crash, OOM, etc.), it will be automatically restarted
+2. Maximum restart attempts: `ENGINE_MAX_RECOVERY_ATTEMPTS` (default: 3)
+3. If restart limit is exceeded, the container exits with code 1
+4. This signals to container orchestrators (Docker, Kubernetes) that the service failed
+
+**Why This Matters**: Container orchestrators can detect the failure and take appropriate action (restart container, alert operators, etc.)
 
 ## Example Dockerfile
 ```dockerfile

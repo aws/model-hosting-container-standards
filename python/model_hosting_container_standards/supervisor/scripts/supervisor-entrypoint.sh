@@ -57,23 +57,13 @@ generate_supervisor_config() {
     local config_path="${SUPERVISOR_CONFIG_PATH:-$DEFAULT_CONFIG_PATH}"
     local program_name="llm-engine"
 
-    # Find the Python script
-    local script_path="$(dirname "$0")/generate_supervisor_config.py"
-
-    if [[ ! -f "$script_path" ]]; then
-        log_error "Could not find generate_supervisor_config.py script at: $script_path"
-        log_error "Script should be in the same directory as this entrypoint"
-        return 1
+    # Use Python module directly to generate configuration (works without package installation)
+    local python_cmd="python3"
+    if ! command -v python3 >/dev/null 2>&1; then
+        python_cmd="python"
     fi
 
-    # Determine Python command
-    local python_cmd="python"
-    if command -v python3 >/dev/null 2>&1; then
-        python_cmd="python3"
-    fi
-
-    # Generate configuration
-    if ! "$python_cmd" "$script_path" -o "$config_path" -p "$program_name" --log-level "ERROR"; then
+    if ! $python_cmd -m model_hosting_container_standards.supervisor.scripts.generate_supervisor_config -o "$config_path" -p "$program_name" --log-level "ERROR"; then
         log_error "Failed to generate supervisord configuration"
         return 1
     fi
@@ -124,9 +114,37 @@ start_supervisord() {
     # Set up signal handlers for graceful shutdown
     trap 'log_info "Received termination signal, shutting down supervisord"; exit 0' TERM INT
 
-    # Start supervisord in foreground mode
+    # LLM Service Monitoring Strategy:
+    # 1. LLM services should run indefinitely - any exit is an error
+    # 2. supervisord will automatically restart failed processes up to max_recovery_attempts
+    # 3. If restart limit is exceeded, program enters FATAL state
+    # 4. We monitor for FATAL state and exit container with code 1 to signal failure
+    # Start supervisord in background mode so we can monitor it
     log_info "Executing supervisord (PID: $$)"
-    exec supervisord -c "$config_path"
+    supervisord -c "$config_path" &
+    local supervisord_pid=$!
+
+    # Monitor supervisord and program status every 2 seconds
+    # This loop continues until supervisord exits or we detect FATAL state
+    while kill -0 $supervisord_pid 2>/dev/null; do
+        # Check if our LLM program has entered FATAL state (too many restart failures)
+        # FATAL state means supervisord gave up trying to restart the program
+        if supervisorctl status llm-engine 2>/dev/null | grep -q "FATAL"; then
+            log_error "Program llm-engine entered FATAL state after maximum retry attempts"
+            log_error "This indicates the LLM service is failing to start or crashing repeatedly"
+            log_error "Shutting down supervisord and exiting with code 1"
+            supervisorctl shutdown 2>/dev/null || true
+            wait $supervisord_pid 2>/dev/null || true
+            exit 1
+        fi
+        sleep 2
+    done
+
+    # Wait for supervisord to finish and get its exit code
+    wait $supervisord_pid
+    local exit_code=$?
+    log_info "Supervisord exited with code: $exit_code"
+    exit $exit_code
 }
 
 # Main execution with comprehensive error handling and logging
