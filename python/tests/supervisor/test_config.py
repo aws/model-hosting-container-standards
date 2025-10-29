@@ -41,7 +41,7 @@ class TestSupervisorConfig:
         assert config.framework_command is None
         assert config.config_path == "/opt/aws/supervisor/conf.d/supervisord.conf"
         assert config.log_level == "info"
-        assert config.framework_name == FrameworkName.GENERIC
+        assert config.framework_name is None
 
 
 class TestValidateEnvironmentVariable:
