@@ -6,31 +6,25 @@ for different ML frameworks supported by the supervisor system.
 """
 
 import os
-from typing import Dict, Optional
+from typing import Optional
 
 from ..logging_config import get_logger
-from .config import FrameworkName, get_framework_name
+from .config import FrameworkName
 
 logger = get_logger(__name__)
 
 
-# Default framework commands mapping
-DEFAULT_FRAMEWORK_COMMANDS: Dict[FrameworkName, str] = {
-    FrameworkName.VLLM: "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080",
-    FrameworkName.TENSORRT_LLM: "python /path/to/tensorrt_llm_server --host 0.0.0.0 --port 8080",
-}
+# Supported framework names for validation
+SUPPORTED_FRAMEWORKS = {framework.value for framework in FrameworkName}
 
 
 def get_framework_command() -> Optional[str]:
-    """Get the framework command from environment or default.
+    """Get the framework command from environment variables.
 
     Returns:
         Optional[str]: Framework command to execute, or None if not available
-
-    Raises:
-        ConfigurationError: If no framework command can be determined
     """
-    # Check for explicit framework command first
+    # Check for explicit framework command
     framework_command = os.getenv("FRAMEWORK_COMMAND")
     if framework_command:
         command = framework_command.strip()
@@ -39,20 +33,9 @@ def get_framework_command() -> Optional[str]:
         else:
             logger.warning("FRAMEWORK_COMMAND environment variable is set but empty")
 
-    # Try to get default command for detected framework
-    framework = get_framework_name()
-    if framework:
-        if framework in DEFAULT_FRAMEWORK_COMMANDS:
-            return DEFAULT_FRAMEWORK_COMMANDS[framework]
-        else:
-            logger.error(
-                f"Framework '{framework.value}' detected but no default command available"
-            )
-            return None
-
-    # If no explicit command and no framework name, this is an error
+    # If no explicit command, log error and return None
     logger.error(
-        "No framework command available. Either set FRAMEWORK_COMMAND or FRAMEWORK_NAME environment variable"
+        "No framework command available. Set FRAMEWORK_COMMAND environment variable with your framework's start command."
     )
     return None
 
@@ -93,13 +76,10 @@ def validate_framework_command(command: str) -> bool:
     return True
 
 
-def get_supported_frameworks() -> Dict[str, str]:
-    """Get a mapping of supported framework names to their default commands.
+def get_supported_frameworks() -> set[str]:
+    """Get a set of supported framework names for validation.
 
     Returns:
-        Dict[str, str]: Mapping of framework names to default commands
+        set[str]: Set of supported framework names
     """
-    return {
-        framework.value: command
-        for framework, command in DEFAULT_FRAMEWORK_COMMANDS.items()
-    }
+    return SUPPORTED_FRAMEWORKS

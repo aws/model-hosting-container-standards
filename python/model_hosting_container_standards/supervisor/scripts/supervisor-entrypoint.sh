@@ -31,11 +31,11 @@ check_requirements() {
     log_debug "Checking system requirements"
 
     # Check for required environment variables
-    if [[ -z "${FRAMEWORK_COMMAND:-}" && -z "${FRAMEWORK_NAME:-}" ]]; then
-        log_error "Either FRAMEWORK_COMMAND or FRAMEWORK_NAME must be set"
-        log_error "Available environment variables:"
-        log_error "  FRAMEWORK_COMMAND: Custom command to run"
-        log_error "  FRAMEWORK_NAME: Framework type (vllm, tensorrt-llm, generic)"
+    if [[ -z "${FRAMEWORK_COMMAND:-}" ]]; then
+        log_error "FRAMEWORK_COMMAND must be set"
+        log_error "Set FRAMEWORK_COMMAND to your framework's start command, for example:"
+        log_error "  export FRAMEWORK_COMMAND=\"python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080\""
+        log_error "  export FRAMEWORK_COMMAND=\"python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080\""
         return 1
     fi
 
@@ -53,7 +53,7 @@ check_requirements() {
 
     # Log configuration being used
     log_info "Configuration validation:"
-    log_info "  FRAMEWORK_COMMAND: ${FRAMEWORK_COMMAND:-<not set>}"
+    log_info "  FRAMEWORK_COMMAND: ${FRAMEWORK_COMMAND}"
     log_info "  FRAMEWORK_NAME: ${FRAMEWORK_NAME:-<not set>}"
     log_info "  ENGINE_AUTO_RECOVERY: ${ENGINE_AUTO_RECOVERY:-true}"
     log_info "  ENGINE_MAX_RECOVERY_ATTEMPTS: ${ENGINE_MAX_RECOVERY_ATTEMPTS:-3}"

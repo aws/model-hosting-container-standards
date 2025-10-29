@@ -51,6 +51,7 @@ class TestSupervisorIntegration:
 
             # Set up environment for vLLM
             env_vars = {
+                "FRAMEWORK_COMMAND": "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080",
                 "FRAMEWORK_NAME": "vllm",
                 "ENGINE_AUTO_RECOVERY": "true",
                 "ENGINE_MAX_RECOVERY_ATTEMPTS": "3",
@@ -100,6 +101,7 @@ class TestSupervisorIntegration:
 
         # Test with TensorRT-LLM framework
         env_vars = {
+            "FRAMEWORK_COMMAND": "python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080",
             "FRAMEWORK_NAME": "tensorrt-llm",
             "ENGINE_AUTO_RECOVERY": "false",
             "ENGINE_MAX_RECOVERY_ATTEMPTS": "1",
@@ -111,14 +113,14 @@ class TestSupervisorIntegration:
             framework_command = get_framework_command()
 
             assert framework_command is not None
-            assert "tensorrt_llm_server" in framework_command
+            assert "tensorrt_llm" in framework_command
 
             generated_config = generate_supervisord_config(
                 framework_command, config, "tensorrt-server"
             )
 
             assert "[program:tensorrt-server]" in generated_config
-            assert "tensorrt_llm_server" in generated_config
+            assert "tensorrt_llm" in generated_config
             assert "autorestart=false" in generated_config
             assert "startretries=1" in generated_config
             assert "loglevel=debug" in generated_config
@@ -149,12 +151,12 @@ class TestSupervisorIntegration:
             command = get_framework_command()
             assert command == "explicit command"
 
-        # Test fallback to framework name when FRAMEWORK_COMMAND is empty
+        # Test that empty FRAMEWORK_COMMAND returns None
         env_vars = {"FRAMEWORK_COMMAND": "   ", "FRAMEWORK_NAME": "vllm"}
 
         with patch.dict(os.environ, env_vars, clear=True):
             command = get_framework_command()
-            assert "vllm" in command
+            assert command is None
 
     def test_configuration_file_permissions_and_structure(self):
         """Test that generated configuration files have correct permissions and structure."""
@@ -199,18 +201,41 @@ class TestSupervisorIntegration:
 
         supported_frameworks = get_supported_frameworks()
 
-        for framework_name, expected_command in supported_frameworks.items():
-            with patch.dict(os.environ, {"FRAMEWORK_NAME": framework_name}, clear=True):
+        # Test framework validation
+        assert "vllm" in supported_frameworks
+        assert "tensorrt-llm" in supported_frameworks
+
+        # Test with explicit framework commands
+        test_cases = [
+            (
+                "vllm",
+                "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080",
+            ),
+            (
+                "tensorrt-llm",
+                "python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080",
+            ),
+        ]
+
+        for framework_name, framework_command in test_cases:
+            with patch.dict(
+                os.environ,
+                {
+                    "FRAMEWORK_COMMAND": framework_command,
+                    "FRAMEWORK_NAME": framework_name,
+                },
+                clear=True,
+            ):
                 # Test framework command resolution
                 command = get_framework_command()
-                assert command == expected_command
+                assert command == framework_command
 
                 # Test configuration generation
                 config = generate_supervisord_config(
                     command, program_name=framework_name
                 )
                 assert f"[program:{framework_name}]" in config
-                assert f"command={expected_command}" in config
+                assert f"command={framework_command}" in config
 
     def test_environment_variable_validation_integration(self):
         """Test integration of environment variable validation across modules."""

@@ -375,18 +375,15 @@ class TestFrameworkConfig:
             result = get_framework_command()
             assert result == "custom command"
 
-    def test_get_framework_command_with_framework_name(self):
-        """Test getting default command for detected framework."""
+    def test_get_framework_command_without_command_returns_none(self):
+        """Test getting framework command when no FRAMEWORK_COMMAND is set."""
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
         )
 
         with patch.dict(os.environ, {"FRAMEWORK_NAME": "vllm"}, clear=True):
             result = get_framework_command()
-            assert (
-                result
-                == "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
-            )
+            assert result is None
 
     def test_get_framework_command_no_framework(self):
         """Test getting framework command when no framework is specified."""
@@ -573,18 +570,15 @@ class TestFrameworkConfigModule:
             result = get_framework_command()
             assert result == "custom command"
 
-    def test_get_framework_command_with_framework_name(self):
-        """Test getting default command for detected framework."""
+    def test_get_framework_command_without_command_returns_none(self):
+        """Test getting framework command when no FRAMEWORK_COMMAND is set."""
         from model_hosting_container_standards.supervisor.framework_config import (
             get_framework_command,
         )
 
         with patch.dict(os.environ, {"FRAMEWORK_NAME": "vllm"}, clear=True):
             result = get_framework_command()
-            assert (
-                result
-                == "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
-            )
+            assert result is None
 
     def test_get_framework_command_no_framework(self):
         """Test getting framework command when no framework is specified."""
@@ -628,10 +622,7 @@ class TestFrameworkConfigModule:
 
         with patch.dict(os.environ, env_vars, clear=True):
             result = get_framework_command()
-            assert (
-                result
-                == "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
-            )
+            assert result is None
 
     @pytest.mark.parametrize(
         "command,expected",
@@ -664,13 +655,9 @@ class TestFrameworkConfigModule:
 
         frameworks = get_supported_frameworks()
 
-        assert isinstance(frameworks, dict)
+        assert isinstance(frameworks, set)
         assert "vllm" in frameworks
         assert "tensorrt-llm" in frameworks
-        assert (
-            frameworks["vllm"]
-            == "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
-        )
 
 
 class TestIntegration:
@@ -686,6 +673,7 @@ class TestIntegration:
         )
 
         env_vars = {
+            "FRAMEWORK_COMMAND": "python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080",
             "FRAMEWORK_NAME": "vllm",
             "ENGINE_AUTO_RECOVERY": "false",
             "ENGINE_MAX_RECOVERY_ATTEMPTS": "5",

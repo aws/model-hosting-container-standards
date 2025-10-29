@@ -27,14 +27,17 @@ ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
 
 Set environment variables to configure your framework:
 
-### Option 1: Use Framework Name (Recommended)
-```bash
-export FRAMEWORK_NAME=vllm  # or tensorrt-llm
-```
-
-### Option 2: Use Custom Command
+### Set Your Framework Command
 ```bash
 export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+# or
+export FRAMEWORK_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
+# or any other framework start command
+```
+
+### Optional: Set Framework Name for Validation
+```bash
+export FRAMEWORK_NAME=vllm  # or tensorrt-llm (for validation purposes)
 ```
 
 ### Optional Settings
@@ -66,7 +69,7 @@ COPY supervisor-entrypoint.sh /opt/aws/
 RUN chmod +x /opt/aws/supervisor-entrypoint.sh
 
 # Set environment
-ENV FRAMEWORK_NAME=vllm
+ENV FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 
 # Use supervisor entrypoint
 ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
@@ -76,21 +79,21 @@ ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
 
 ### vLLM Example
 ```bash
-export FRAMEWORK_NAME=vllm
+export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 export ENGINE_AUTO_RECOVERY=true
 ./supervisor-entrypoint.sh
 ```
 
-### Custom Framework Example
+### TensorRT-LLM Example
 ```bash
-export FRAMEWORK_COMMAND="python -m my_framework.server --port 8080"
+export FRAMEWORK_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
 export ENGINE_MAX_RECOVERY_ATTEMPTS=5
 ./supervisor-entrypoint.sh
 ```
 
 ### Debug Mode
 ```bash
-export FRAMEWORK_NAME=vllm
+export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 export SUPERVISOR_DEBUG=true
 export SUPERVISOR_LOG_LEVEL=debug
 export ENGINE_MAX_RECOVERY_ATTEMPTS=1
@@ -103,16 +106,8 @@ export ENGINE_MAX_RECOVERY_ATTEMPTS=1
 
 **"No framework command available"**
 ```bash
-# Fix: Set either FRAMEWORK_NAME or FRAMEWORK_COMMAND
-export FRAMEWORK_NAME=vllm
-```
-
-**"Invalid FRAMEWORK_NAME"**
-```bash
-# Fix: Use supported framework (vllm, tensorrt-llm) or custom command
-export FRAMEWORK_NAME=vllm
-# OR
-export FRAMEWORK_COMMAND="python -m your_framework"
+# Fix: Set FRAMEWORK_COMMAND with your framework's start command
+export FRAMEWORK_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
 ```
 
 **"supervisord command not found"**
