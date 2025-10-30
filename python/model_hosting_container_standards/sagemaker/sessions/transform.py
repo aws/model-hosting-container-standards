@@ -34,7 +34,8 @@ def _parse_session_request(request_data: dict) -> Optional[SessionRequest]:
         # If requestType is present but validation failed, it's a malformed session request
         if "requestType" in request_data:
             raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST, detail=e.json(include_url=False)
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=e.json(include_url=False),
             )
         # Not a session request
         return None
@@ -56,7 +57,8 @@ def _validate_session_if_present(raw_request: Request, session_manager: SessionM
             get_session(session_manager, raw_request)
         except ValueError as e:
             raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST, detail=f"Bad request: {str(e)}"
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=f"Bad request: {str(e)}",
             )
 
 

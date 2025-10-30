@@ -13,7 +13,7 @@ def validate_sagemaker_unregister_request(raw_request: Request):
     adapter_name = get_adapter_name_from_request_path(raw_request)
     if not adapter_name:
         raise HTTPException(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            status_code=HTTPStatus.FAILED_DEPENDENCY.value,
             detail=f"Malformed request path; missing path parameter: {RequestField.ADAPTER_NAME}",
         )
     return adapter_name
@@ -39,7 +39,7 @@ class UnregisterLoRAApiTransform(BaseLoRAApiTransform):
         adapter_name: Optional[str] = kwargs.get("adapter_name")
         adapter_alias: Optional[str] = kwargs.get("adapter_alias")
         return Response(
-            status_code=HTTPStatus.OK,
+            status_code=HTTPStatus.OK.value,
             content=ResponseMessage.ADAPTER_UNREGISTERED.format(
                 alias=adapter_alias or adapter_name
             ),

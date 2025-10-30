@@ -40,7 +40,7 @@ class ConcreteLoRAApiTransform(BaseLoRAApiTransform):
         adapter_name = kwargs.get("adapter_name")
         adapter_alias = kwargs.get("adapter_alias")
         return Response(
-            status_code=HTTPStatus.OK,
+            status_code=HTTPStatus.OK.value,
             content=f"Success for adapter: {adapter_name} (alias: {adapter_alias})",
         )
 
@@ -49,7 +49,7 @@ class ConcreteLoRAApiTransform(BaseLoRAApiTransform):
         adapter_name = kwargs.get("adapter_name")
         adapter_alias = kwargs.get("adapter_alias")
         return Response(
-            status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+            status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
             content=f"Error for adapter: {adapter_name} (alias: {adapter_alias})",
         )
 

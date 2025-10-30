@@ -54,7 +54,7 @@ class TestValidateSagemakerRegisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_missing_src_raises_http_exception(self):
         """Test that missing src raises HTTPException."""
@@ -63,7 +63,7 @@ class TestValidateSagemakerRegisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_empty_name_raises_http_exception(self):
         """Test that empty name raises HTTPException."""
@@ -72,7 +72,7 @@ class TestValidateSagemakerRegisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_empty_src_raises_http_exception(self):
         """Test that empty src raises HTTPException."""
@@ -81,7 +81,7 @@ class TestValidateSagemakerRegisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_none_name_raises_http_exception(self):
         """Test that None name raises HTTPException."""
@@ -90,7 +90,7 @@ class TestValidateSagemakerRegisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_none_src_raises_http_exception(self):
         """Test that None src raises HTTPException."""
@@ -99,7 +99,7 @@ class TestValidateSagemakerRegisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     @patch(
         "model_hosting_container_standards.sagemaker.lora.transforms.register.SageMakerRegisterLoRAAdapterRequest.model_validate"
@@ -114,7 +114,7 @@ class TestValidateSagemakerRegisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_register_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_extra_fields_ignored(self):
         """Test that extra fields are handled according to model configuration."""

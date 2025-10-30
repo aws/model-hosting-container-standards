@@ -10,7 +10,7 @@ Releases for this library are hosted on PyPI here: https://pypi.org/project/mode
     - Identify the commit hash that you will be releasing. This commit should exist on the main branch.
     - Check the library's version numbers in:
         - `pyproject.toml`
-        - `model_hosting_container_standards/__init__.py` 
+        - `model_hosting_container_standards/__init__.py`
     - If they don't match the version number you are releasing, create a PR to update them.
         - See: [Versioning](#versioning)
     - Now, create a branch whose head is the commit to be released. This could be the main branch.
@@ -41,7 +41,7 @@ Releases for this library are hosted on PyPI here: https://pypi.org/project/mode
 5. Increment version on main
     - Update the version on the main branch now that we have released the previous version.
       See: [Versioning](#versioning)
-    
+
 
 ## Versioning
 
@@ -52,4 +52,3 @@ A quick summary is:
 - Update the major version number **X**.X.X for breaking changes.
 - Update the minor version number X.**X**.X for backwards compatible features.
 - Update the patch version number X.X.**X** for backwards compatible bug-fixes.
-

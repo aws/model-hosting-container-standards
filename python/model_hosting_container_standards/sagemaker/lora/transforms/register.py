@@ -26,7 +26,7 @@ def validate_sagemaker_register_request(
         return sagemaker_request
     except ValidationError as e:
         raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST, detail=e.json(include_url=False)
+            status_code=HTTPStatus.BAD_REQUEST.value, detail=e.json(include_url=False)
         )
 
 
@@ -71,7 +71,7 @@ class RegisterLoRAApiTransform(BaseLoRAApiTransform):
         adapter_name = kwargs.get("adapter_name")
         adapter_alias = kwargs.get("adapter_alias")
         return Response(
-            status_code=HTTPStatus.OK,
+            status_code=HTTPStatus.OK.value,
             content=ResponseMessage.ADAPTER_REGISTERED.format(
                 alias=adapter_alias or adapter_name
             ),
