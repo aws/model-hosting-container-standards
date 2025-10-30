@@ -40,7 +40,7 @@ class TestValidateSagemakerUnregisterRequest:
         with pytest.raises(HTTPException) as exc_info:
             validate_sagemaker_unregister_request(mock_request)
 
-        assert exc_info.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+        assert exc_info.value.status_code == HTTPStatus.FAILED_DEPENDENCY.value
         expected_message = f"Malformed request path; missing path parameter: {RequestField.ADAPTER_NAME}"
         assert expected_message in str(exc_info.value.detail)
 
@@ -57,7 +57,7 @@ class TestValidateSagemakerUnregisterRequest:
             with pytest.raises(HTTPException) as exc_info:
                 validate_sagemaker_unregister_request(mock_request)
 
-            assert exc_info.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+            assert exc_info.value.status_code == HTTPStatus.FAILED_DEPENDENCY.value
             expected_message = f"Malformed request path; missing path parameter: {RequestField.ADAPTER_NAME}"
             assert expected_message in str(exc_info.value.detail)
 
@@ -125,7 +125,7 @@ class TestUnregisterLoRAApiTransform:
             with pytest.raises(HTTPException) as exc_info:
                 await self.transformer.transform_request(mock_raw_request)
 
-            assert exc_info.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+            assert exc_info.value.status_code == HTTPStatus.FAILED_DEPENDENCY.value
 
     def test_transform_ok_response(self):
         """Test successful response transformation."""
@@ -188,6 +188,6 @@ class TestUnregisterLoRAApiTransform:
             with pytest.raises(HTTPException) as exc_info:
                 await self.transformer.transform_request(mock_raw_request)
 
-            assert exc_info.value.status_code == HTTPStatus.INTERNAL_SERVER_ERROR
+            assert exc_info.value.status_code == HTTPStatus.FAILED_DEPENDENCY.value
             expected_message = f"Malformed request path; missing path parameter: {RequestField.ADAPTER_NAME}"
             assert expected_message in str(exc_info.value.detail)

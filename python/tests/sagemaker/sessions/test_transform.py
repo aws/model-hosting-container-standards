@@ -70,7 +70,7 @@ class TestParseSessionRequest:
         with pytest.raises(HTTPException) as exc_info:
             _parse_session_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_raises_http_exception_for_extra_fields(self):
         """Test raises HTTPException when extra fields present in session request."""
@@ -79,7 +79,7 @@ class TestParseSessionRequest:
         with pytest.raises(HTTPException) as exc_info:
             _parse_session_request(request_data)
 
-        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
 
 class TestValidateSessionIfPresent:
@@ -131,7 +131,7 @@ class TestValidateSessionIfPresent:
                 with pytest.raises(HTTPException) as exc_info:
                     _validate_session_if_present(mock_request, mock_session_manager)
 
-                assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+                assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
     def test_error_message_includes_original_error(self, mock_session_manager):
         """Test error message includes the original error message."""
@@ -243,7 +243,7 @@ class TestProcessSessionRequest:
                     request_data, mock_request, mock_session_manager
                 )
 
-            assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST
+            assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
 
 class TestSessionApiTransform:
