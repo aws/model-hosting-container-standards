@@ -46,6 +46,10 @@ ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
 ```dockerfile
 # Install and extract in one step (uses default path: /opt/aws/supervisor-entrypoint.sh)
 RUN pip install model-hosting-container-standards && extract-supervisor-entrypoint
+
+# Still need to configure your launch command and entrypoint
+ENV LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
+ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
 ```
 
 ## Configuration
