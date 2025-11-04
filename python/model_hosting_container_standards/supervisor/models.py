@@ -85,25 +85,3 @@ def get_launch_command() -> Optional[str]:
     """Get the launch command from environment variables."""
     command = os.getenv("LAUNCH_COMMAND")
     return command.strip() if command and command.strip() else None
-
-
-def validate_config_directory(config_path: str) -> None:
-    """Validate that the configuration directory can be created and is writable.
-
-    Raises:
-        ConfigurationError: If directory cannot be created or is not writable
-    """
-    config_dir = os.path.dirname(config_path)
-
-    # Create directory if it doesn't exist
-    os.makedirs(config_dir, mode=0o755, exist_ok=True)
-
-    # Check write permissions
-    if not os.access(config_dir, os.W_OK):
-        raise ConfigurationError(
-            f"Configuration directory '{config_dir}' is not writable"
-        )
-
-    # Check if existing config file is writable
-    if os.path.exists(config_path) and not os.access(config_path, os.W_OK):
-        raise ConfigurationError(f"Configuration file '{config_path}' is not writable")
