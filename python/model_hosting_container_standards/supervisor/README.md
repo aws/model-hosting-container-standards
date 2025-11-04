@@ -135,14 +135,6 @@ exec vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
     --dtype auto
 ```
 
-### What You Get
-
-✅ **Automatic SageMaker Endpoints**: `/ping` and `/invocations` routes added automatically
-✅ **Process Monitoring**: Supervisor restarts vLLM on crashes
-✅ **Auto-Recovery**: Configurable retry limits with container exit on failure
-✅ **LoRA Support**: Built-in adapter management via headers
-✅ **Custom Handlers**: Override defaults via environment variables or decorators
-
 ### Service Monitoring Behavior
 
 **Expected Behavior**: LLM services should run indefinitely. Any exit is treated as an error.

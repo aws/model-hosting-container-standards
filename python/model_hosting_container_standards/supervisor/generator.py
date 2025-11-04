@@ -27,15 +27,15 @@ logger = get_logger(__name__)
 SUPERVISORD_CONFIG_TEMPLATE = """[unix_http_server]
 file=/tmp/supervisor-{program_name}.sock
 
+[supervisorctl]
+serverurl=unix:///tmp/supervisor-{program_name}.sock
+
 [supervisord]
 nodaemon=true
 loglevel={log_level}
 logfile=/dev/stdout
 logfile_maxbytes=0
 pidfile=/tmp/supervisord-{program_name}.pid
-
-[supervisorctl]
-serverurl=unix:///tmp/supervisor-{program_name}.sock
 
 [rpcinterface:supervisor]
 supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
