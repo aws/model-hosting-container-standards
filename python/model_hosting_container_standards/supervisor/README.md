@@ -2,6 +2,17 @@
 
 Provides supervisord-based process management for ML frameworks with automatic recovery and container-friendly logging.
 
+## Overview
+
+This module wraps your ML framework (vLLM, TensorRT-LLM, etc.) with supervisord to provide:
+
+- **Automatic Process Monitoring**: Detects when your service crashes or exits unexpectedly
+- **Auto-Recovery**: Automatically restarts failed processes with configurable retry limits
+- **Container-Friendly**: Exits with code 1 after max retries so orchestrators (Docker, Kubernetes) can detect failures
+- **Production Ready**: Structured logging, configurable behavior, and battle-tested supervisord underneath
+
+**Use Case**: Deploy ML frameworks on SageMaker or any container platform with automatic crash recovery and proper failure signaling.
+
 ## Quick Setup
 
 ### 1. Install the Package
@@ -22,9 +33,12 @@ Or specify a custom location:
 RUN extract-supervisor-entrypoint -o /usr/local/bin/supervisor-entrypoint.sh
 ```
 
-### 3. Set as Container Entrypoint
+### 3. Configure Launch Command and Entrypoint
 ```dockerfile
-# In your Dockerfile (using default path)
+# Set your framework's launch command
+ENV LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
+
+# Use supervisor entrypoint (using default path)
 ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
 ```
 
@@ -42,12 +56,12 @@ Configure your framework using environment variables. These can be set in your D
 - **Entrypoint script**: `/opt/aws/supervisor-entrypoint.sh` (extracted by `extract-supervisor-entrypoint`)
 - **Config file**: `/tmp/supervisord.conf` (generated automatically)
 
-### Set Your Launch Command
+### Required: Launch Command
 ```bash
-export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+# Set your framework's start command
+export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
 # or
 export LAUNCH_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
-# or any other framework start command
 ```
 
 ### Optional Settings
@@ -80,14 +94,50 @@ docker run \
   my-image
 ```
 
-## What You Get
+## Complete Example: vLLM + SageMaker Integration
 
-Your container will now:
-- ✅ Automatically generate supervisor configuration
-- ✅ Start your ML framework with process monitoring
-- ✅ Auto-restart on failures (up to configurable retry limit)
-- ✅ Exit with code 1 when service fails permanently (after max retries)
-- ✅ Provide structured logging
+### Dockerfile
+```dockerfile
+FROM vllm/vllm-openai:latest
+
+# Install model hosting container standards and supervisor
+RUN pip install supervisor model-hosting-container-standards
+
+# Extract supervisor entrypoint (creates /opt/aws/supervisor-entrypoint.sh)
+RUN extract-supervisor-entrypoint
+
+# Copy your custom entrypoint script
+COPY sagemaker-entrypoint.sh .
+RUN chmod +x sagemaker-entrypoint.sh
+
+# Configure supervisor to launch your service
+ENV LAUNCH_COMMAND="./sagemaker-entrypoint.sh"
+ENV ENGINE_AUTO_RECOVERY=true
+ENV ENGINE_MAX_START_RETRIES=3
+
+# Use supervisor entrypoint for process management
+ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
+```
+
+### Custom Entrypoint Script (sagemaker-entrypoint.sh)
+```bash
+#!/bin/bash
+# Your vLLM startup script with SageMaker integration
+
+# Start vLLM with your model
+exec vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
+    --host 0.0.0.0 \
+    --port 8080 \
+    --dtype auto
+```
+
+### What You Get
+
+✅ **Automatic SageMaker Endpoints**: `/ping` and `/invocations` routes added automatically
+✅ **Process Monitoring**: Supervisor restarts vLLM on crashes
+✅ **Auto-Recovery**: Configurable retry limits with container exit on failure
+✅ **LoRA Support**: Built-in adapter management via headers
+✅ **Custom Handlers**: Override defaults via environment variables or decorators
 
 ### Service Monitoring Behavior
 
@@ -101,75 +151,28 @@ Your container will now:
 
 **Why This Matters**: Container orchestrators can detect the failure and take appropriate action (restart container, alert operators, etc.)
 
-## Example Dockerfile
-
-### Complete vLLM + SageMaker Integration
-
-```dockerfile
-FROM vllm/vllm-openai:latest
-
-# Install model hosting container standards and supervisor
-RUN pip install supervisor model-hosting-container-standards
-
-# Extract supervisor entrypoint (creates /opt/aws/supervisor-entrypoint.sh)
-RUN extract-supervisor-entrypoint
-
-# Copy your custom entrypoint script
-COPY examples/online_serving/sagemaker-entrypoint.sh .
-RUN chmod +x sagemaker-entrypoint.sh
-
-# Configure supervisor to launch your service
-ENV LAUNCH_COMMAND="./sagemaker-entrypoint.sh"
-ENV ENGINE_AUTO_RECOVERY=true
-ENV ENGINE_MAX_START_RETRIES=3
-
-# Use supervisor entrypoint for process management
-ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
-```
-
-### Custom Entrypoint Script (sagemaker-entrypoint.sh)
-
-```bash
-#!/bin/bash
-# Your vLLM startup script with SageMaker integration
-
-# Start vLLM with your model
-exec vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
-    --host 0.0.0.0 \
-    --port 8080 \
-    --dtype auto
-```
-
-### What This Gives You
-
-✅ **Automatic SageMaker Endpoints**: `/ping` and `/invocations` routes added automatically
-✅ **Process Monitoring**: Supervisor restarts vLLM on crashes
-✅ **Auto-Recovery**: Configurable retry limits with container exit on failure
-✅ **LoRA Support**: Built-in adapter management via headers
-✅ **Custom Handlers**: Override defaults via environment variables or decorators
-
 ## Usage Examples
 
 ### vLLM Example
 ```bash
-export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
 export ENGINE_AUTO_RECOVERY=true
-/opt/aws/supervisor-entrypoint.sh  # Using default path
+/opt/aws/supervisor-entrypoint.sh
 ```
 
 ### TensorRT-LLM Example
 ```bash
 export LAUNCH_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
 export ENGINE_MAX_START_RETRIES=5
-/opt/aws/supervisor-entrypoint.sh  # Using default path
+/opt/aws/supervisor-entrypoint.sh
 ```
 
 ### Minimal Recovery Mode
 ```bash
-export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
 export ENGINE_AUTO_RECOVERY=false
 export ENGINE_MAX_START_RETRIES=1
-/opt/aws/supervisor-entrypoint.sh  # Using default path
+/opt/aws/supervisor-entrypoint.sh
 ```
 
 ## Troubleshooting
@@ -179,7 +182,7 @@ export ENGINE_MAX_START_RETRIES=1
 **"No launch command available"**
 ```bash
 # Fix: Set LAUNCH_COMMAND with your framework's start command
-export LAUNCH_COMMAND="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
 ```
 
 **"supervisord command not found"**
@@ -207,8 +210,8 @@ from model_hosting_container_standards.supervisor import (
 # Create configuration
 config = SupervisorConfig(
     auto_recovery=True,
-    max_recovery_attempts=5,
-    launch_command="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080"
+    max_start_retries=5,
+    launch_command="vllm serve model --host 0.0.0.0 --port 8080"
 )
 
 # Generate configuration content
