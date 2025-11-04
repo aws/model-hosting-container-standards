@@ -105,27 +105,51 @@ class TestSupervisorExitBehavior:
 
     def test_entrypoint_script_with_valid_environment(self, temp_entrypoint_script):
         """Test entrypoint script passes validation with valid environment."""
+        import os
+        import signal
+
         env = os.environ.copy()
         env["LAUNCH_COMMAND"] = 'echo "test service"'
 
-        # Use Popen to handle the case where script runs indefinitely
+        # Use process group to ensure we can kill the entire process tree
         process = subprocess.Popen(
             [temp_entrypoint_script],
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            start_new_session=True,  # Create new process group
         )
 
+        stdout = ""
+        stderr = ""
+
         try:
-            # Give it time to complete validation and potentially start supervisord
-            stdout, stderr = process.communicate(timeout=5)
-            # If we get here, script exited (probably due to supervisord issues)
+            # Give more time for CI environments (they can be slower)
+            stdout, stderr = process.communicate(timeout=20)
         except subprocess.TimeoutExpired:
-            # Script is running (supervisord started successfully) - this is expected
-            # Force kill since supervisord may not respond to SIGTERM quickly
-            process.kill()
-            stdout, stderr = process.communicate()
+            # Script is running indefinitely (supervisord started) - kill process group
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
+            try:
+                stdout, stderr = process.communicate(timeout=3)
+            except subprocess.TimeoutExpired:
+                # Still not dead, force kill the entire process group
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                stdout, stderr = process.communicate(timeout=3)
+        finally:
+            # Double insurance: kill any remaining processes
+            if process.poll() is None:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
         # Should pass validation regardless of whether supervisord starts successfully
         assert "Configuration validation:" in stderr
