@@ -123,8 +123,9 @@ class TestSupervisorExitBehavior:
             # If we get here, script exited (probably due to supervisord issues)
         except subprocess.TimeoutExpired:
             # Script is running (supervisord started successfully) - this is expected
-            process.terminate()
-            stdout, stderr = process.communicate(timeout=2)
+            # Force kill since supervisord may not respond to SIGTERM quickly
+            process.kill()
+            stdout, stderr = process.communicate()
 
         # Should pass validation regardless of whether supervisord starts successfully
         assert "Configuration validation:" in stderr
