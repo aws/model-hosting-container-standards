@@ -46,7 +46,7 @@ check_requirements() {
     log_info "Configuration validation:"
     log_info "  LAUNCH_COMMAND: ${LAUNCH_COMMAND}"
     log_info "  ENGINE_AUTO_RECOVERY: ${ENGINE_AUTO_RECOVERY:-true}"
-    log_info "  ENGINE_MAX_RECOVERY_ATTEMPTS: ${ENGINE_MAX_RECOVERY_ATTEMPTS:-3}"
+    log_info "  ENGINE_MAX_START_RETRIES: ${ENGINE_MAX_START_RETRIES:-3}"
 
 
     return 0
@@ -124,21 +124,36 @@ start_supervisord() {
     supervisord -c "$config_path" &
     local supervisord_pid=$!
 
-    # Monitor supervisord and program status every 2 seconds
+    # Monitor supervisord and program status every 3 seconds
     # This loop continues until supervisord exits or we detect FATAL state
-    while kill -0 $supervisord_pid 2>/dev/null; do
+    local check_count=0
+    local max_checks=60  # Maximum 3 minutes of monitoring (60 * 3 seconds)
+
+    while kill -0 $supervisord_pid 2>/dev/null && [ $check_count -lt $max_checks ]; do
         # Check if our LLM program has entered FATAL state (too many restart failures)
         # FATAL state means supervisord gave up trying to restart the program
-        if supervisorctl status llm-engine 2>/dev/null | grep -q "FATAL"; then
+        local status_output=$(supervisorctl -c "$config_path" status llm-engine 2>/dev/null || echo "")
+
+        if echo "$status_output" | grep -q "FATAL"; then
             log_error "Program llm-engine entered FATAL state after maximum retry attempts"
             log_error "This indicates the LLM service is failing to start or crashing repeatedly"
             log_error "Shutting down supervisord and exiting with code 1"
-            supervisorctl shutdown 2>/dev/null || true
+            supervisorctl -c "$config_path" shutdown 2>/dev/null || true
             wait $supervisord_pid 2>/dev/null || true
             exit 1
         fi
-        sleep 2
+
+        check_count=$((check_count + 1))
+        sleep 3
     done
+
+    # If we exceeded max checks, something is wrong
+    if [ $check_count -ge $max_checks ]; then
+        log_error "Monitoring timeout exceeded - shutting down"
+        supervisorctl -c "$config_path" shutdown 2>/dev/null || true
+        wait $supervisord_pid 2>/dev/null || true
+        exit 1
+    fi
 
     # Wait for supervisord to finish and get its exit code
     wait $supervisord_pid

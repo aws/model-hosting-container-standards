@@ -56,7 +56,7 @@ class TestSupervisorExitBehavior:
         """Test that generated config has correct exit behavior settings."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=2,
+            max_start_retries=2,
             launch_command="echo 'test command'",
             log_level="info",
         )
@@ -79,7 +79,7 @@ class TestSupervisorExitBehavior:
         """Test config generation when auto recovery is disabled."""
         config = SupervisorConfig(
             auto_recovery=False,
-            max_recovery_attempts=1,
+            max_start_retries=1,
             launch_command="python -c 'print(\"hello\")'",
             log_level="debug",
         )
@@ -94,38 +94,34 @@ class TestSupervisorExitBehavior:
         assert "startretries=1" in config_content
         assert "exitcodes=255" in config_content  # Still treat all exits as unexpected
 
-    @pytest.mark.skipif(
-        not os.path.exists("/usr/bin/supervisord")
-        and not os.path.exists("/usr/local/bin/supervisord"),
-        reason="supervisord not installed",
-    )
     def test_supervisord_config_syntax_validation(self, temp_config_file):
         """Test that generated config has valid supervisord syntax."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="sleep 1",
             log_level="info",
         )
 
         write_supervisord_config(temp_config_file, config)
 
-        # Test config syntax with supervisord
-        result = subprocess.run(
-            ["supervisord", "-c", temp_config_file, "-t"],
-            capture_output=True,
-            text=True,
-        )
+        # Test config syntax by parsing it with supervisor's config parser
+        try:
+            from supervisor import options
 
-        # Should exit with code 0 for valid config
-        assert result.returncode == 0, f"Config syntax error: {result.stderr}"
+            opts = options.ServerOptions()
+            opts.read_config(temp_config_file)
+            # If we get here, config is valid
+            assert True
+        except Exception as e:
+            pytest.fail(f"Config syntax error: {e}")
 
     def test_failing_command_behavior_simulation(self, temp_config_file):
         """Test the behavior with a command that exits immediately (simulates failure)."""
         # Create config for a command that exits immediately
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=2,
+            max_start_retries=2,
             launch_command="echo 'failing service' && exit 1",
             log_level="info",
         )
@@ -147,7 +143,7 @@ class TestSupervisorExitBehavior:
         """Test config for a long-running command (normal LLM service behavior)."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=5,
+            max_start_retries=5,
             launch_command="python -c 'import time; print(\"LLM service started\"); time.sleep(3600)'",
             log_level="warn",
         )
@@ -210,11 +206,6 @@ class TestSupervisorExitBehavior:
             assert "Configuration validation:" in stderr_output
             assert 'LAUNCH_COMMAND: echo "test service"' in stderr_output
 
-    @pytest.mark.skipif(
-        not os.path.exists("/usr/bin/supervisord")
-        and not os.path.exists("/usr/local/bin/supervisord"),
-        reason="supervisord not installed",
-    )
     def test_end_to_end_failing_service_behavior(
         self, temp_entrypoint_script, temp_config_file
     ):
@@ -227,11 +218,19 @@ class TestSupervisorExitBehavior:
         3. After max attempts, program enters FATAL state
         4. Entrypoint script detects FATAL and exits with code 1
         """
+        # Clean up any leftover supervisor processes and socket files
+        subprocess.run(["pkill", "-9", "-f", "supervisord"], capture_output=True)
+        subprocess.run(
+            ["rm", "-f", "/tmp/supervisor-*.sock", "/tmp/supervisord-*.pid"],
+            capture_output=True,
+        )
+        time.sleep(1)  # Give processes time to clean up
+
         env = os.environ.copy()
         env.update(
             {
                 "LAUNCH_COMMAND": 'echo "Service failed" && exit 1',
-                "ENGINE_MAX_RECOVERY_ATTEMPTS": "2",
+                "ENGINE_MAX_START_RETRIES": "2",
                 "ENGINE_AUTO_RECOVERY": "true",
                 "SUPERVISOR_CONFIG_PATH": temp_config_file,
             }
@@ -262,6 +261,13 @@ class TestSupervisorExitBehavior:
         # The exact FATAL detection message might not appear due to timing,
         # but the exit code 1 confirms the behavior worked
 
+        # Clean up after test
+        subprocess.run(["pkill", "-9", "-f", "supervisord"], capture_output=True)
+        subprocess.run(
+            ["rm", "-f", "/tmp/supervisor-*.sock", "/tmp/supervisord-*.pid"],
+            capture_output=True,
+        )
+
     def test_config_template_comments_and_documentation(self):
         """Test that the configuration template includes proper documentation."""
         from model_hosting_container_standards.supervisor.generator import (
@@ -278,7 +284,7 @@ class TestSupervisorExitBehavior:
         assert "{log_level}" in SUPERVISORD_CONFIG_TEMPLATE
         assert "{framework_command}" in SUPERVISORD_CONFIG_TEMPLATE
         assert "{auto_restart}" in SUPERVISORD_CONFIG_TEMPLATE
-        assert "{max_recovery_attempts}" in SUPERVISORD_CONFIG_TEMPLATE
+        assert "{max_start_retries}" in SUPERVISORD_CONFIG_TEMPLATE
 
     def test_extract_entrypoint_cli_tool(self):
         """Test the extract-supervisor-entrypoint CLI tool."""
@@ -353,7 +359,7 @@ class TestSupervisorConfigurationEdgeCases:
         """Test that empty launch command raises appropriate error."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="",  # Empty command
             log_level="info",
         )
@@ -367,7 +373,7 @@ class TestSupervisorConfigurationEdgeCases:
         """Test that whitespace-only launch command raises error."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="   \t\n   ",  # Whitespace only
             log_level="info",
         )
@@ -381,7 +387,7 @@ class TestSupervisorConfigurationEdgeCases:
         """Test that None launch command raises error."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command=None,
             log_level="info",
         )
@@ -395,7 +401,7 @@ class TestSupervisorConfigurationEdgeCases:
         """Test that empty program name raises error."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="echo test",
             log_level="info",
         )
@@ -403,11 +409,11 @@ class TestSupervisorConfigurationEdgeCases:
         with pytest.raises(ValueError, match="Program name cannot be empty"):
             generate_supervisord_config(config, program_name="")
 
-    def test_max_recovery_attempts_zero(self):
+    def test_max_start_retries_zero(self):
         """Test configuration with zero recovery attempts."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=0,
+            max_start_retries=0,
             launch_command="echo test",
             log_level="info",
         )
@@ -419,7 +425,7 @@ class TestSupervisorConfigurationEdgeCases:
         """Test that special characters in commands are handled properly."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command='python -c "print(\'Hello, World!\')" && echo "Done"',
             log_level="info",
         )

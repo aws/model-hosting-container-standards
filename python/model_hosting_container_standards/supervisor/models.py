@@ -30,7 +30,7 @@ class SupervisorConfig:
 
     Attributes:
         auto_recovery: Enable/disable automatic restart of framework processes
-        max_recovery_attempts: Maximum number of restart attempts before giving up
+        max_start_retries: Maximum number of startup retry attempts before giving up
         recovery_backoff_seconds: Wait time in seconds between restart attempts (currently unused)
         launch_command: Custom command to run the framework process
         config_path: Path where supervisord configuration files are stored
@@ -39,7 +39,7 @@ class SupervisorConfig:
     """
 
     auto_recovery: bool = True
-    max_recovery_attempts: int = 3
+    max_start_retries: int = 3
     recovery_backoff_seconds: int = (
         10  # NOTE: Currently unused - supervisord doesn't support backoff natively
     )
@@ -188,9 +188,9 @@ def parse_environment_variables() -> SupervisorConfig:
             "ENGINE_AUTO_RECOVERY", default_value=config.auto_recovery, var_type=bool
         )
 
-        config.max_recovery_attempts = get_validated_env_var(
-            "ENGINE_MAX_RECOVERY_ATTEMPTS",
-            default_value=config.max_recovery_attempts,
+        config.max_start_retries = get_validated_env_var(
+            "ENGINE_MAX_START_RETRIES",
+            default_value=config.max_start_retries,
             var_type=int,
             min_value=0,
             max_value=100,

@@ -20,7 +20,7 @@ class TestExitBehaviorLogic:
         """Test that exitcodes=255 is set to treat all normal exits as unexpected."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="python -m llm_service",
             log_level="info",
         )
@@ -35,7 +35,7 @@ class TestExitBehaviorLogic:
         """Test that startsecs=1 is set to require minimum runtime."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=5,
+            max_start_retries=5,
             launch_command="python -m my_service",
             log_level="debug",
         )
@@ -50,7 +50,7 @@ class TestExitBehaviorLogic:
         """Test autorestart=true when auto_recovery is enabled."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=2,
+            max_start_retries=2,
             launch_command="service --port 8080",
             log_level="warn",
         )
@@ -64,7 +64,7 @@ class TestExitBehaviorLogic:
         """Test autorestart=false when auto_recovery is disabled."""
         config = SupervisorConfig(
             auto_recovery=False,
-            max_recovery_attempts=1,
+            max_start_retries=1,
             launch_command="service --port 8080",
             log_level="error",
         )
@@ -75,13 +75,13 @@ class TestExitBehaviorLogic:
         assert "autorestart=false" in config_content
 
     def test_retry_limit_configuration(self):
-        """Test that startretries matches max_recovery_attempts."""
+        """Test that startretries matches max_start_retries."""
         test_cases = [0, 1, 3, 5, 10, 100]
 
         for max_attempts in test_cases:
             config = SupervisorConfig(
                 auto_recovery=True,
-                max_recovery_attempts=max_attempts,
+                max_start_retries=max_attempts,
                 launch_command="echo test",
                 log_level="info",
             )
@@ -95,7 +95,7 @@ class TestExitBehaviorLogic:
         """Test that program name is correctly set in configuration."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="python -m vllm.entrypoints.api_server",
             log_level="info",
         )
@@ -112,7 +112,7 @@ class TestExitBehaviorLogic:
         """Test that logging is configured for container environments."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="python -m service",
             log_level="info",
         )
@@ -133,7 +133,7 @@ class TestExitBehaviorLogic:
         """Test supervisord daemon configuration for containers."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="python -m service",
             log_level="debug",
         )
@@ -150,7 +150,7 @@ class TestExitBehaviorLogic:
         """Test that all exit behavior settings work together correctly."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=4,
+            max_start_retries=4,
             launch_command="python -m llm_engine --config /app/config.yaml",
             log_level="warn",
         )
@@ -182,7 +182,7 @@ class TestExitBehaviorLogic:
         """Test behavior with zero retry attempts."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=0,
+            max_start_retries=0,
             launch_command="python -m service",
             log_level="info",
         )
@@ -197,7 +197,7 @@ class TestExitBehaviorLogic:
     def test_configuration_consistency_across_settings(self):
         """Test that configuration is consistent across different auto_recovery settings."""
         base_config = {
-            "max_recovery_attempts": 3,
+            "max_start_retries": 3,
             "launch_command": "python -m test_service",
             "log_level": "info",
         }

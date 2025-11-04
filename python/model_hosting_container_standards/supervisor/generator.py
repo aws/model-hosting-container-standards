@@ -18,23 +18,33 @@ logger = get_logger(__name__)
 # Key behavior: LLM services are expected to run indefinitely. Any exit is considered an error.
 # - exitcodes=255: Only exit code 255 is "expected" - all other exits (0,1,2...) trigger restart
 # - startsecs=1: Process must run at least 1 second to be considered successfully started
-# - autorestart=true/false: Based on ENGINE_AUTO_RECOVERY setting
+# - autorestart=unexpected: Only restart on unexpected exit codes (not 255)
+#   When ENGINE_AUTO_RECOVERY=false, autorestart=false to disable all restarts
 # - startretries=N: Maximum restart attempts before entering FATAL state
 #
 # When a program enters FATAL state (too many restart failures), the entrypoint script
 # will detect this and exit with code 1 to signal container failure.
-SUPERVISORD_CONFIG_TEMPLATE = """[supervisord]
+SUPERVISORD_CONFIG_TEMPLATE = """[unix_http_server]
+file=/tmp/supervisor-{program_name}.sock
+
+[supervisord]
 nodaemon=true
 loglevel={log_level}
 logfile=/dev/stdout
 logfile_maxbytes=0
-pidfile=/tmp/supervisord.pid
+pidfile=/tmp/supervisord-{program_name}.pid
+
+[supervisorctl]
+serverurl=unix:///tmp/supervisor-{program_name}.sock
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
 
 [program:{program_name}]
 command={framework_command}
 autostart=true
 autorestart={auto_restart}
-startretries={max_recovery_attempts}
+startretries={max_start_retries}
 stdout_logfile=/dev/stdout
 stdout_logfile_maxbytes=0
 stderr_logfile=/dev/stderr
@@ -86,7 +96,7 @@ def generate_supervisord_config(
             program_name=program_name,
             framework_command=config.launch_command,
             auto_restart=auto_restart,
-            max_recovery_attempts=config.max_recovery_attempts,
+            max_start_retries=config.max_start_retries,
         )
 
         return config_content

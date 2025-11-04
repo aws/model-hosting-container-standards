@@ -30,7 +30,7 @@ class TestSupervisorMonitoringLogic:
         """Test that configuration is generated with correct exit behavior settings."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=3,
+            max_start_retries=3,
             launch_command="python -m vllm.entrypoints.api_server --host 0.0.0.0 --port 8080",
             log_level="info",
         )
@@ -64,7 +64,7 @@ class TestSupervisorMonitoringLogic:
         """Test configuration when auto recovery is disabled."""
         config = SupervisorConfig(
             auto_recovery=False,
-            max_recovery_attempts=1,
+            max_start_retries=1,
             launch_command="python -m tensorrt_llm.hlapi.llm_api",
             log_level="debug",
         )
@@ -82,7 +82,7 @@ class TestSupervisorMonitoringLogic:
         env_vars = {
             "LAUNCH_COMMAND": "python -m my_llm_service --config /app/config.json",
             "ENGINE_AUTO_RECOVERY": "true",
-            "ENGINE_MAX_RECOVERY_ATTEMPTS": "5",
+            "ENGINE_MAX_START_RETRIES": "5",
             "SUPERVISOR_LOG_LEVEL": "warn",
         }
 
@@ -94,7 +94,7 @@ class TestSupervisorMonitoringLogic:
                 == "python -m my_llm_service --config /app/config.json"
             )
             assert config.auto_recovery is True
-            assert config.max_recovery_attempts == 5
+            assert config.max_start_retries == 5
             assert config.log_level == "warn"
 
     def test_configuration_with_different_retry_limits(self):
@@ -109,7 +109,7 @@ class TestSupervisorMonitoringLogic:
         for max_attempts, expected_line in test_cases:
             config = SupervisorConfig(
                 auto_recovery=True,
-                max_recovery_attempts=max_attempts,
+                max_start_retries=max_attempts,
                 launch_command="echo test",
                 log_level="info",
             )
@@ -129,7 +129,7 @@ class TestSupervisorMonitoringLogic:
         for command in special_commands:
             config = SupervisorConfig(
                 auto_recovery=True,
-                max_recovery_attempts=3,
+                max_start_retries=3,
                 launch_command=command,
                 log_level="info",
             )
@@ -142,7 +142,7 @@ class TestSupervisorMonitoringLogic:
         """Test writing configuration to file and reading it back."""
         config = SupervisorConfig(
             auto_recovery=True,
-            max_recovery_attempts=2,
+            max_start_retries=2,
             launch_command="python -m test_service",
             log_level="error",
         )
@@ -195,7 +195,10 @@ class TestSupervisorMonitoringLogic:
             # Check for key monitoring logic
             assert "#!/bin/bash" in script_content
             assert "LLM Service Monitoring Strategy:" in script_content
-            assert "supervisorctl status llm-engine" in script_content
+            assert (
+                "supervisorctl" in script_content
+                and "status llm-engine" in script_content
+            )
             assert "FATAL" in script_content
             assert "exit 1" in script_content
 
@@ -216,7 +219,7 @@ class TestSupervisorMonitoringLogic:
             env.update(
                 {
                     "LAUNCH_COMMAND": "python -m my_service --port 9000",
-                    "ENGINE_MAX_RECOVERY_ATTEMPTS": "4",
+                    "ENGINE_MAX_START_RETRIES": "4",
                     "ENGINE_AUTO_RECOVERY": "true",
                 }
             )
@@ -315,7 +318,7 @@ class TestSupervisorMonitoringLogic:
         assert "exitcodes=255" in SUPERVISORD_CONFIG_TEMPLATE
         assert "startsecs=1" in SUPERVISORD_CONFIG_TEMPLATE
         assert "autorestart={auto_restart}" in SUPERVISORD_CONFIG_TEMPLATE
-        assert "startretries={max_recovery_attempts}" in SUPERVISORD_CONFIG_TEMPLATE
+        assert "startretries={max_start_retries}" in SUPERVISORD_CONFIG_TEMPLATE
 
         # Verify logging configuration
         assert "stdout_logfile=/dev/stdout" in SUPERVISORD_CONFIG_TEMPLATE
@@ -329,7 +332,7 @@ class TestSupervisorMonitoringLogic:
         ):
             config = SupervisorConfig(
                 auto_recovery=True,
-                max_recovery_attempts=3,
+                max_start_retries=3,
                 launch_command="",
                 log_level="info",
             )
@@ -341,7 +344,7 @@ class TestSupervisorMonitoringLogic:
         ):
             config = SupervisorConfig(
                 auto_recovery=True,
-                max_recovery_attempts=3,
+                max_start_retries=3,
                 launch_command=None,
                 log_level="info",
             )
@@ -351,7 +354,7 @@ class TestSupervisorMonitoringLogic:
         with pytest.raises(ValueError, match="Program name cannot be empty"):
             config = SupervisorConfig(
                 auto_recovery=True,
-                max_recovery_attempts=3,
+                max_start_retries=3,
                 launch_command="echo test",
                 log_level="info",
             )
