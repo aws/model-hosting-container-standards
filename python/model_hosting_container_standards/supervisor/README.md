@@ -151,29 +151,6 @@ exec vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
 
 **Why This Matters**: Container orchestrators can detect the failure and take appropriate action (restart container, alert operators, etc.)
 
-## Usage Examples
-
-### vLLM Example
-```bash
-export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
-export ENGINE_AUTO_RECOVERY=true
-/opt/aws/supervisor-entrypoint.sh
-```
-
-### TensorRT-LLM Example
-```bash
-export LAUNCH_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
-export ENGINE_MAX_START_RETRIES=5
-/opt/aws/supervisor-entrypoint.sh
-```
-
-### Minimal Recovery Mode
-```bash
-export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
-export ENGINE_AUTO_RECOVERY=false
-export ENGINE_MAX_START_RETRIES=1
-/opt/aws/supervisor-entrypoint.sh
-```
 
 ## Troubleshooting
 
