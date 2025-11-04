@@ -108,17 +108,27 @@ class TestSupervisorExitBehavior:
         env = os.environ.copy()
         env["LAUNCH_COMMAND"] = 'echo "test service"'
 
-        result = subprocess.run(
+        # Use Popen to handle the case where script runs indefinitely
+        process = subprocess.Popen(
             [temp_entrypoint_script],
             env=env,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=5,
         )
 
-        # Should pass validation (may fail later due to missing supervisord)
-        assert "Configuration validation:" in result.stderr
-        assert 'LAUNCH_COMMAND: echo "test service"' in result.stderr
+        try:
+            # Give it time to complete validation and potentially start supervisord
+            stdout, stderr = process.communicate(timeout=5)
+            # If we get here, script exited (probably due to supervisord issues)
+        except subprocess.TimeoutExpired:
+            # Script is running (supervisord started successfully) - this is expected
+            process.terminate()
+            stdout, stderr = process.communicate(timeout=2)
+
+        # Should pass validation regardless of whether supervisord starts successfully
+        assert "Configuration validation:" in stderr
+        assert 'LAUNCH_COMMAND: echo "test service"' in stderr
 
     def test_config_template_structure(self):
         """Test that configuration template has expected structure."""
