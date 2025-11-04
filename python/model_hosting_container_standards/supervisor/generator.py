@@ -8,7 +8,7 @@ based on environment variables and framework-specific settings.
 import os
 
 from ..logging_config import get_logger
-from .models import ConfigurationError, SupervisorConfig, validate_config_directory
+from .models import ConfigurationError, SupervisorConfig
 
 logger = get_logger(__name__)
 
@@ -127,18 +127,6 @@ def write_supervisord_config(
         OSError: If the configuration file cannot be written
         ValueError: If required parameters are invalid
     """
-    # Validate config path
-    if not config_path or not config_path.strip():
-        error_msg = "Configuration path cannot be empty"
-        logger.error(error_msg)
-        raise ValueError(error_msg)
-
-    # Validate that we can write to the configuration directory
-    is_valid, validation_error = validate_config_directory(config_path)
-    if not is_valid:
-        logger.error(f"Configuration directory validation failed: {validation_error}")
-        raise ConfigurationError(f"Cannot write configuration: {validation_error}")
-
     try:
         # Generate configuration content
         config_content = generate_supervisord_config(config, program_name)
@@ -152,16 +140,7 @@ def write_supervisord_config(
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(config_content)
 
-        # Verify the file was written successfully
-        if not os.path.exists(config_path):
-            error_msg = f"Configuration file was not created: {config_path}"
-            logger.error(error_msg)
-            raise OSError(error_msg)
-
-        file_size = os.path.getsize(config_path)
-        logger.info(
-            f"Successfully wrote supervisord configuration ({file_size} bytes) to '{config_path}'"
-        )
+        logger.info(f"Successfully wrote supervisord configuration to '{config_path}'")
 
     except (OSError, IOError) as e:
         error_msg = f"Failed to write configuration file '{config_path}': {str(e)}"

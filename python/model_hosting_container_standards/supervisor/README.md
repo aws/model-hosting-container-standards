@@ -198,29 +198,6 @@ export ENGINE_AUTO_RECOVERY=false
 export ENGINE_MAX_START_RETRIES=1
 ```
 
-## API Usage
-
-```python
-from model_hosting_container_standards.supervisor import (
-    generate_supervisord_config,
-    write_supervisord_config,
-    SupervisorConfig
-)
-
-# Create configuration
-config = SupervisorConfig(
-    auto_recovery=True,
-    max_start_retries=5,
-    launch_command="vllm serve model --host 0.0.0.0 --port 8080"
-)
-
-# Generate configuration content
-config_content = generate_supervisord_config(config)
-
-# Write configuration to file
-write_supervisord_config("/tmp/supervisord.conf", config)
-```
-
 ## Key Files
 
 - `scripts/supervisor-entrypoint.sh` - Main entrypoint script for your container
