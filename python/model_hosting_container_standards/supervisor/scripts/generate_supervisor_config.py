@@ -28,7 +28,7 @@ def main() -> int:
     )
 
     parser.add_argument(
-        "-p", "--program-name", default="llm-engine", help="Program name"
+        "-p", "--program-name", default="llm_engine", help="Program name"
     )
     parser.add_argument(
         "--log-level",

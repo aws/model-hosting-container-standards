@@ -22,6 +22,11 @@ logger = get_logger(__name__)
 #   When ENGINE_AUTO_RECOVERY=false, autorestart=false to disable all restarts
 # - startretries=N: Maximum restart attempts before entering FATAL state
 #
+# FATAL state examples (supervisorctl status output):
+#   llm_engine                       FATAL     Exited too quickly (process log may have details)
+#   llm_engine                       FATAL     can't find command '/path/to/missing/binary'
+#   llm_engine                       FATAL     spawn error
+#
 # When a program enters FATAL state (too many restart failures), the entrypoint script
 # will detect this and exit with code 1 to signal container failure.
 def get_base_config_template(
@@ -42,8 +47,9 @@ def get_base_config_template(
         "supervisord": {
             "nodaemon": "true",
             "loglevel": log_level,
-            "logfile": "/dev/stdout",
-            "logfile_maxbytes": "0",
+            "logfile": f"/tmp/supervisord-{program_name}.log",
+            "logfile_maxbytes": "50MB",
+            "logfile_backups": "3",
             "pidfile": f"/tmp/supervisord-{program_name}.pid",
         },
         "rpcinterface:supervisor": {
@@ -60,6 +66,10 @@ def get_base_config_template(
             "stderr_logfile_maxbytes": "0",
             "exitcodes": "255",
             "startsecs": "1",
+            "stopsignal": "TERM",
+            "stopwaitsecs": "30",
+            "stopasgroup": "true",
+            "killasgroup": "true",
         },
     }
 
@@ -67,7 +77,7 @@ def get_base_config_template(
 def generate_supervisord_config(
     config: SupervisorConfig,
     launch_command: str,
-    program_name: str = "llm-engine",
+    program_name: str = "llm_engine",
 ) -> str:
     """Generate supervisord configuration content with validation and logging.
 
@@ -128,7 +138,7 @@ def write_supervisord_config(
     config_path: str,
     config: SupervisorConfig,
     launch_command: str,
-    program_name: str = "llm-engine",
+    program_name: str = "llm_engine",
 ) -> None:
     """Write supervisord configuration to file with comprehensive error handling.
 

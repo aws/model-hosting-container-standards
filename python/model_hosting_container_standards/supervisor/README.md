@@ -13,67 +13,96 @@ This module wraps your ML framework (vLLM, TensorRT-LLM, etc.) with supervisord 
 
 **Use Case**: Deploy ML frameworks on SageMaker or any container platform with automatic crash recovery and proper failure signaling.
 
-## Quick Setup
+## Quick Setup (Simplified CLI Approach)
 
 ### 1. Install the Package
 ```bash
 pip install model-hosting-container-standards
 ```
 
-### 2. Extract the Entrypoint Script
-Extract the entrypoint script from the installed package:
-```bash
-# In your Dockerfile (extracts to default: /opt/aws/supervisor-entrypoint.sh)
-RUN extract-supervisor-entrypoint
-```
+### 2. Use standard-supervisor with Your Command
+Simply prepend `standard-supervisor` to your existing framework command:
 
-Or specify a custom location:
-```bash
-# In your Dockerfile
-RUN extract-supervisor-entrypoint -o /usr/local/bin/supervisor-entrypoint.sh
-```
-
-### 3. Configure Launch Command and Entrypoint
 ```dockerfile
-# Set your framework's launch command
-ENV LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
-
-# Use supervisor entrypoint (using default path)
-ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
+# Basic usage - just add standard-supervisor before your command
+CMD ["standard-supervisor", "vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-### Alternative: One-line Setup
+### 3. Alternative: Entrypoint Style
 ```dockerfile
-# Install and extract in one step (uses default path: /opt/aws/supervisor-entrypoint.sh)
-RUN pip install model-hosting-container-standards && extract-supervisor-entrypoint
-
-# Still need to configure your launch command and entrypoint
-ENV LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
-ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
+# Use as entrypoint for more flexibility
+ENTRYPOINT ["standard-supervisor"]
+CMD ["vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
 ```
+
+That's it! No complex setup, no script extraction, no custom entrypoints needed.
 
 ## Configuration
 
-Configure your framework using environment variables. These can be set in your Dockerfile with `ENV` or overridden at container runtime.
+Configure supervisor behavior using the unified `SUPERVISOR_*` environment variable pattern. These can be set in your Dockerfile with `ENV` or overridden at container runtime.
 
-### Default Paths
-- **Entrypoint script**: `/opt/aws/supervisor-entrypoint.sh` (extracted by `extract-supervisor-entrypoint`)
+### Default Behavior
 - **Config file**: `/tmp/supervisord.conf` (generated automatically)
+- **Auto-recovery**: Enabled by default
+- **Max retries**: 3 attempts
+- **Log level**: info
 
-### Required: Launch Command
+### Configuration Options
+
+#### Application-Level Configuration (Recommended)
+Use these simple environment variables for common settings:
+
 ```bash
-# Set your framework's start command
-export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
-# or
-export LAUNCH_COMMAND="python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080"
+# Basic application behavior
+export AUTO_RECOVERY=true                           # Auto-restart on failure (default: true)
+export MAX_START_RETRIES=3                          # Max restart attempts (default: 3)
+export LOG_LEVEL=info                               # Log level (default: info, options: debug, info, warn, error, critical)
 ```
 
-### Optional Settings
+#### Advanced SUPERVISOR_* Configuration
+Use the pattern `SUPERVISOR_{SECTION}_{KEY}=VALUE` for advanced supervisord customization:
+
+**Important**:
+- The default program name is `llm_engine`
+- To target specific programs, use double underscores `__` to represent colons in section names
+- Program names in environment variables use the same format (e.g., `LLM_ENGINE` for `llm_engine`)
+
 ```bash
-export ENGINE_AUTO_RECOVERY=true        # Auto-restart on failure (default: true)
-export ENGINE_MAX_START_RETRIES=3       # Max restart attempts (default: 3, range: 0-100)
-export SUPERVISOR_LOG_LEVEL=info        # Log level (default: info, options: debug, info, warn, error, critical)
-export SUPERVISOR_CONFIG_PATH=/tmp/supervisord.conf  # Config file path (default: /tmp/supervisord.conf)
+# Program section overrides (for default program "llm_engine")
+export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=10              # Seconds to wait before considering started (default: 1)
+export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=30           # Seconds to wait for graceful shutdown (default: 10)
+export SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART=unexpected    # Advanced restart control (true/false/unexpected)
+
+# Generic program section overrides (applies to all programs)
+export SUPERVISOR_PROGRAM_STARTSECS=10              # Applies to all program sections
+export SUPERVISOR_PROGRAM_STOPWAITSECS=30           # Applies to all program sections
+
+# Supervisord daemon configuration
+export SUPERVISOR_SUPERVISORD_LOGLEVEL=debug        # Daemon log level (can differ from application LOG_LEVEL)
+export SUPERVISOR_SUPERVISORD_LOGFILE=/tmp/supervisord.log  # Log file location
+
+# Unix HTTP server configuration
+export SUPERVISOR_UNIX_HTTP_SERVER_FILE=/tmp/supervisor.sock  # Socket file location
+```
+
+### Common Configuration Examples
+
+```bash
+# High availability setup with more retries (recommended approach)
+export MAX_START_RETRIES=10
+export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
+
+# Debug mode with verbose logging
+export LOG_LEVEL=debug
+export SUPERVISOR_SUPERVISORD_LOGLEVEL=debug
+
+# Quick restart for development
+export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=1
+export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=5
+
+# Disable auto-recovery for debugging
+export AUTO_RECOVERY=false
+export MAX_START_RETRIES=1
 ```
 
 ### Runtime Override Examples
@@ -81,58 +110,102 @@ export SUPERVISOR_CONFIG_PATH=/tmp/supervisord.conf  # Config file path (default
 Environment variables set in the Dockerfile can be overridden when launching the container:
 
 ```bash
-# Override max retries at runtime
-docker run -e ENGINE_MAX_START_RETRIES=5 my-image
+# Override max retries at runtime (recommended)
+docker run -e MAX_START_RETRIES=5 my-image
 
-# Disable auto-recovery at runtime
-docker run -e ENGINE_AUTO_RECOVERY=false my-image
+# Disable auto-recovery at runtime (recommended)
+docker run -e AUTO_RECOVERY=false my-image
 
-# Change log level for debugging
-docker run -e SUPERVISOR_LOG_LEVEL=debug my-image
+# Change log level for debugging (recommended)
+docker run -e LOG_LEVEL=debug my-image
 
-# Override multiple settings
+# Override multiple settings (recommended approach)
 docker run \
-  -e ENGINE_MAX_START_RETRIES=10 \
-  -e ENGINE_AUTO_RECOVERY=true \
-  -e SUPERVISOR_LOG_LEVEL=debug \
+  -e MAX_START_RETRIES=10 \
+  -e AUTO_RECOVERY=true \
+  -e LOG_LEVEL=debug \
+  my-image
+
+# Advanced: Direct supervisord configuration override
+docker run \
+  -e SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30 \
+  -e SUPERVISOR_SUPERVISORD_LOGLEVEL=debug \
   my-image
 ```
 
-## Complete Example: vLLM + SageMaker Integration
+## Complete Examples
 
-### Dockerfile
+### Basic vLLM Example
 ```dockerfile
 FROM vllm/vllm-openai:latest
 
-# Install model hosting container standards and supervisor
-RUN pip install supervisor model-hosting-container-standards
+# Install model hosting container standards (includes supervisor)
+RUN pip install model-hosting-container-standards
 
-# Extract supervisor entrypoint (creates /opt/aws/supervisor-entrypoint.sh)
-RUN extract-supervisor-entrypoint
+# Use standard-supervisor with your vLLM command
+CMD ["standard-supervisor", "vllm", "serve", "TinyLlama/TinyLlama-1.1B-Chat-v1.0", "--host", "0.0.0.0", "--port", "8080", "--dtype", "auto"]
+```
 
-# Copy your custom entrypoint script
+### TensorRT-LLM Example
+```dockerfile
+FROM nvcr.io/nvidia/tensorrt:23.08-py3
+
+# Install dependencies and model hosting container standards
+RUN pip install tensorrt-llm model-hosting-container-standards
+
+# Use standard-supervisor with TensorRT-LLM
+CMD ["standard-supervisor", "python", "-m", "tensorrt_llm.hlapi.llm_api", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+### Advanced Configuration Example
+```dockerfile
+FROM vllm/vllm-openai:latest
+
+# Install model hosting container standards
+RUN pip install model-hosting-container-standards
+
+# Configure supervisor behavior (recommended approach)
+ENV MAX_START_RETRIES=5
+ENV LOG_LEVEL=debug
+ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
+
+# Use standard-supervisor with custom configuration
+CMD ["standard-supervisor", "vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+### SageMaker Integration with Custom Script
+```dockerfile
+FROM vllm/vllm-openai:latest
+
+# Install model hosting container standards
+RUN pip install model-hosting-container-standards
+
+# Copy your custom startup script
 COPY sagemaker-entrypoint.sh .
 RUN chmod +x sagemaker-entrypoint.sh
 
-# Configure supervisor to launch your service
-ENV LAUNCH_COMMAND="./sagemaker-entrypoint.sh"
-ENV ENGINE_AUTO_RECOVERY=true
-ENV ENGINE_MAX_START_RETRIES=3
+# Configure supervisor for production (recommended approach)
+ENV MAX_START_RETRIES=3
+ENV AUTO_RECOVERY=true
 
-# Use supervisor entrypoint for process management
-ENTRYPOINT ["/opt/aws/supervisor-entrypoint.sh"]
+# Use standard-supervisor with your custom script
+CMD ["standard-supervisor", "./sagemaker-entrypoint.sh"]
 ```
 
-### Custom Entrypoint Script (sagemaker-entrypoint.sh)
-```bash
-#!/bin/bash
-# Your vLLM startup script with SageMaker integration
+### Entrypoint Style for Flexibility
+```dockerfile
+FROM vllm/vllm-openai:latest
 
-# Start vLLM with your model
-exec vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
-    --host 0.0.0.0 \
-    --port 8080 \
-    --dtype auto
+# Install model hosting container standards
+RUN pip install model-hosting-container-standards
+
+# Optional: Configure supervisor (recommended approach)
+ENV MAX_START_RETRIES=5
+ENV LOG_LEVEL=info
+
+# Use as entrypoint for runtime flexibility
+ENTRYPOINT ["standard-supervisor"]
+CMD ["vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
 ### Service Monitoring Behavior
@@ -152,29 +225,74 @@ exec vllm serve TinyLlama/TinyLlama-1.1B-Chat-v1.0 \
 
 ### Common Errors
 
-**"No launch command available"**
+**"No command provided"**
 ```bash
-# Fix: Set LAUNCH_COMMAND with your framework's start command
-export LAUNCH_COMMAND="vllm serve model --host 0.0.0.0 --port 8080"
+# Fix: Provide a command after standard-supervisor
+standard-supervisor vllm serve model --host 0.0.0.0 --port 8080
 ```
 
 **"supervisord command not found"**
 ```bash
-# Fix: Install supervisor
+# Fix: Install supervisor (usually included with model-hosting-container-standards)
 pip install supervisor
 ```
 
 **Process keeps restarting**
 ```bash
-# Fix: Disable auto-recovery to see the actual error
-export ENGINE_AUTO_RECOVERY=false
-export ENGINE_MAX_START_RETRIES=1
+# Fix: Disable auto-recovery to see the actual error (recommended)
+export AUTO_RECOVERY=false
+export MAX_START_RETRIES=1
 ```
+
+**Configuration not taking effect**
+```bash
+# Fix: Use recommended application-level variables first
+# Recommended: MAX_START_RETRIES=5
+# Advanced (all programs): SUPERVISOR_PROGRAM_STARTRETRIES=5
+# Advanced (specific program): SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5
+# Incorrect: SUPERVISOR_STARTRETRIES=5 (missing section)
+```
+
+## Framework-Specific Examples
+
+### vLLM Examples
+```bash
+# Basic vLLM server
+standard-supervisor vllm serve model --host 0.0.0.0 --port 8080
+
+# vLLM with specific model and parameters
+standard-supervisor vllm serve microsoft/DialoGPT-medium --host 0.0.0.0 --port 8080 --dtype auto --max-model-len 2048
+
+# vLLM with OpenAI-compatible API
+standard-supervisor python -m vllm.entrypoints.openai.api_server --model model --host 0.0.0.0 --port 8080
+```
+
+### TensorRT-LLM Examples
+```bash
+# TensorRT-LLM API server
+standard-supervisor python -m tensorrt_llm.hlapi.llm_api --host 0.0.0.0 --port 8080
+
+# TensorRT-LLM with custom model path
+standard-supervisor python -m tensorrt_llm.hlapi.llm_api --model-dir /opt/model --host 0.0.0.0 --port 8080
+```
+
+### Custom Python Scripts
+```bash
+# Your custom ML serving script
+standard-supervisor python my_model_server.py --port 8080
+
+# FastAPI application
+standard-supervisor uvicorn app:app --host 0.0.0.0 --port 8080
+
+# Any other command
+standard-supervisor ./my-custom-entrypoint.sh
+```
+
+
 
 ## Key Files
 
-- `scripts/supervisor-entrypoint.sh` - Main entrypoint script for your container
-- `scripts/extract_entrypoint.py` - CLI tool to extract the entrypoint script (`extract-supervisor-entrypoint`)
+- `scripts/standard_supervisor.py` - Main CLI entry point (`standard-supervisor` command)
 - `scripts/generate_supervisor_config.py` - Configuration generator (used internally)
 
 That's all you need! The supervisor system handles the rest automatically.

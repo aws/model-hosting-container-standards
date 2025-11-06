@@ -7,7 +7,6 @@ Tests verify:
 3. CLI tools functionality
 """
 
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -30,26 +29,6 @@ class TestSupervisorExitBehavior:
         with tempfile.NamedTemporaryFile(mode="w", suffix=".conf", delete=False) as f:
             yield f.name
         Path(f.name).unlink(missing_ok=True)
-
-    @pytest.fixture
-    def temp_entrypoint_script(self):
-        """Extract entrypoint script to temporary location for testing."""
-        import shutil
-        from importlib import resources
-
-        script_path = (
-            resources.files("model_hosting_container_standards")
-            / "supervisor/scripts/supervisor-entrypoint.sh"
-        )
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
-            temp_path = f.name
-
-        shutil.copy2(str(script_path), temp_path)
-        os.chmod(temp_path, 0o755)
-
-        yield temp_path
-        Path(temp_path).unlink(missing_ok=True)
 
     def test_config_generation_basic(self, temp_config_file):
         """Test basic config generation with correct settings."""
@@ -80,82 +59,13 @@ class TestSupervisorExitBehavior:
         )
 
         write_supervisord_config(
-            temp_config_file, config, "python -c 'print(\"hello\")'", "llm-engine"
+            temp_config_file, config, "python -c 'print(\"hello\")'", "llm_engine"
         )
         content = Path(temp_config_file).read_text()
 
         assert "autorestart=false" in content
         assert "startretries=1" in content
         assert "exitcodes=255" in content
-
-    def test_entrypoint_script_validation(self, temp_entrypoint_script):
-        """Test entrypoint script environment validation."""
-        # Test without LAUNCH_COMMAND
-        env = os.environ.copy()
-        env.pop("LAUNCH_COMMAND", None)
-
-        result = subprocess.run(
-            [temp_entrypoint_script],
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        assert result.returncode == 1
-        assert "LAUNCH_COMMAND must be set" in result.stderr
-
-    def test_entrypoint_script_with_valid_environment(self, temp_entrypoint_script):
-        """Test entrypoint script passes validation with valid environment."""
-        import os
-        import signal
-
-        env = os.environ.copy()
-        env["LAUNCH_COMMAND"] = 'echo "test service"'
-
-        # Use process group to ensure we can kill the entire process tree
-        process = subprocess.Popen(
-            [temp_entrypoint_script],
-            env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,  # Create new process group
-        )
-
-        stdout = ""
-        stderr = ""
-
-        try:
-            # Give more time for CI environments (they can be slower)
-            stdout, stderr = process.communicate(timeout=20)
-        except subprocess.TimeoutExpired:
-            # Script is running indefinitely (supervisord started) - kill process group
-            try:
-                os.killpg(process.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-
-            try:
-                stdout, stderr = process.communicate(timeout=3)
-            except subprocess.TimeoutExpired:
-                # Still not dead, force kill the entire process group
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                stdout, stderr = process.communicate(timeout=3)
-        finally:
-            # Double insurance: kill any remaining processes
-            if process.poll() is None:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-
-        # Should pass validation regardless of whether supervisord starts successfully
-        assert "Configuration validation:" in stderr
-        assert 'LAUNCH_COMMAND: echo "test service"' in stderr
 
     def test_config_template_structure(self):
         """Test that configuration template has expected structure."""
@@ -192,51 +102,30 @@ class TestSupervisorExitBehavior:
 
     def test_cli_tools(self, temp_config_file):
         """Test CLI tools functionality."""
-        # Test extract-supervisor-entrypoint
-        with tempfile.NamedTemporaryFile(suffix=".sh", delete=False) as f:
-            temp_script_path = f.name
-
-        try:
-            result = subprocess.run(
-                ["extract-supervisor-entrypoint", "-o", temp_script_path],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            assert result.returncode == 0
-            assert Path(temp_script_path).exists()
-            assert os.access(temp_script_path, os.X_OK)
-
-            content = Path(temp_script_path).read_text()
-            assert content.startswith("#!/bin/bash")
-            assert "LLM Service Monitoring Strategy:" in content
-
-        finally:
-            Path(temp_script_path).unlink(missing_ok=True)
-
-        # Test generate-supervisor-config
-        env = os.environ.copy()
-        env["LAUNCH_COMMAND"] = "python -m test.service --port 8080"
-
+        # Test generate-supervisor-config via Python module
         result = subprocess.run(
             [
-                "generate-supervisor-config",
+                "python",
+                "-m",
+                "model_hosting_container_standards.supervisor.scripts.generate_supervisor_config",
                 "-o",
                 temp_config_file,
                 "-p",
                 "test-service",
+                "echo",
+                "test",
+                "command",
             ],
-            env=env,
             capture_output=True,
             text=True,
             timeout=10,
+            cwd="python",
         )
 
         assert result.returncode == 0
         content = Path(temp_config_file).read_text()
         assert "[program:test-service]" in content
-        assert "python -m test.service --port 8080" in content
+        assert "echo test command" in content
 
 
 class TestSupervisorConfigurationEdgeCases:
@@ -294,7 +183,7 @@ class TestCustomConfigurationMerging:
     def test_custom_configuration_merging_basic(self):
         """Test basic custom configuration merging."""
         custom_sections = {
-            "program:llm-engine": {
+            "program:llm_engine": {
                 "startsecs": "10",
                 "stopwaitsecs": "30",
             },
@@ -310,7 +199,7 @@ class TestCustomConfigurationMerging:
             custom_sections=custom_sections,
         )
 
-        content = generate_supervisord_config(config, "echo test", "llm-engine")
+        content = generate_supervisord_config(config, "echo test", "llm_engine")
 
         # Verify custom settings are applied
         assert "startsecs=10" in content
@@ -333,7 +222,7 @@ class TestCustomConfigurationMerging:
             custom_sections=custom_sections,
         )
 
-        content = generate_supervisord_config(config, "echo test", "llm-engine")
+        content = generate_supervisord_config(config, "echo test", "llm_engine")
 
         # Verify new section is added
         assert "[eventlistener:memmon]" in content
@@ -344,7 +233,7 @@ class TestCustomConfigurationMerging:
         """Test that any setting can be overridden (user responsibility)."""
         # Test overriding any settings - user is responsible for correctness
         custom_sections = {
-            "program:llm-engine": {
+            "program:llm_engine": {
                 "command": "custom command",
                 "exitcodes": "0",
                 "nodaemon": "false",
@@ -362,7 +251,7 @@ class TestCustomConfigurationMerging:
         )
 
         # Should work without validation errors - user responsibility
-        content = generate_supervisord_config(config, "echo test", "llm-engine")
+        content = generate_supervisord_config(config, "echo test", "llm_engine")
 
         # Verify overrides are applied
         assert "command=custom command" in content
@@ -378,16 +267,16 @@ class TestCustomConfigurationMerging:
             custom_sections={},
         )
 
-        content = generate_supervisord_config(config, "echo test", "llm-engine")
+        content = generate_supervisord_config(config, "echo test", "llm_engine")
 
         # Should work normally without custom sections
-        assert "[program:llm-engine]" in content
+        assert "[program:llm_engine]" in content
         assert "command=echo test" in content
 
     def test_custom_configuration_override_existing_settings(self):
         """Test overriding existing non-critical settings."""
         custom_sections = {
-            "program:llm-engine": {
+            "program:llm_engine": {
                 "startsecs": "5",  # Override default startsecs=1
                 "priority": "999",  # Add new setting
             }
@@ -400,7 +289,7 @@ class TestCustomConfigurationMerging:
             custom_sections=custom_sections,
         )
 
-        content = generate_supervisord_config(config, "echo test", "llm-engine")
+        content = generate_supervisord_config(config, "echo test", "llm_engine")
 
         # Verify override worked
         assert "startsecs=5" in content
