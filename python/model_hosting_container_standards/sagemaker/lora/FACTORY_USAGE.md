@@ -140,33 +140,46 @@ async def unload_adapter(data: SimpleNamespace, raw_request: Request):
     return Response(status_code=200)
 ```
 
-**3. `inject_adapter_id(adapter_path)`**
+**3. `inject_adapter_id(adapter_path, append=False, separator=None)`**
 
-Creates a decorator for injecting adapter IDs from headers into the request body. Takes a simple string path specifying where to inject the adapter ID:
+Creates a decorator for injecting adapter IDs from headers into the request body. Supports both replace and append modes:
 
 ```python
 from model_hosting_container_standards.sagemaker import inject_adapter_id
 
+# Replace mode (default)
 @inject_adapter_id("lora_id")
-async def inject_adapter_id(raw_request: Request):
+async def inject_adapter_replace(raw_request: Request):
     # The request body now contains the adapter ID from the header
+    return Response(status_code=200)
+
+# Append mode
+@inject_adapter_id("model", append=True, separator=":")
+async def inject_adapter_append(raw_request: Request):
+    # Appends adapter ID to existing model field
     return Response(status_code=200)
 ```
 
 **How `inject_adapter_id` works:**
-- Takes a single `adapter_path` string parameter specifying where to inject the adapter ID in the request body
+- Takes an `adapter_path` string parameter specifying where to inject the adapter ID in the request body
 - Supports both simple keys (e.g., `"model"`) and nested paths using dot notation (e.g., `"body.model.lora_name"`)
 - Automatically extracts the adapter ID from the SageMaker header `X-Amzn-SageMaker-Adapter-Identifier`
-- Raises `ValueError` if `adapter_path` is empty or if `adapter_path` is not a string
+- **Replace mode (default)**: Replaces the existing value at the target path
+- **Append mode**: Appends the adapter ID to existing value using a separator
+- Raises `ValueError` if `adapter_path` is empty, not a string, or if `append=True` without `separator`
+
+**Injection Modes:**
 
 ```python
-# Simple path - injects at top level
+# Replace mode (default)
 @inject_adapter_id("model")
-# Results in: {"model": "<adapter_id>"}
 
-# Nested path - supports dot notation
-@inject_adapter_id("body.model.lora_name")
-# Results in: {"body": {"model": {"lora_name": "<adapter_id>"}}}
+# Append mode with colon separator
+@inject_adapter_id("model", append=True, separator=":")
+
+# Custom separators
+@inject_adapter_id("model", append=True, separator="-")  # Dash
+@inject_adapter_id("model", append=True, separator="")   # Direct concatenation
 ```
 
 ### Benefits of Convenience Functions
@@ -174,7 +187,7 @@ async def inject_adapter_id(raw_request: Request):
 1. **Shorter imports**: Import from `sagemaker` instead of `sagemaker.lora.factory`
 2. **Clearer intent**: Function names explicitly state what they do
 3. **Less boilerplate**: No need to import and reference `LoRAHandlerType`
-4. **Built-in validation**: `inject_adapter_id` validates and auto-fills the header mapping
+4. **Built-in validation**: `inject_adapter_id` validates parameters and auto-fills the header mapping
 5. **Future-proof**: If the implementation changes, your code doesn't need updates
 
 ### When to Use Direct Factory Access
@@ -320,19 +333,22 @@ This example shows how to extract adapter information from HTTP headers and inje
 from fastapi import Request, Response
 from model_hosting_container_standards.sagemaker import inject_adapter_id
 
-@inject_adapter_id(
-    request_shape={
-        "lora_id": None  # Value is automatically filled with the SageMaker header
-    }
-)
-async def inject_adapter_to_body(raw_request: Request):
-    """Inject adapter ID from header into request body for inference.
+# Replace mode example
+@inject_adapter_id("lora_id")
+async def inject_adapter_replace(raw_request: Request):
+    """Inject adapter ID from header into request body (replace mode).
 
-    This transformer modifies the request body in-place, adding the adapter ID
-    extracted from the X-Amzn-SageMaker-Adapter-Identifier header.
+    This transformer modifies the request body in-place, replacing the lora_id
+    field with the adapter ID from the X-Amzn-SageMaker-Adapter-Identifier header.
     """
     # The transformation has already modified raw_request._body
     # Just pass it through to the next handler
+    return Response(status_code=200)
+
+# Append mode example
+@inject_adapter_id("model", append=True, separator=":")
+async def inject_adapter_append(raw_request: Request):
+    """Inject adapter ID using append mode."""
     return Response(status_code=200)
 ```
 
@@ -488,7 +504,9 @@ bootstrap(app)
 
 1. **Use the Convenience Functions:** Always use `register_load_adapter_handler`, `register_unload_adapter_handler`, and `inject_adapter_id` from the `sagemaker` module instead of directly using `create_lora_transform_decorator`. They provide better error messages, validation, and automatic header handling.
 
-2. **Validate Adapter Sources:** Always validate that adapter sources are accessible and in the correct format (S3 paths, local paths, etc.).
+2. **Choose the Right Injection Mode:** Use `inject_adapter_id` replace mode (default) for most cases, but use append mode with appropriate separators for frameworks that expect concatenated model names.
+
+3. **Validate Adapter Sources:** Always validate that adapter sources are accessible and in the correct format (S3 paths, local paths, etc.).
 
 3. **Handle Adapter Loading Errors:** Wrap adapter loading in try-except blocks and return appropriate HTTP status codes:
    - 400 for invalid requests

@@ -7,7 +7,7 @@ class SageMakerRegisterLoRAAdapterRequest(BaseModel):
     name: str
     src: str
     preload: bool = True
-    # pin: bool = False
+    pin: bool = False
     # prompt_prefix: Optional[str] = Field(default=None)
 
     @field_validator("name", mode="before")

@@ -1,6 +1,6 @@
 """SageMaker integration decorators."""
 
-from typing import List, Optional
+from typing import Dict, List, Optional, Union
 
 from fastapi import FastAPI
 
@@ -18,6 +18,7 @@ from .lora import (
     SageMakerLoRAApiHeader,
     create_lora_transform_decorator,
 )
+from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
 from .sessions import create_session_transform_decorator
@@ -52,7 +53,9 @@ def register_unload_adapter_handler(
     )
 
 
-def inject_adapter_id(adapter_path: str):
+def inject_adapter_id(
+    adapter_path: str, append: bool = False, separator: Optional[str] = None
+):
     """Create a decorator that injects adapter ID from SageMaker headers into request body.
 
     This decorator extracts the adapter identifier from the SageMaker LoRA API header
@@ -63,10 +66,21 @@ def inject_adapter_id(adapter_path: str):
         adapter_path: The JSON path where the adapter ID should be injected in the
                      request body (e.g., "model", "body.model.lora_name", etc.).
                      Supports both simple keys and nested paths using dot notation.
+        append: If True, appends the adapter ID to the existing value at adapter_path
+                using the specified separator. If False (default), replaces the value.
+                When True, separator parameter is required.
+                Example with append=True and separator=":":
+                    {"model": "base-model"} -> {"model": "base-model:adapter-123"}
+        separator: The separator to use when append=True. Required when append=True.
+                  Common values include ":", "-", "_", etc.
 
     Returns:
         A decorator function that can be applied to FastAPI route handlers to
         automatically inject adapter IDs from headers into the request body.
+
+    Raises:
+        ValueError: If adapter_path is empty or not a string, or if append=True
+                   but separator is not provided.
 
     Note:
         This is a transform-only decorator that does not create its own route.
@@ -79,11 +93,23 @@ def inject_adapter_id(adapter_path: str):
     if not isinstance(adapter_path, str):
         logger.exception("adapter_path must be a string")
         raise ValueError("adapter_path must be a string")
-    # create request_shape
-    request_shape = {}
-    request_shape[adapter_path] = (
-        f'headers."{SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER}"'
-    )
+    if append and separator is None:
+        logger.exception("separator must be provided when append=True")
+        raise ValueError("separator must be provided when append=True")
+
+    # create request_shape with operation encoding
+    request_shape: Dict[str, Union[str, AppendOperation]] = {}
+    header_expr = f'headers."{SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER}"'
+
+    if append:
+        # Encode append operation as a Pydantic model
+        request_shape[adapter_path] = AppendOperation(
+            separator=separator, expression=header_expr
+        )
+    else:
+        # Default replace behavior (backward compatible)
+        request_shape[adapter_path] = header_expr
+
     return create_lora_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)(
         request_shape=request_shape, response_shape=None
     )

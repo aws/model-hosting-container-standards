@@ -21,7 +21,8 @@ ModelHostingContainerStandards/
 │   │   │   ├── custom_code_ref_resolver/  # Dynamic code loading
 │   │   │   └── handler/       # Handler specifications
 │   │   └── sagemaker/         # SageMaker integration
-│   │       └── lora/          # LoRA adapter support
+│   │       ├── lora/          # LoRA adapter support
+│   │       └── sessions/      # Stateful session management
 │   ├── tests/                 # Package tests
 │   ├── examples/              # Python examples and demos
 │   ├── pyproject.toml         # Python project configuration
