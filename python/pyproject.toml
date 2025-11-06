@@ -28,6 +28,7 @@ include = [
 [tool.poetry.scripts]
 generate-supervisor-config = "model_hosting_container_standards.supervisor.scripts.generate_supervisor_config:main"
 extract-supervisor-entrypoint = "model_hosting_container_standards.supervisor.scripts.extract_entrypoint:main"
+standard-supervisor = "model_hosting_container_standards.supervisor.scripts.standard_supervisor:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

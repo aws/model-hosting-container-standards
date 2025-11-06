@@ -24,54 +24,67 @@ logger = get_logger(__name__)
 #
 # When a program enters FATAL state (too many restart failures), the entrypoint script
 # will detect this and exit with code 1 to signal container failure.
-SUPERVISORD_CONFIG_TEMPLATE = """[unix_http_server]
-file=/tmp/supervisor-{program_name}.sock
-
-[supervisorctl]
-serverurl=unix:///tmp/supervisor-{program_name}.sock
-
-[supervisord]
-nodaemon=true
-loglevel={log_level}
-logfile=/dev/stdout
-logfile_maxbytes=0
-pidfile=/tmp/supervisord-{program_name}.pid
-
-[rpcinterface:supervisor]
-supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
-
-[program:{program_name}]
-command={framework_command}
-autostart=true
-autorestart={auto_restart}
-startretries={max_start_retries}
-stdout_logfile=/dev/stdout
-stdout_logfile_maxbytes=0
-stderr_logfile=/dev/stderr
-stderr_logfile_maxbytes=0
-exitcodes=255
-startsecs=1
-"""
+def get_base_config_template(
+    program_name: str,
+    log_level: str,
+    framework_command: str,
+    auto_restart: str,
+    max_start_retries: int,
+) -> dict:
+    """Get base supervisord configuration as dictionary structure."""
+    return {
+        "unix_http_server": {
+            "file": f"/tmp/supervisor-{program_name}.sock",
+        },
+        "supervisorctl": {
+            "serverurl": f"unix:///tmp/supervisor-{program_name}.sock",
+        },
+        "supervisord": {
+            "nodaemon": "true",
+            "loglevel": log_level,
+            "logfile": "/dev/stdout",
+            "logfile_maxbytes": "0",
+            "pidfile": f"/tmp/supervisord-{program_name}.pid",
+        },
+        "rpcinterface:supervisor": {
+            "supervisor.rpcinterface_factory": "supervisor.rpcinterface:make_main_rpcinterface",
+        },
+        f"program:{program_name}": {
+            "command": framework_command,
+            "autostart": "true",
+            "autorestart": auto_restart,
+            "startretries": str(max_start_retries),
+            "stdout_logfile": "/dev/stdout",
+            "stdout_logfile_maxbytes": "0",
+            "stderr_logfile": "/dev/stderr",
+            "stderr_logfile_maxbytes": "0",
+            "exitcodes": "255",
+            "startsecs": "1",
+        },
+    }
 
 
 def generate_supervisord_config(
     config: SupervisorConfig,
+    launch_command: str,
     program_name: str = "llm-engine",
 ) -> str:
     """Generate supervisord configuration content with validation and logging.
 
     Creates a supervisord configuration file content based on the provided
-    configuration.
+    configuration and launch command. Merges custom SUPERVISOR_* configuration
+    with the base template.
 
     Args:
         config: SupervisorConfig instance with supervisor settings.
+        launch_command: Command to execute in the supervised program
         program_name: Name for the supervisord program section
 
     Returns:
         str: Complete supervisord configuration file content
 
     Raises:
-        ConfigurationError: If configuration validation fails
+        ConfigurationError: If configuration generation fails
         ValueError: If required parameters are invalid
     """
     # Validate required parameters
@@ -80,9 +93,9 @@ def generate_supervisord_config(
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Validate launch command from config
-    if not config.launch_command or not config.launch_command.strip():
-        error_msg = "Launch command in configuration cannot be empty"
+    # Validate launch command parameter
+    if not launch_command or not launch_command.strip():
+        error_msg = "Launch command cannot be empty"
         logger.error(error_msg)
         raise ValueError(error_msg)
 
@@ -90,16 +103,20 @@ def generate_supervisord_config(
     auto_restart = "true" if config.auto_recovery else "false"
 
     try:
-        # Generate configuration content
-        config_content = SUPERVISORD_CONFIG_TEMPLATE.format(
-            log_level=config.log_level,
+        # Get base configuration as dictionary
+        base_config = get_base_config_template(
             program_name=program_name,
-            framework_command=config.launch_command,
+            log_level=config.log_level,
+            framework_command=launch_command,
             auto_restart=auto_restart,
             max_start_retries=config.max_start_retries,
         )
 
-        return config_content
+        # Merge custom configuration sections
+        merged_config = _merge_custom_sections(base_config, config.custom_sections)
+
+        # Convert to INI format string
+        return _dict_to_ini_string(merged_config)
 
     except Exception as e:
         error_msg = f"Failed to generate supervisord configuration: {str(e)}"
@@ -110,6 +127,7 @@ def generate_supervisord_config(
 def write_supervisord_config(
     config_path: str,
     config: SupervisorConfig,
+    launch_command: str,
     program_name: str = "llm-engine",
 ) -> None:
     """Write supervisord configuration to file with comprehensive error handling.
@@ -120,6 +138,7 @@ def write_supervisord_config(
     Args:
         config_path: Path where the configuration file should be written
         config: SupervisorConfig instance with supervisor settings.
+        launch_command: Command to execute in the supervised program
         program_name: Name for the supervisord program section
 
     Raises:
@@ -129,7 +148,9 @@ def write_supervisord_config(
     """
     try:
         # Generate configuration content
-        config_content = generate_supervisord_config(config, program_name)
+        config_content = generate_supervisord_config(
+            config, launch_command, program_name
+        )
 
         # Create parent directories if they don't exist
         config_dir = os.path.dirname(config_path)
@@ -150,3 +171,63 @@ def write_supervisord_config(
         error_msg = f"Unexpected error writing configuration: {str(e)}"
         logger.error(error_msg)
         raise ConfigurationError(error_msg) from e
+
+
+def _merge_custom_sections(base_config: dict, custom_sections: dict) -> dict:
+    """Merge custom configuration sections with base configuration.
+
+    Args:
+        base_config: Base configuration dictionary
+        custom_sections: Custom configuration sections to merge
+
+    Returns:
+        dict: Merged configuration dictionary
+    """
+    if not custom_sections:
+        return base_config
+
+    # Create a deep copy to avoid modifying the original
+    merged_config = {}
+    for section_name, section_config in base_config.items():
+        merged_config[section_name] = section_config.copy()
+
+    # Merge custom sections
+    for section_name, custom_config in custom_sections.items():
+        if section_name in merged_config:
+            # Update existing section
+            for key, value in custom_config.items():
+                if key in merged_config[section_name]:
+                    logger.info(f"Overrode setting in [{section_name}]: {key}={value}")
+                else:
+                    logger.info(
+                        f"Added custom setting to [{section_name}]: {key}={value}"
+                    )
+                merged_config[section_name][key] = value
+        else:
+            # Add new section
+            merged_config[section_name] = custom_config.copy()
+            logger.info(
+                f"Added new custom section [{section_name}] with {len(custom_config)} settings"
+            )
+
+    return merged_config
+
+
+def _dict_to_ini_string(config_dict: dict) -> str:
+    """Convert configuration dictionary to INI format string.
+
+    Args:
+        config_dict: Configuration dictionary
+
+    Returns:
+        str: INI format configuration string
+    """
+    lines = []
+
+    for section_name, section_config in config_dict.items():
+        lines.append(f"[{section_name}]")
+        for key, value in section_config.items():
+            lines.append(f"{key}={value}")
+        lines.append("")  # Empty line between sections
+
+    return "\n".join(lines)

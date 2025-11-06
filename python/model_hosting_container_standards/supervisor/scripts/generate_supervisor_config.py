@@ -36,6 +36,7 @@ def main() -> int:
         default="ERROR",
         help="Log level",
     )
+    parser.add_argument("command", nargs="+", help="Launch command and arguments")
 
     args = parser.parse_args()
 
@@ -52,17 +53,11 @@ def main() -> int:
         # Parse configuration from environment
         config = parse_environment_variables()
 
-        # Validate launch command from config
-        if not config.launch_command:
-            error_msg = (
-                "No launch command available. Set LAUNCH_COMMAND environment variable."
-            )
-            logger.error(error_msg)
-            print(f"ERROR: {error_msg}", file=sys.stderr)
-            return 1
+        # Get launch command from CLI arguments
+        launch_command = " ".join(args.command)
 
         # Generate and write configuration
-        write_supervisord_config(args.output, config, args.program_name)
+        write_supervisord_config(args.output, config, launch_command, args.program_name)
 
         if args.log_level != "ERROR":
             print(f"Configuration written to: {args.output}")
