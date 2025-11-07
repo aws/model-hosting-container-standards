@@ -5,7 +5,7 @@ This module provides functionality to generate supervisord configuration files
 based on environment variables and framework-specific settings.
 """
 
-import os
+from pathlib import Path
 
 from ..logging_config import get_logger
 from .models import ConfigurationError, SupervisorConfig
@@ -163,9 +163,7 @@ def write_supervisord_config(
         )
 
         # Create parent directories if they don't exist
-        config_dir = os.path.dirname(config_path)
-        if config_dir and not os.path.exists(config_dir):
-            os.makedirs(config_dir, mode=0o755, exist_ok=True)
+        Path(config_path).parent.mkdir(parents=True, exist_ok=True, mode=0o755)
 
         # Write configuration to file
         with open(config_path, "w", encoding="utf-8") as f:
@@ -196,35 +194,30 @@ def _merge_custom_sections(base_config: dict, custom_sections: dict) -> dict:
     if not custom_sections:
         return base_config
 
-    # Create a deep copy to avoid modifying the original
-    merged_config = {}
-    for section_name, section_config in base_config.items():
-        merged_config[section_name] = section_config.copy()
-
-    # Merge custom sections
+    # Merge custom sections directly into base config
     for section_name, custom_config in custom_sections.items():
-        if section_name in merged_config:
+        if section_name in base_config:
             # Update existing section
             for key, value in custom_config.items():
-                if key in merged_config[section_name]:
+                if key in base_config[section_name]:
                     logger.info(f"Overrode setting in [{section_name}]: {key}={value}")
                 else:
                     logger.info(
                         f"Added custom setting to [{section_name}]: {key}={value}"
                     )
-                merged_config[section_name][key] = value
+                base_config[section_name][key] = value
         else:
             # Add new section
-            merged_config[section_name] = custom_config.copy()
+            base_config[section_name] = custom_config.copy()
             logger.info(
                 f"Added new custom section [{section_name}] with {len(custom_config)} settings"
             )
 
-    return merged_config
+    return base_config
 
 
 def _dict_to_ini_string(config_dict: dict) -> str:
-    """Convert configuration dictionary to INI format string.
+    """Convert configuration dictionary to INI format string using configparser.
 
     Args:
         config_dict: Configuration dictionary
@@ -232,12 +225,19 @@ def _dict_to_ini_string(config_dict: dict) -> str:
     Returns:
         str: INI format configuration string
     """
-    lines = []
+    import configparser
+    from io import StringIO
 
+    config = configparser.ConfigParser()
+
+    # Add sections and their key-value pairs
     for section_name, section_config in config_dict.items():
-        lines.append(f"[{section_name}]")
+        config.add_section(section_name)
         for key, value in section_config.items():
-            lines.append(f"{key}={value}")
-        lines.append("")  # Empty line between sections
+            config.set(section_name, key, str(value))
 
-    return "\n".join(lines)
+    # Write to string buffer
+    output = StringIO()
+    config.write(output)
+
+    return output.getvalue()

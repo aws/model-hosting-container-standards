@@ -73,9 +73,8 @@ export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=10              # Seconds to wai
 export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=30           # Seconds to wait for graceful shutdown (default: 10)
 export SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART=unexpected    # Advanced restart control (true/false/unexpected)
 
-# Generic program section overrides (applies to all programs)
-export SUPERVISOR_PROGRAM_STARTSECS=10              # Applies to all program sections
-export SUPERVISOR_PROGRAM_STOPWAITSECS=30           # Applies to all program sections
+# For program-specific overrides, use the program name (default: "llm_engine")
+# Or use application-level variables like MAX_START_RETRIES for simpler configuration
 
 # Supervisord daemon configuration
 export SUPERVISOR_SUPERVISORD_LOGLEVEL=debug        # Daemon log level (can differ from application LOG_LEVEL)
@@ -91,6 +90,7 @@ export SUPERVISOR_UNIX_HTTP_SERVER_FILE=/tmp/supervisor.sock  # Socket file loca
 # High availability setup with more retries (recommended approach)
 export MAX_START_RETRIES=10
 export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
+export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=10
 
 # Debug mode with verbose logging
 export LOG_LEVEL=debug
@@ -99,6 +99,7 @@ export SUPERVISOR_SUPERVISORD_LOGLEVEL=debug
 # Quick restart for development
 export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=1
 export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=5
+export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=1
 
 # Disable auto-recovery for debugging
 export AUTO_RECOVERY=false
@@ -129,6 +130,7 @@ docker run \
 # Advanced: Direct supervisord configuration override
 docker run \
   -e SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30 \
+  -e SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5 \
   -e SUPERVISOR_SUPERVISORD_LOGLEVEL=debug \
   my-image
 ```
@@ -168,6 +170,7 @@ RUN pip install model-hosting-container-standards
 ENV MAX_START_RETRIES=5
 ENV LOG_LEVEL=debug
 ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
+ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5
 
 # Use standard-supervisor with custom configuration
 CMD ["standard-supervisor", "vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
@@ -248,9 +251,7 @@ export MAX_START_RETRIES=1
 ```bash
 # Fix: Use recommended application-level variables first
 # Recommended: MAX_START_RETRIES=5
-# Advanced (all programs): SUPERVISOR_PROGRAM_STARTRETRIES=5
 # Advanced (specific program): SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5
-# Incorrect: SUPERVISOR_STARTRETRIES=5 (missing section)
 ```
 
 ## Framework-Specific Examples

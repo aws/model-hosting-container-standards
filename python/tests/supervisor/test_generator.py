@@ -138,17 +138,21 @@ class TestMergeCustomSections:
         assert "eventlistener:memmon" in result
         assert result["eventlistener:memmon"]["command"] == "memmon -a 200MB"
 
-    def test_merge_preserves_original(self):
-        """Test that merging doesn't modify the original base config."""
+    def test_merge_modifies_base_config(self):
+        """Test that merging modifies the base config in place."""
         base_config = {"program:test": {"command": "echo test", "autorestart": "true"}}
-        original_base = base_config.copy()
+        original_base = {
+            "program:test": {"command": "echo test", "autorestart": "true"}
+        }
 
         custom_sections = {"program:test": {"startsecs": "10"}}
 
-        _merge_custom_sections(base_config, custom_sections)
+        result = _merge_custom_sections(base_config, custom_sections)
 
-        # Original should be unchanged
-        assert base_config == original_base
+        # Should modify base config in place
+        assert result is base_config
+        assert base_config != original_base
+        assert base_config["program:test"]["startsecs"] == "10"
 
 
 class TestDictToIniString:
@@ -176,17 +180,32 @@ class TestDictToIniString:
         assert result == ""
 
     def test_section_ordering(self):
-        """Test that sections are properly separated."""
+        """Test that sections are properly separated with empty lines."""
         config_dict = {"section1": {"key1": "value1"}, "section2": {"key2": "value2"}}
 
         result = _dict_to_ini_string(config_dict)
         lines = result.split("\n")
 
-        # Should have empty lines between sections
-        section1_idx = lines.index("[section1]")
+        # Expected structure:
+        # [section1]      <- lines[0]
+        # key1=value1     <- lines[1]
+        # (empty line)    <- lines[2]
+        # [section2]      <- lines[3]
+        # key2=value2     <- lines[4]
+        # (empty line)    <- lines[5]
 
-        # There should be an empty line after section1's content
-        assert lines[section1_idx + 2] == ""
+        # Find section positions
+        section1_idx = lines.index("[section1]")
+        section2_idx = lines.index("[section2]")
+
+        # Verify empty line after section1's content (section1 + key + empty line)
+        assert lines[section1_idx + 2] == "", "Missing empty line after section1"
+
+        # Verify empty line after section2's content for consistency
+        assert lines[section2_idx + 2] == "", "Missing empty line after section2"
+
+        # Verify sections are in correct order
+        assert section1_idx < section2_idx, "Sections should maintain order"
 
 
 class TestGenerateSupervisordConfig:

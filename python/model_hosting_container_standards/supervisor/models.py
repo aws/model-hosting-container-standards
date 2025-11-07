@@ -36,9 +36,6 @@ class SupervisorConfig:
 
     auto_recovery: bool = True
     max_start_retries: int = 3
-    recovery_backoff_seconds: int = (
-        10  # Currently unused - supervisord doesn't support backoff
-    )
     config_path: str = "/tmp/supervisord.conf"
     log_level: str = "info"
     custom_sections: Dict[str, Dict[str, str]] = field(default_factory=dict)
@@ -83,9 +80,6 @@ def parse_environment_variables() -> SupervisorConfig:
         return SupervisorConfig(
             auto_recovery=_parse_bool(os.getenv("AUTO_RECOVERY", "true")),
             max_start_retries=_get_env_int("MAX_START_RETRIES", 3),
-            recovery_backoff_seconds=_get_env_int(
-                "RECOVERY_BACKOFF_SECONDS", 10, 0, 3600
-            ),
             config_path=_get_env_str("SUPERVISOR_CONFIG_PATH", "/tmp/supervisord.conf"),
             log_level=_get_env_str(
                 "LOG_LEVEL",
@@ -134,13 +128,38 @@ def _parse_supervisor_custom_sections() -> Dict[str, Dict[str, str]]:
         # Find the last underscore to separate key from section
         last_underscore = remaining.rfind("_")
         if last_underscore == -1:
+            logger.warning(
+                f"Invalid SUPERVISOR_ environment variable format: '{env_var}'. "
+                f"Expected format: SUPERVISOR_SECTION_KEY=value"
+            )
             continue
 
         section_part = remaining[:last_underscore]
         key_name = remaining[last_underscore + 1 :].lower()
 
-        # Convert double underscores to colons in section name
+        # Convert double underscores to colons in section name first
         section_name = section_part.replace("__", ":").lower()
+
+        # Validate section and key are not empty after processing
+        # Also check for invalid section names (starting with underscore indicates empty section before __)
+        if (
+            not section_name
+            or section_name.startswith(":")
+            or section_name.endswith(":")
+            or section_name.startswith("_")
+        ):
+            logger.warning(
+                f"Invalid SUPERVISOR_ environment variable: '{env_var}' has invalid section name. "
+                f"Expected format: SUPERVISOR_SECTION_KEY=value"
+            )
+            continue
+
+        if not key_name:
+            logger.warning(
+                f"Invalid SUPERVISOR_ environment variable: '{env_var}' has empty key name. "
+                f"Expected format: SUPERVISOR_SECTION_KEY=value"
+            )
+            continue
 
         # Initialize section if it doesn't exist
         if section_name not in custom_sections:
