@@ -86,13 +86,25 @@ class TestSupervisorCLIIntegration:
                 cwd=get_python_cwd(),
             )
 
-            # Verify supervisor handled the command
+            # Debug output for CI troubleshooting
+            print(f"DEBUG: Return code: {result.returncode}")
+            print(f"DEBUG: STDOUT:\n{result.stdout}")
+            print(f"DEBUG: STDERR:\n{result.stderr}")
+            print(f"DEBUG: Config path: {config_path}")
+            print(f"DEBUG: Config exists: {os.path.exists(config_path)}")
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    print(f"DEBUG: Config content:\n{f.read()}")
+
+            # Verify config file was generated first (main requirement)
+            assert os.path.exists(
+                config_path
+            ), f"Config file not found at {config_path}. Return code: {result.returncode}, STDOUT: {result.stdout}, STDERR: {result.stderr}"
+
+            # Then verify supervisor handled the command
             assert (
                 result.returncode == 1
             )  # Echo exits immediately, supervisor treats as failure
-
-            # Verify config file was generated
-            assert os.path.exists(config_path)
             config = parse_supervisor_config(config_path)
 
             # Check main sections exist
@@ -141,11 +153,20 @@ class TestSupervisorCLIIntegration:
                 cwd=get_python_cwd(),
             )
 
-            # Verify execution
-            assert result.returncode == 1
+            # Debug output for CI troubleshooting
+            print(f"DEBUG: Return code: {result.returncode}")
+            print(f"DEBUG: STDOUT:\n{result.stdout}")
+            print(f"DEBUG: STDERR:\n{result.stderr}")
+            print(f"DEBUG: Config path: {config_path}")
+            print(f"DEBUG: Config exists: {os.path.exists(config_path)}")
 
             # Verify ML-specific configuration
-            assert os.path.exists(config_path)
+            assert os.path.exists(
+                config_path
+            ), f"Config file not found at {config_path}. Return code: {result.returncode}, STDOUT: {result.stdout}, STDERR: {result.stderr}"
+
+            # Verify execution
+            assert result.returncode == 1
             config = parse_supervisor_config(config_path)
             program_section = config["program:llm_engine"]
 

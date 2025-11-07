@@ -81,8 +81,24 @@ jobs:
       - name: Install supervisor for integration tests
         run: pip install supervisor
 
+      - name: Verify supervisor installation
+        run: |
+          which supervisord || echo "supervisord not found"
+          which supervisorctl || echo "supervisorctl not found"
+          supervisord --version || echo "supervisord version failed"
+          echo "PATH: $PATH"
+          echo "Python path: $(which python)"
+          pip list | grep supervisor || echo "supervisor not in pip list"
+
       - name: Install library and dependencies
         run: make install
+
+      - name: Debug poetry environment
+        run: |
+          cd python
+          poetry run which supervisord || echo "supervisord not found in poetry env"
+          poetry run which supervisorctl || echo "supervisorctl not found in poetry env"
+          poetry run pip list | grep supervisor || echo "supervisor not in poetry pip list"
 
       - name: Lint and Test
         run: make ci
