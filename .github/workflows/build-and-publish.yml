@@ -93,13 +93,6 @@ jobs:
       - name: Install library and dependencies
         run: make install
 
-      - name: Debug poetry environment
-        run: |
-          cd python
-          poetry run which supervisord || echo "supervisord not found in poetry env"
-          poetry run which supervisorctl || echo "supervisorctl not found in poetry env"
-          poetry run pip list | grep supervisor || echo "supervisor not in poetry pip list"
-
       - name: Lint and Test
         run: make ci
 
