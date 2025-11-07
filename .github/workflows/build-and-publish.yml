@@ -78,18 +78,6 @@ jobs:
           key: venv-${{ runner.os }}-${{ hashFiles('python/poetry.lock') }}
           restore-keys: venv-${{ runner.os }}-
 
-      - name: Install supervisor for integration tests
-        run: pip install supervisor
-
-      - name: Verify supervisor installation
-        run: |
-          which supervisord || echo "supervisord not found"
-          which supervisorctl || echo "supervisorctl not found"
-          supervisord --version || echo "supervisord version failed"
-          echo "PATH: $PATH"
-          echo "Python path: $(which python)"
-          pip list | grep supervisor || echo "supervisor not in pip list"
-
       - name: Install library and dependencies
         run: make install
 

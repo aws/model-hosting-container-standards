@@ -86,16 +86,6 @@ class TestSupervisorCLIIntegration:
                 cwd=get_python_cwd(),
             )
 
-            # Debug output for CI troubleshooting
-            print(f"DEBUG: Return code: {result.returncode}")
-            print(f"DEBUG: STDOUT:\n{result.stdout}")
-            print(f"DEBUG: STDERR:\n{result.stderr}")
-            print(f"DEBUG: Config path: {config_path}")
-            print(f"DEBUG: Config exists: {os.path.exists(config_path)}")
-            if os.path.exists(config_path):
-                with open(config_path, "r") as f:
-                    print(f"DEBUG: Config content:\n{f.read()}")
-
             # Verify config file was generated first (main requirement)
             assert os.path.exists(
                 config_path
@@ -152,13 +142,6 @@ class TestSupervisorCLIIntegration:
                 timeout=15,
                 cwd=get_python_cwd(),
             )
-
-            # Debug output for CI troubleshooting
-            print(f"DEBUG: Return code: {result.returncode}")
-            print(f"DEBUG: STDOUT:\n{result.stdout}")
-            print(f"DEBUG: STDERR:\n{result.stderr}")
-            print(f"DEBUG: Config path: {config_path}")
-            print(f"DEBUG: Config exists: {os.path.exists(config_path)}")
 
             # Verify ML-specific configuration
             assert os.path.exists(

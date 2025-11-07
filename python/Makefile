@@ -18,7 +18,7 @@ lint:  ## Run all linters
 	poetry run isort --check-only .
 
 test:  ## Run tests
-	poetry run pytest -s -v
+	poetry run pytest
 
 clean:  ## Clean build artifacts
 	rm -rf build/
