@@ -84,7 +84,6 @@ class TestSupervisorCLIIntegration:
                 text=True,
                 timeout=10,
                 cwd=get_python_cwd(),
-                start_new_session=True,
             )
 
             # Verify supervisor handled the command
@@ -140,7 +139,6 @@ class TestSupervisorCLIIntegration:
                 text=True,
                 timeout=15,
                 cwd=get_python_cwd(),
-                start_new_session=True,
             )
 
             # Verify execution
@@ -189,7 +187,6 @@ class TestSupervisorCLIIntegration:
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=get_python_cwd(),
-                start_new_session=True,
             )
 
             try:
@@ -262,7 +259,6 @@ sys.exit(0)
                 stderr=subprocess.PIPE,
                 text=True,
                 cwd=get_python_cwd(),
-                start_new_session=True,
             )
 
             try:
@@ -349,7 +345,6 @@ exit(1)
                 text=True,
                 timeout=30,
                 cwd=get_python_cwd(),
-                start_new_session=True,
             )
 
             # Should fail after retry attempts
@@ -403,7 +398,6 @@ exit(1)
             text=True,
             timeout=10,
             cwd=get_python_cwd(),
-            start_new_session=True,
         )
 
         # Should fail due to configuration error
