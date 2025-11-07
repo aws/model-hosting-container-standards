@@ -118,54 +118,41 @@ def _parse_supervisor_custom_sections() -> Dict[str, Dict[str, str]]:
     Returns:
         Dictionary mapping section names to their key-value configurations
     """
+    import re
+
+    # Pattern matches SUPERVISOR_SECTION_KEY where:
+    # - SECTION: alphanumeric, may contain __ (for colons) or _ (internal), no leading/trailing _
+    # - KEY: alphanumeric, may contain _ (internal), no leading/trailing _
+    pattern = re.compile(
+        r"^SUPERVISOR_"
+        r"(?P<section>[A-Z0-9]+(?:__[A-Z0-9]+|_[A-Z0-9]+)*)"  # SECTION (__ for colons)
+        r"_(?P<key>[A-Z0-9]+(?:_[A-Z0-9]+)*)$"  # KEY (no leading/trailing _)
+    )
+
     custom_sections: Dict[str, Dict[str, str]] = {}
 
     for env_var, value in os.environ.items():
-        if not env_var.startswith("SUPERVISOR_"):
-            continue
-
-        # Skip the config path variable
+        # Skip non-SUPERVISOR_ variables and the config path variable
         if env_var == "SUPERVISOR_CONFIG_PATH":
             continue
 
-        # Remove SUPERVISOR_ prefix
-        remaining = env_var[11:]  # len("SUPERVISOR_") = 11
-
-        # Find the last underscore to separate key from section
-        last_underscore = remaining.rfind("_")
-        if last_underscore == -1:
-            logger.warning(
-                f"Invalid SUPERVISOR_ environment variable format: '{env_var}'. "
-                f"Expected format: SUPERVISOR_SECTION_KEY=value"
-            )
+        match = pattern.match(env_var)
+        if not match:
+            # Only warn if it starts with SUPERVISOR_ but doesn't match pattern
+            if env_var.startswith("SUPERVISOR_"):
+                logger.warning(
+                    f"Invalid SUPERVISOR_ environment variable format: '{env_var}'. "
+                    f"Expected format: SUPERVISOR_SECTION_KEY=value (alphanumeric with underscores, "
+                    f"no leading/trailing underscores, use __ for section colons)"
+                )
             continue
 
-        section_part = remaining[:last_underscore]
-        key_name = remaining[last_underscore + 1 :].lower()
+        # Extract section and key from regex groups
+        section_part = match.group("section")
+        key_name = match.group("key").lower()
 
-        # Convert double underscores to colons in section name first
+        # Convert double underscores to colons in section name
         section_name = section_part.replace("__", ":").lower()
-
-        # Validate section and key are not empty after processing
-        # Also check for invalid section names (starting with underscore indicates empty section before __)
-        if (
-            not section_name
-            or section_name.startswith(":")
-            or section_name.endswith(":")
-            or section_name.startswith("_")
-        ):
-            logger.warning(
-                f"Invalid SUPERVISOR_ environment variable: '{env_var}' has invalid section name. "
-                f"Expected format: SUPERVISOR_SECTION_KEY=value"
-            )
-            continue
-
-        if not key_name:
-            logger.warning(
-                f"Invalid SUPERVISOR_ environment variable: '{env_var}' has empty key name. "
-                f"Expected format: SUPERVISOR_SECTION_KEY=value"
-            )
-            continue
 
         # Initialize section if it doesn't exist
         if section_name not in custom_sections:

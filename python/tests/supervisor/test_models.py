@@ -294,6 +294,86 @@ class TestParseSupervisorCustomSections:
             # All invalid formats should be ignored, result should be empty
             assert result == {}
 
+    def test_leading_underscore_in_section_rejected(self):
+        """Test that section names with leading underscores are rejected."""
+        test_env = {
+            "SUPERVISOR__PROGRAM_COMMAND": "python app.py",  # Leading underscore in section
+        }
+
+        with patch.dict(os.environ, test_env, clear=True):
+            result = _parse_supervisor_custom_sections()
+            assert result == {}
+
+    def test_trailing_underscore_in_section_rejected(self):
+        """Test that section names with trailing underscores are rejected."""
+        test_env = {
+            "SUPERVISOR_PROGRAM__COMMAND": "python app.py",  # Trailing underscore in section (before key)
+        }
+
+        with patch.dict(os.environ, test_env, clear=True):
+            result = _parse_supervisor_custom_sections()
+            assert result == {}
+
+    def test_multiple_consecutive_underscores_rejected(self):
+        """Test that three or more consecutive underscores are rejected."""
+        test_env = {
+            "SUPERVISOR_PROGRAM___WEB_COMMAND": "gunicorn app:app",  # Three underscores
+        }
+
+        with patch.dict(os.environ, test_env, clear=True):
+            result = _parse_supervisor_custom_sections()
+            assert result == {}
+
+    def test_leading_underscore_in_key_rejected(self):
+        """Test that key names with leading underscores are rejected."""
+        test_env = {
+            "SUPERVISOR_PROGRAM__COMMAND": "python app.py",  # Leading underscore in key
+        }
+
+        with patch.dict(os.environ, test_env, clear=True):
+            result = _parse_supervisor_custom_sections()
+            assert result == {}
+
+    def test_trailing_underscore_in_key_rejected(self):
+        """Test that key names with trailing underscores are rejected."""
+        test_env = {
+            "SUPERVISOR_PROGRAM_COMMAND_": "python app.py",  # Trailing underscore in key
+        }
+
+        with patch.dict(os.environ, test_env, clear=True):
+            result = _parse_supervisor_custom_sections()
+            assert result == {}
+
+    def test_numeric_only_sections_and_keys_accepted(self):
+        """Test that purely numeric section and key names are accepted."""
+        test_env = {
+            "SUPERVISOR_123_456": "value",  # Numeric section and key
+        }
+
+        with patch.dict(os.environ, test_env, clear=True):
+            result = _parse_supervisor_custom_sections()
+
+            expected = {
+                "123": {"456": "value"},
+            }
+            assert result == expected
+
+    def test_mixed_alphanumeric_accepted(self):
+        """Test that mixed alphanumeric section and key names are accepted."""
+        test_env = {
+            "SUPERVISOR_PROGRAM2_COMMAND3": "python app.py",
+            "SUPERVISOR_WEB1__API2_PORT8080": "8080",
+        }
+
+        with patch.dict(os.environ, test_env, clear=True):
+            result = _parse_supervisor_custom_sections()
+
+            expected = {
+                "program2": {"command3": "python app.py"},
+                "web1:api2": {"port8080": "8080"},
+            }
+            assert result == expected
+
 
 class TestParseEnvironmentVariables:
     """Test the main parse_environment_variables function."""
