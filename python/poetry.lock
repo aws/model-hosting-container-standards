@@ -905,7 +905,7 @@ version = "4.3.0"
 description = "A system for controlling process state under UNIX"
 optional = false
 python-versions = "*"
-groups = ["dev"]
+groups = ["main"]
 files = [
     {file = "supervisor-4.3.0-py2.py3-none-any.whl", hash = "sha256:0bcb763fddafba410f35cbde226aa7f8514b9fb82eb05a0c85f6588d1c13f8db"},
     {file = "supervisor-4.3.0.tar.gz", hash = "sha256:4a2bf149adf42997e1bb44b70c43b613275ec9852c3edacca86a9166b27e945e"},
@@ -1019,4 +1019,4 @@ test = ["covdefaults (>=2.3)", "coverage (>=7.2.7)", "coverage-enable-subprocess
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10"
-content-hash = "c3ec0d068b290d52d450df15247081ec3ed0c153120a5538c140f076ea26724b"
+content-hash = "45628bfa759803d4588093bebadd92332901e49844c04dfabb8a31348ef2e84a"
