@@ -44,8 +44,8 @@ class TestSupervisorCLIIntegration:
         # Clear supervisor-related variables
         for key in list(os.environ.keys()):
             if key.startswith("SUPERVISOR_") or key in [
-                "AUTO_RECOVERY",
-                "MAX_START_RETRIES",
+                "PROCESS_AUTO_RECOVERY",
+                "PROCESS_MAX_START_RETRIES",
                 "LOG_LEVEL",
             ]:
                 del os.environ[key]
@@ -59,7 +59,7 @@ class TestSupervisorCLIIntegration:
     def test_basic_cli_execution_and_config_generation(self, clean_env):
         """Test basic CLI execution with configuration generation and validation."""
         env = {
-            "MAX_START_RETRIES": "2",
+            "PROCESS_MAX_START_RETRIES": "2",
             "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "2",
             "SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS": "5",
             "SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART": "true",
@@ -112,7 +112,7 @@ class TestSupervisorCLIIntegration:
     def test_ml_framework_configuration(self, clean_env):
         """Test supervisor configuration for ML framework scenarios."""
         env = {
-            "MAX_START_RETRIES": "3",
+            "PROCESS_MAX_START_RETRIES": "3",
             "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "30",  # ML models need longer startup
             "SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS": "60",  # Graceful shutdown time
             "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES": "3",
@@ -163,7 +163,7 @@ class TestSupervisorCLIIntegration:
     def test_signal_handling(self, clean_env):
         """Test that supervisor handles signals correctly."""
         env = {
-            "MAX_START_RETRIES": "1",
+            "PROCESS_MAX_START_RETRIES": "1",
             "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "1",
             "LOG_LEVEL": "info",
         }
@@ -382,7 +382,7 @@ exit(1)
     def test_configuration_validation_error(self, clean_env):
         """Test CLI with invalid configuration."""
         env = {
-            "MAX_START_RETRIES": "invalid_number",  # Invalid value
+            "PROCESS_MAX_START_RETRIES": "invalid_number",  # Invalid value
         }
 
         result = subprocess.run(

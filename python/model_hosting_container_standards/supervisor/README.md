@@ -54,8 +54,8 @@ Use these simple environment variables for common settings:
 
 ```bash
 # Basic application behavior
-export AUTO_RECOVERY=true                           # Auto-restart on failure (default: true)
-export MAX_START_RETRIES=3                          # Max restart attempts (default: 3)
+export PROCESS_AUTO_RECOVERY=true                   # Auto-restart on failure (default: true)
+export PROCESS_MAX_START_RETRIES=3                  # Max restart attempts (default: 3)
 export LOG_LEVEL=info                               # Log level (default: info, options: debug, info, warn, error, critical)
 ```
 
@@ -74,7 +74,7 @@ export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=30           # Seconds to wai
 export SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART=unexpected    # Advanced restart control (true/false/unexpected)
 
 # For program-specific overrides, use the program name (default: "llm_engine")
-# Or use application-level variables like MAX_START_RETRIES for simpler configuration
+# Or use application-level variables like PROCESS_MAX_START_RETRIES for simpler configuration
 
 # Supervisord daemon configuration
 export SUPERVISOR_SUPERVISORD_LOGLEVEL=debug        # Daemon log level (can differ from application LOG_LEVEL)
@@ -88,7 +88,7 @@ export SUPERVISOR_UNIX_HTTP_SERVER_FILE=/tmp/supervisor.sock  # Socket file loca
 
 ```bash
 # High availability setup with more retries (recommended approach)
-export MAX_START_RETRIES=10
+export PROCESS_MAX_START_RETRIES=10
 export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
 export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=10
 
@@ -102,8 +102,8 @@ export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=5
 export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=1
 
 # Disable auto-recovery for debugging
-export AUTO_RECOVERY=false
-export MAX_START_RETRIES=1
+export PROCESS_AUTO_RECOVERY=false
+export PROCESS_MAX_START_RETRIES=1
 ```
 
 ### Runtime Override Examples
@@ -112,18 +112,18 @@ Environment variables set in the Dockerfile can be overridden when launching the
 
 ```bash
 # Override max retries at runtime (recommended)
-docker run -e MAX_START_RETRIES=5 my-image
+docker run -e PROCESS_MAX_START_RETRIES=5 my-image
 
 # Disable auto-recovery at runtime (recommended)
-docker run -e AUTO_RECOVERY=false my-image
+docker run -e PROCESS_AUTO_RECOVERY=false my-image
 
 # Change log level for debugging (recommended)
 docker run -e LOG_LEVEL=debug my-image
 
 # Override multiple settings (recommended approach)
 docker run \
-  -e MAX_START_RETRIES=10 \
-  -e AUTO_RECOVERY=true \
+  -e PROCESS_MAX_START_RETRIES=10 \
+  -e PROCESS_AUTO_RECOVERY=true \
   -e LOG_LEVEL=debug \
   my-image
 
@@ -167,7 +167,7 @@ FROM vllm/vllm-openai:latest
 RUN pip install model-hosting-container-standards
 
 # Configure supervisor behavior (recommended approach)
-ENV MAX_START_RETRIES=5
+ENV PROCESS_MAX_START_RETRIES=5
 ENV LOG_LEVEL=debug
 ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
 ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5
@@ -188,8 +188,8 @@ COPY sagemaker-entrypoint.sh .
 RUN chmod +x sagemaker-entrypoint.sh
 
 # Configure supervisor for production (recommended approach)
-ENV MAX_START_RETRIES=3
-ENV AUTO_RECOVERY=true
+ENV PROCESS_MAX_START_RETRIES=3
+ENV PROCESS_AUTO_RECOVERY=true
 
 # Use standard-supervisor with your custom script
 CMD ["standard-supervisor", "./sagemaker-entrypoint.sh"]
@@ -203,7 +203,7 @@ FROM vllm/vllm-openai:latest
 RUN pip install model-hosting-container-standards
 
 # Optional: Configure supervisor (recommended approach)
-ENV MAX_START_RETRIES=5
+ENV PROCESS_MAX_START_RETRIES=5
 ENV LOG_LEVEL=info
 
 # Use as entrypoint for runtime flexibility
@@ -217,7 +217,7 @@ CMD ["vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
 
 **Restart Logic**:
 1. If your service exits for any reason (crash, OOM, etc.), it will be automatically restarted
-2. Maximum restart attempts: `ENGINE_MAX_START_RETRIES` (default: 3)
+2. Maximum restart attempts: `PROCESS_MAX_START_RETRIES` (default: 3)
 3. If restart limit is exceeded, the container exits with code 1
 4. This signals to container orchestrators (Docker, Kubernetes) that the service failed
 
@@ -243,14 +243,14 @@ pip install supervisor
 **Process keeps restarting**
 ```bash
 # Fix: Disable auto-recovery to see the actual error (recommended)
-export AUTO_RECOVERY=false
-export MAX_START_RETRIES=1
+export PROCESS_AUTO_RECOVERY=false
+export PROCESS_MAX_START_RETRIES=1
 ```
 
 **Configuration not taking effect**
 ```bash
 # Fix: Use recommended application-level variables first
-# Recommended: MAX_START_RETRIES=5
+# Recommended: PROCESS_MAX_START_RETRIES=5
 # Advanced (specific program): SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5
 ```
 

@@ -8,6 +8,12 @@ from ..logging_config import get_logger
 
 logger = get_logger(__name__)
 
+# Environment variable constants
+PROCESS_AUTO_RECOVERY = "PROCESS_AUTO_RECOVERY"
+PROCESS_MAX_START_RETRIES = "PROCESS_MAX_START_RETRIES"
+LOG_LEVEL = "LOG_LEVEL"
+SUPERVISOR_CONFIG_PATH = "SUPERVISOR_CONFIG_PATH"
+
 
 class ConfigurationError(Exception):
     """Exception raised for configuration validation errors."""
@@ -20,13 +26,13 @@ class SupervisorConfig:
     """Configuration for supervisor process management system.
 
     Hybrid Environment Variable Design:
-    - Application config: Simple names (AUTO_RECOVERY, MAX_START_RETRIES, LOG_LEVEL)
+    - Application config: PROCESS_ prefixed names (PROCESS_AUTO_RECOVERY, PROCESS_MAX_START_RETRIES, LOG_LEVEL)
     - Supervisord config: SUPERVISOR_{SECTION}_{KEY} pattern for custom overrides
     - Section names with colons: Use double underscore __ to represent colon :
 
     Examples:
-    - AUTO_RECOVERY=false (application behavior)
-    - MAX_START_RETRIES=5 (application behavior)
+    - PROCESS_AUTO_RECOVERY=false (application behavior)
+    - PROCESS_MAX_START_RETRIES=5 (application behavior)
     - LOG_LEVEL=debug (application behavior)
     - SUPERVISOR_PROGRAM_STARTSECS=10 (supervisord [program] section override)
     - SUPERVISOR_SUPERVISORD_LOGLEVEL=debug (supervisord [supervisord] section override)
@@ -78,11 +84,11 @@ def parse_environment_variables() -> SupervisorConfig:
         custom_sections = _parse_supervisor_custom_sections()
 
         return SupervisorConfig(
-            auto_recovery=_parse_bool(os.getenv("AUTO_RECOVERY", "true")),
-            max_start_retries=_get_env_int("MAX_START_RETRIES", 3),
-            config_path=_get_env_str("SUPERVISOR_CONFIG_PATH", "/tmp/supervisord.conf"),
+            auto_recovery=_parse_bool(os.getenv(PROCESS_AUTO_RECOVERY, "true")),
+            max_start_retries=_get_env_int(PROCESS_MAX_START_RETRIES, 3),
+            config_path=_get_env_str(SUPERVISOR_CONFIG_PATH, "/tmp/supervisord.conf"),
             log_level=_get_env_str(
-                "LOG_LEVEL",
+                LOG_LEVEL,
                 "info",
                 ["debug", "info", "warn", "error", "critical"],
             ),

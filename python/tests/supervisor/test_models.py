@@ -305,7 +305,12 @@ class TestParseEnvironmentVariables:
             k: v
             for k, v in os.environ.items()
             if k.startswith(
-                ("AUTO_RECOVERY", "MAX_START_RETRIES", "LOG_LEVEL", "SUPERVISOR_")
+                (
+                    "PROCESS_AUTO_RECOVERY",
+                    "PROCESS_MAX_START_RETRIES",
+                    "LOG_LEVEL",
+                    "SUPERVISOR_",
+                )
             )
         }
 
@@ -329,8 +334,8 @@ class TestParseEnvironmentVariables:
     def test_all_custom_values(self):
         """Test parsing with all custom values."""
         test_env = {
-            "AUTO_RECOVERY": "false",
-            "MAX_START_RETRIES": "5",
+            "PROCESS_AUTO_RECOVERY": "false",
+            "PROCESS_MAX_START_RETRIES": "5",
             "SUPERVISOR_CONFIG_PATH": "/custom/supervisord.conf",
             "LOG_LEVEL": "debug",
             "SUPERVISOR_PROGRAM_STARTSECS": "10",
@@ -352,8 +357,8 @@ class TestParseEnvironmentVariables:
             assert config.custom_sections == expected_custom
 
     def test_invalid_max_start_retries(self):
-        """Test error handling for invalid MAX_START_RETRIES."""
-        with patch.dict(os.environ, {"MAX_START_RETRIES": "invalid"}):
+        """Test error handling for invalid PROCESS_MAX_START_RETRIES."""
+        with patch.dict(os.environ, {"PROCESS_MAX_START_RETRIES": "invalid"}):
             with pytest.raises(ConfigurationError, match="must be an integer"):
                 parse_environment_variables()
 
@@ -364,14 +369,14 @@ class TestParseEnvironmentVariables:
                 parse_environment_variables()
 
     def test_max_start_retries_out_of_range(self):
-        """Test error handling for MAX_START_RETRIES out of range."""
-        with patch.dict(os.environ, {"MAX_START_RETRIES": "150"}):
+        """Test error handling for PROCESS_MAX_START_RETRIES out of range."""
+        with patch.dict(os.environ, {"PROCESS_MAX_START_RETRIES": "150"}):
             with pytest.raises(ConfigurationError, match="must be between 0 and 100"):
                 parse_environment_variables()
 
     def test_configuration_error_logging(self):
         """Test that configuration errors are logged."""
-        with patch.dict(os.environ, {"MAX_START_RETRIES": "invalid"}):
+        with patch.dict(os.environ, {"PROCESS_MAX_START_RETRIES": "invalid"}):
             with patch(
                 "model_hosting_container_standards.supervisor.models.logger"
             ) as mock_logger:
@@ -385,7 +390,7 @@ class TestParseEnvironmentVariables:
                 )
 
     def test_boolean_variations(self):
-        """Test various boolean value formats for AUTO_RECOVERY."""
+        """Test various boolean value formats for PROCESS_AUTO_RECOVERY."""
         test_cases = [
             ("true", True),
             ("True", True),
@@ -402,7 +407,7 @@ class TestParseEnvironmentVariables:
         ]
 
         for env_value, expected in test_cases:
-            with patch.dict(os.environ, {"AUTO_RECOVERY": env_value}):
+            with patch.dict(os.environ, {"PROCESS_AUTO_RECOVERY": env_value}):
                 config = parse_environment_variables()
                 assert config.auto_recovery is expected
 
