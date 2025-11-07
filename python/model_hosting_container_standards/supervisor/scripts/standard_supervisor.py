@@ -231,8 +231,14 @@ class StandardSupervisor:
             self.logger.error(f"Unexpected error: {e}")
             return 1
         finally:
-            # Cleanup
-            if config_path.startswith("/tmp/") and os.path.exists(config_path):
+            # Cleanup - only delete auto-generated temp files, not user-specified configs
+            user_specified_config = os.getenv("SUPERVISOR_CONFIG_PATH")
+            should_cleanup = (
+                config_path.startswith("/tmp/")
+                and os.path.exists(config_path)
+                and not user_specified_config
+            )
+            if should_cleanup:
                 try:
                     os.unlink(config_path)
                 except OSError as e:
