@@ -36,14 +36,12 @@ def get_base_config_template(
     auto_restart: str,
     max_start_retries: int,
 ) -> dict:
-    """Get base supervisord configuration as dictionary structure."""
+    """Get base supervisord configuration as dictionary structure.
+
+    Note: We don't use supervisorctl for process management, but supervisord
+    still needs minimal RPC configuration for its internal operations.
+    """
     return {
-        "unix_http_server": {
-            "file": f"/tmp/supervisor-{program_name}.sock",
-        },
-        "supervisorctl": {
-            "serverurl": f"unix:///tmp/supervisor-{program_name}.sock",
-        },
         "supervisord": {
             "nodaemon": "true",
             "loglevel": log_level,
@@ -51,9 +49,6 @@ def get_base_config_template(
             "logfile_maxbytes": "50MB",
             "logfile_backups": "3",
             "pidfile": f"/tmp/supervisord-{program_name}.pid",
-        },
-        "rpcinterface:supervisor": {
-            "supervisor.rpcinterface_factory": "supervisor.rpcinterface:make_main_rpcinterface",
         },
         f"program:{program_name}": {
             "command": framework_command,
@@ -110,6 +105,7 @@ def generate_supervisord_config(
         raise ValueError(error_msg)
 
     # Convert boolean auto_recovery to supervisord format
+    # Use "true" to always restart (except for exitcodes=255 which is "expected")
     auto_restart = "true" if config.auto_recovery else "false"
 
     try:

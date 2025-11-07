@@ -32,17 +32,16 @@ from model_hosting_container_standards.supervisor.models import (
 
 
 class ProcessManager:
-    """Manages supervisord process lifecycle."""
+    """Manages supervisord process lifecycle without supervisorctl dependency."""
 
     def __init__(self, logger: logging.Logger):
         self.logger = logger
         self.process: Optional[subprocess.Popen] = None
 
     def check_tools_available(self) -> tuple[bool, str]:
-        """Check if supervisor tools are available."""
-        for tool in ["supervisord", "supervisorctl"]:
-            if not shutil.which(tool):
-                return False, tool
+        """Check if supervisord is available."""
+        if not shutil.which("supervisord"):
+            return False, "supervisord"
         return True, ""
 
     def start(self, config_path: str) -> subprocess.Popen:
@@ -58,17 +57,6 @@ class ProcessManager:
             )
             self.logger.error(error_msg)
             raise RuntimeError(error_msg)
-
-        # Verify supervisord is working by testing supervisorctl connection
-        try:
-            subprocess.run(
-                ["supervisorctl", "-c", config_path, "status"],
-                capture_output=True,
-                timeout=3,
-                check=False,
-            )
-        except Exception as e:
-            self.logger.warning(f"Supervisorctl connection test failed: {e}")
 
         self.logger.info(f"Supervisord started with PID: {self.process.pid}")
         return self.process
@@ -89,29 +77,6 @@ class ProcessManager:
             self.logger.info("Supervisord force killed")
         except Exception as e:
             self.logger.error(f"Error during shutdown: {e}")
-
-
-class ProcessMonitor:
-    """Monitors supervised process health."""
-
-    def __init__(self, config_path: str, program_name: str, logger: logging.Logger):
-        self.config_path = config_path
-        self.program_name = program_name
-        self.logger = logger
-
-    def check_fatal_state(self) -> bool:
-        """Check if the supervised process is in FATAL state."""
-        try:
-            result = subprocess.run(
-                ["supervisorctl", "-c", self.config_path, "status", self.program_name],
-                capture_output=True,
-                text=True,
-                timeout=3,
-            )
-            return "FATAL" in result.stdout
-        except Exception:
-            # If we can't check status, assume it's not fatal
-            return False
 
 
 class SignalHandler:
@@ -211,19 +176,13 @@ class StandardSupervisor:
             supervisord_process = self.process_manager.start(config_path)
             self.signal_handler.setup()
 
-            # Monitor the process
-            monitor = ProcessMonitor(config_path, program_name, self.logger)
-            self.logger.info("Waiting for supervisord to complete...")
-
+            # Wait for supervisord to exit using poll loop
+            # This allows signal handlers to interrupt and respond quickly
+            self.logger.info("Supervisord running, waiting for completion...")
             while supervisord_process.poll() is None:
-                time.sleep(1)  # Check every second
+                time.sleep(0.5)  # Check twice per second
 
-                if monitor.check_fatal_state():
-                    self.logger.error("Service entered FATAL state, exiting...")
-                    self.process_manager.terminate()
-                    return 1
-
-            exit_code = supervisord_process.wait()
+            exit_code = supervisord_process.returncode
             self.logger.info(f"Supervisord exited with code: {exit_code}")
             return exit_code
 
