@@ -168,10 +168,10 @@ class TestDictToIniString:
         result = _dict_to_ini_string(config_dict)
 
         assert "[section1]" in result
-        assert "key1=value1" in result
-        assert "key2=value2" in result
+        assert "key1 = value1" in result
+        assert "key2 = value2" in result
         assert "[section2]" in result
-        assert "key3=value3" in result
+        assert "key3 = value3" in result
 
     def test_empty_config(self):
         """Test empty configuration conversion."""
@@ -220,9 +220,9 @@ class TestGenerateSupervisordConfig:
         result = generate_supervisord_config(config, "echo test", "test_program")
 
         assert "[program:test_program]" in result
-        assert "command=echo test" in result
-        assert "autorestart=true" in result
-        assert "startretries=3" in result
+        assert "command = echo test" in result
+        assert "autorestart = true" in result
+        assert "startretries = 3" in result
 
     def test_auto_recovery_disabled(self):
         """Test configuration with auto recovery disabled."""
@@ -232,9 +232,9 @@ class TestGenerateSupervisordConfig:
 
         result = generate_supervisord_config(config, "python script.py", "my_program")
 
-        assert "autorestart=false" in result
-        assert "startretries=1" in result
-        assert "loglevel=debug" in result
+        assert "autorestart = false" in result
+        assert "startretries = 1" in result
+        assert "loglevel = debug" in result
 
     def test_custom_sections_integration(self):
         """Test integration with custom sections."""
@@ -252,10 +252,10 @@ class TestGenerateSupervisordConfig:
 
         result = generate_supervisord_config(config, "vllm serve model", "llm_engine")
 
-        assert "startsecs=15" in result
-        assert "stopwaitsecs=45" in result
-        assert "logfile_maxbytes=100MB" in result
-        assert "startretries=5" in result
+        assert "startsecs = 15" in result
+        assert "stopwaitsecs = 45" in result
+        assert "logfile_maxbytes = 100MB" in result
+        assert "startretries = 5" in result
 
     def test_empty_launch_command_error(self):
         """Test error handling for empty launch command."""
@@ -321,8 +321,8 @@ class TestWriteSupervisordConfig:
             # Verify file was created and has content
             content = Path(temp_path).read_text()
             assert "[program:test_program]" in content
-            assert "command=echo test" in content
-            assert "startretries=2" in content
+            assert "command = echo test" in content
+            assert "startretries = 2" in content
 
         finally:
             Path(temp_path).unlink(missing_ok=True)
