@@ -161,7 +161,7 @@ class StandardSupervisor:
             return 1
 
         config_path = config.config_path
-        program_name = "llm_engine"
+        program_name = "app"
 
         try:
             # Generate and start supervisor

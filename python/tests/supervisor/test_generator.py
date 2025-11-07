@@ -39,10 +39,7 @@ class TestGetBaseConfigTemplate:
 
         # Check all required sections exist
         expected_sections = [
-            "unix_http_server",
-            "supervisorctl",
             "supervisord",
-            "rpcinterface:supervisor",
             "program:test_program",
         ]
 

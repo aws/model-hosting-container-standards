@@ -63,17 +63,17 @@ export LOG_LEVEL=info                               # Log level (default: info, 
 Use the pattern `SUPERVISOR_{SECTION}_{KEY}=VALUE` for advanced supervisord customization:
 
 **Important**:
-- The default program name is `llm_engine`
+- The default program name is `app`
 - To target specific programs, use double underscores `__` to represent colons in section names
-- Program names in environment variables use the same format (e.g., `LLM_ENGINE` for `llm_engine`)
+- Program names in environment variables use the same format (e.g., `APP` for `app`)
 
 ```bash
-# Program section overrides (for default program "llm_engine")
-export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=10              # Seconds to wait before considering started (default: 1)
-export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=30           # Seconds to wait for graceful shutdown (default: 10)
-export SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART=unexpected    # Advanced restart control (true/false/unexpected)
+# Program section overrides (for default program "app")
+export SUPERVISOR_PROGRAM__APP_STARTSECS=10              # Seconds to wait before considering started (default: 1)
+export SUPERVISOR_PROGRAM__APP_STOPWAITSECS=30           # Seconds to wait for graceful shutdown (default: 10)
+export SUPERVISOR_PROGRAM__APP_AUTORESTART=unexpected    # Advanced restart control (true/false/unexpected)
 
-# For program-specific overrides, use the program name (default: "llm_engine")
+# For program-specific overrides, use the program name (default: "app")
 # Or use application-level variables like PROCESS_MAX_START_RETRIES for simpler configuration
 
 # Supervisord daemon configuration
@@ -89,17 +89,17 @@ export SUPERVISOR_UNIX_HTTP_SERVER_FILE=/tmp/supervisor.sock  # Socket file loca
 ```bash
 # High availability setup with more retries (recommended approach)
 export PROCESS_MAX_START_RETRIES=10
-export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
-export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=10
+export SUPERVISOR_PROGRAM__APP_STARTSECS=30
+export SUPERVISOR_PROGRAM__APP_STARTRETRIES=10
 
 # Debug mode with verbose logging
 export LOG_LEVEL=debug
 export SUPERVISOR_SUPERVISORD_LOGLEVEL=debug
 
 # Quick restart for development
-export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=1
-export SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=5
-export SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=1
+export SUPERVISOR_PROGRAM__APP_STARTSECS=1
+export SUPERVISOR_PROGRAM__APP_STOPWAITSECS=5
+export SUPERVISOR_PROGRAM__APP_STARTRETRIES=1
 
 # Disable auto-recovery for debugging
 export PROCESS_AUTO_RECOVERY=false
@@ -129,8 +129,8 @@ docker run \
 
 # Advanced: Direct supervisord configuration override
 docker run \
-  -e SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30 \
-  -e SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5 \
+  -e SUPERVISOR_PROGRAM__APP_STARTSECS=30 \
+  -e SUPERVISOR_PROGRAM__APP_STARTRETRIES=5 \
   -e SUPERVISOR_SUPERVISORD_LOGLEVEL=debug \
   my-image
 ```
@@ -169,8 +169,8 @@ RUN pip install model-hosting-container-standards
 # Configure supervisor behavior (recommended approach)
 ENV PROCESS_MAX_START_RETRIES=5
 ENV LOG_LEVEL=debug
-ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
-ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5
+ENV SUPERVISOR_PROGRAM__APP_STARTSECS=30
+ENV SUPERVISOR_PROGRAM__APP_STARTRETRIES=5
 
 # Use standard-supervisor with custom configuration
 CMD ["standard-supervisor", "vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
@@ -251,7 +251,7 @@ export PROCESS_MAX_START_RETRIES=1
 ```bash
 # Fix: Use recommended application-level variables first
 # Recommended: PROCESS_MAX_START_RETRIES=5
-# Advanced (specific program): SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=5
+# Advanced (specific program): SUPERVISOR_PROGRAM__APP_STARTRETRIES=5
 ```
 
 ## Framework-Specific Examples

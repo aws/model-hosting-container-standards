@@ -23,9 +23,9 @@ logger = get_logger(__name__)
 # - startretries=N: Maximum restart attempts before entering FATAL state
 #
 # FATAL state examples (supervisorctl status output):
-#   llm_engine                       FATAL     Exited too quickly (process log may have details)
-#   llm_engine                       FATAL     can't find command '/path/to/missing/binary'
-#   llm_engine                       FATAL     spawn error
+#   app                       FATAL     Exited too quickly (process log may have details)
+#   app                       FATAL     can't find command '/path/to/missing/binary'
+#   app                       FATAL     spawn error
 #
 # When a program enters FATAL state (too many restart failures), the entrypoint script
 # will detect this and exit with code 1 to signal container failure.
@@ -72,7 +72,7 @@ def get_base_config_template(
 def generate_supervisord_config(
     config: SupervisorConfig,
     launch_command: str,
-    program_name: str = "llm_engine",
+    program_name: str = "app",
 ) -> str:
     """Generate supervisord configuration content with validation and logging.
 
@@ -134,7 +134,7 @@ def write_supervisord_config(
     config_path: str,
     config: SupervisorConfig,
     launch_command: str,
-    program_name: str = "llm_engine",
+    program_name: str = "app",
 ) -> None:
     """Write supervisord configuration to file with comprehensive error handling.
 

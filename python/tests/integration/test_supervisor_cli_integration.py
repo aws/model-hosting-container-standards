@@ -60,9 +60,9 @@ class TestSupervisorCLIIntegration:
         """Test basic CLI execution with configuration generation and validation."""
         env = {
             "PROCESS_MAX_START_RETRIES": "2",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "2",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS": "5",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART": "true",
+            "SUPERVISOR_PROGRAM__APP_STARTSECS": "2",
+            "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "5",
+            "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
             "LOG_LEVEL": "info",
         }
 
@@ -100,10 +100,10 @@ class TestSupervisorCLIIntegration:
 
                 # Check main sections exist
                 assert "supervisord" in config.sections()
-                assert "program:llm_engine" in config.sections()
+                assert "program:app" in config.sections()
 
                 # Verify program configuration
-                program_section = config["program:llm_engine"]
+                program_section = config["program:app"]
                 assert "python" in program_section["command"]
                 assert program_section["startsecs"] == "2"
                 assert program_section["stopwaitsecs"] == "5"
@@ -126,10 +126,10 @@ class TestSupervisorCLIIntegration:
         """Test supervisor configuration for ML framework scenarios."""
         env = {
             "PROCESS_MAX_START_RETRIES": "3",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "30",  # ML models need longer startup
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS": "60",  # Graceful shutdown time
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES": "3",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART": "true",
+            "SUPERVISOR_PROGRAM__APP_STARTSECS": "30",  # ML models need longer startup
+            "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "60",  # Graceful shutdown time
+            "SUPERVISOR_PROGRAM__APP_STARTRETRIES": "3",
+            "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
             "LOG_LEVEL": "info",
         }
 
@@ -164,7 +164,7 @@ class TestSupervisorCLIIntegration:
                 ), f"Config file not found at {config_path}"
 
                 config = parse_supervisor_config(config_path)
-                program_section = config["program:llm_engine"]
+                program_section = config["program:app"]
 
                 # ML frameworks need longer startup and shutdown times
                 assert program_section["startsecs"] == "30"
@@ -191,8 +191,8 @@ class TestSupervisorCLIIntegration:
         """Test that supervisor handles signals correctly."""
         env = {
             "PROCESS_MAX_START_RETRIES": "1",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "1",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS": "5",
+            "SUPERVISOR_PROGRAM__APP_STARTSECS": "1",
+            "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "5",
             "LOG_LEVEL": "info",
         }
 
@@ -240,9 +240,9 @@ class TestSupervisorCLIIntegration:
     def test_continuous_restart_behavior(self, clean_env):
         """Test that supervisor continuously restarts processes when autorestart=true."""
         env = {
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "2",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART": "true",
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES": "10",
+            "SUPERVISOR_PROGRAM__APP_STARTSECS": "2",
+            "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
+            "SUPERVISOR_PROGRAM__APP_STARTRETRIES": "10",
             "LOG_LEVEL": "info",
         }
 
@@ -313,7 +313,7 @@ sys.exit(0)
 
                 # Verify config
                 config = parse_supervisor_config(config_path)
-                program_section = config["program:llm_engine"]
+                program_section = config["program:app"]
                 assert program_section["autorestart"] == "true"
 
                 print(
@@ -332,9 +332,9 @@ sys.exit(0)
     def test_startup_retry_limit(self, clean_env):
         """Test that supervisor respects startretries limit."""
         env = {
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS": "5",  # Process must run 5 seconds to be "started"
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES": "3",  # Only 3 startup attempts
-            "SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART": "true",
+            "SUPERVISOR_PROGRAM__APP_STARTSECS": "5",  # Process must run 5 seconds to be "started"
+            "SUPERVISOR_PROGRAM__APP_STARTRETRIES": "3",  # Only 3 startup attempts
+            "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
             "LOG_LEVEL": "info",
         }
 
@@ -386,7 +386,7 @@ exit(1)
                 # Verify config was generated
                 assert os.path.exists(config_path), "Config file should exist"
                 config = parse_supervisor_config(config_path)
-                program_section = config["program:llm_engine"]
+                program_section = config["program:app"]
                 assert program_section["startretries"] == "3"
                 assert program_section["startsecs"] == "5"
 
@@ -406,7 +406,7 @@ exit(1)
                 ), f"Expected {expected_attempts} startup attempts, got {attempt_count}"
 
                 # Check supervisord log for FATAL state
-                log_path = "/tmp/supervisord-llm_engine.log"
+                log_path = "/tmp/supervisord-app.log"
                 if os.path.exists(log_path):
                     with open(log_path, "r") as f:
                         log_content = f.read()

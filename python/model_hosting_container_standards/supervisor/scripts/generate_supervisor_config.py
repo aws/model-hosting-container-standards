@@ -27,9 +27,7 @@ def main() -> int:
         "-o", "--output", required=True, help="Output path for config file"
     )
 
-    parser.add_argument(
-        "-p", "--program-name", default="llm_engine", help="Program name"
-    )
+    parser.add_argument("-p", "--program-name", default="app", help="Program name")
     parser.add_argument(
         "--log-level",
         choices=["ERROR", "INFO", "DEBUG"],

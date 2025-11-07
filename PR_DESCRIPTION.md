@@ -54,7 +54,7 @@ ENTRYPOINT ["standard-supervisor", "./sagemaker-entrypoint.sh"]
 standard-supervisor vllm serve model --host 0.0.0.0 --port 8080
 
 # With custom configuration
-PROCESS_MAX_START_RETRIES=5 SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30 \
+PROCESS_MAX_START_RETRIES=5 SUPERVISOR_PROGRAM__APP_STARTSECS=30 \
 standard-supervisor python -m tensorrt_llm.hlapi.llm_api
 ```
 
@@ -67,8 +67,8 @@ RUN pip install model-hosting-container-standards
 
 # Configure your ML framework with supervisor settings
 ENV PROCESS_MAX_START_RETRIES=3
-ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30
-ENV SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=60
+ENV SUPERVISOR_PROGRAM__APP_STARTSECS=30
+ENV SUPERVISOR_PROGRAM__APP_STOPWAITSECS=60
 ENV LOG_LEVEL=info
 
 # Use supervisor for process management
@@ -84,10 +84,10 @@ CMD ["vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
 - `LOG_LEVEL=info` - Logging level (debug, info, warn, error, critical)
 
 **Advanced Supervisor Settings:**
-- `SUPERVISOR_PROGRAM__LLM_ENGINE_STARTSECS=30` - Time process must run to be considered "started"
-- `SUPERVISOR_PROGRAM__LLM_ENGINE_STOPWAITSECS=60` - Time to wait for graceful shutdown
-- `SUPERVISOR_PROGRAM__LLM_ENGINE_AUTORESTART=true` - Enable automatic restart on failure
-- `SUPERVISOR_PROGRAM__LLM_ENGINE_STARTRETRIES=3` - Startup retry attempts
+- `SUPERVISOR_PROGRAM__APP_STARTSECS=30` - Time process must run to be considered "started"
+- `SUPERVISOR_PROGRAM__APP_STOPWAITSECS=60` - Time to wait for graceful shutdown
+- `SUPERVISOR_PROGRAM__APP_AUTORESTART=true` - Enable automatic restart on failure
+- `SUPERVISOR_PROGRAM__APP_STARTRETRIES=3` - Startup retry attempts
 - `SUPERVISOR_CONFIG_PATH=/tmp/supervisord.conf` - Custom config file location
 
 **Custom Sections:**

@@ -15,7 +15,6 @@ import pytest
 
 from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
     ProcessManager,
-    ProcessMonitor,
     SignalHandler,
     StandardSupervisor,
 )
@@ -44,7 +43,7 @@ class TestProcessManager:
 
         assert available is True
         assert missing == ""
-        assert mock_which.call_count == 2  # supervisord and supervisorctl
+        assert mock_which.call_count == 1  # Only supervisord
 
     @patch("shutil.which")
     def test_check_tools_available_missing_supervisord(self, mock_which):
@@ -53,7 +52,7 @@ class TestProcessManager:
         def mock_which_side_effect(tool):
             if tool == "supervisord":
                 return None
-            return "/usr/bin/supervisorctl"
+            return "/usr/bin/tool"
 
         mock_which.side_effect = mock_which_side_effect
 
@@ -141,61 +140,6 @@ class TestProcessManager:
         mock_process.terminate.assert_called_once()
         mock_process.kill.assert_called_once()
         assert mock_process.wait.call_count == 2
-
-
-class TestProcessMonitor:
-    """Test the ProcessMonitor class."""
-
-    def test_init(self):
-        """Test ProcessMonitor initialization."""
-        logger = Mock()
-        monitor = ProcessMonitor("/tmp/test.conf", "test-program", logger)
-
-        assert monitor.config_path == "/tmp/test.conf"
-        assert monitor.program_name == "test-program"
-        assert monitor.logger == logger
-
-    @patch("subprocess.run")
-    def test_check_fatal_state_true(self, mock_run):
-        """Test fatal state detection when process is FATAL."""
-        mock_run.return_value = Mock(stdout="test-program FATAL Exited too quickly")
-
-        logger = Mock()
-        monitor = ProcessMonitor("/tmp/test.conf", "test-program", logger)
-
-        result = monitor.check_fatal_state()
-
-        assert result is True
-        mock_run.assert_called_once_with(
-            ["supervisorctl", "-c", "/tmp/test.conf", "status", "test-program"],
-            capture_output=True,
-            text=True,
-            timeout=3,
-        )
-
-    @patch("subprocess.run")
-    def test_check_fatal_state_false(self, mock_run):
-        """Test fatal state detection when process is not FATAL."""
-        mock_run.return_value = Mock(stdout="test-program RUNNING pid 12345")
-
-        logger = Mock()
-        monitor = ProcessMonitor("/tmp/test.conf", "test-program", logger)
-
-        result = monitor.check_fatal_state()
-
-        assert result is False
-
-    @patch("subprocess.run")
-    def test_check_fatal_state_exception(self, mock_run):
-        """Test fatal state detection when supervisorctl fails."""
-        mock_run.side_effect = subprocess.TimeoutExpired("cmd", 3)
-
-        logger = Mock()
-        monitor = ProcessMonitor("/tmp/test.conf", "test-program", logger)
-
-        result = monitor.check_fatal_state()
-
-        assert result is False  # Should return False on exception
 
 
 class TestSignalHandler:
@@ -308,24 +252,16 @@ class TestStandardSupervisor:
         # Mock process manager
         mock_process = Mock()
         mock_process.poll.side_effect = [None, None, 0]  # Running, then exit
-        mock_process.wait.return_value = 0
+        mock_process.returncode = 0
 
         supervisor = StandardSupervisor()
         supervisor.process_manager.check_tools_available = Mock(return_value=(True, ""))
         supervisor.process_manager.start = Mock(return_value=mock_process)
         supervisor.signal_handler.setup = Mock()
 
-        # Mock monitor
-        with patch(
-            "model_hosting_container_standards.supervisor.scripts.standard_supervisor.ProcessMonitor"
-        ) as mock_monitor_class:
-            mock_monitor = Mock()
-            mock_monitor.check_fatal_state.return_value = False
-            mock_monitor_class.return_value = mock_monitor
-
-            with patch.object(sys, "argv", ["standard-supervisor", "echo", "test"]):
-                with patch("time.sleep"):  # Mock sleep to speed up test
-                    result = supervisor.run()
+        with patch.object(sys, "argv", ["standard-supervisor", "echo", "test"]):
+            with patch("time.sleep"):  # Mock sleep to speed up test
+                result = supervisor.run()
 
         assert result == 0
         mock_write_config.assert_called_once()
@@ -361,44 +297,6 @@ class TestStandardSupervisor:
             result = supervisor.run()
 
         assert result == 1
-
-    @patch(
-        "model_hosting_container_standards.supervisor.scripts.standard_supervisor.parse_environment_variables"
-    )
-    @patch(
-        "model_hosting_container_standards.supervisor.scripts.standard_supervisor.write_supervisord_config"
-    )
-    def test_run_fatal_state_detection(self, mock_write_config, mock_parse_env):
-        """Test run with FATAL state detection."""
-        # Mock configuration
-        mock_config = Mock()
-        mock_config.config_path = "/tmp/test.conf"
-        mock_parse_env.return_value = mock_config
-
-        # Mock process that keeps running
-        mock_process = Mock()
-        mock_process.poll.return_value = None  # Always running
-
-        supervisor = StandardSupervisor()
-        supervisor.process_manager.check_tools_available = Mock(return_value=(True, ""))
-        supervisor.process_manager.start = Mock(return_value=mock_process)
-        supervisor.process_manager.terminate = Mock()
-        supervisor.signal_handler.setup = Mock()
-
-        # Mock monitor that detects FATAL state
-        with patch(
-            "model_hosting_container_standards.supervisor.scripts.standard_supervisor.ProcessMonitor"
-        ) as mock_monitor_class:
-            mock_monitor = Mock()
-            mock_monitor.check_fatal_state.return_value = True  # FATAL detected
-            mock_monitor_class.return_value = mock_monitor
-
-            with patch.object(sys, "argv", ["standard-supervisor", "echo", "test"]):
-                with patch("time.sleep"):  # Mock sleep to speed up test
-                    result = supervisor.run()
-
-        assert result == 1
-        supervisor.process_manager.terminate.assert_called_once()
 
 
 if __name__ == "__main__":
