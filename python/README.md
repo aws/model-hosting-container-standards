@@ -242,7 +242,7 @@ async def invocations(request: Request):
 
 **Supported Parameters:**
 
-All keyword arguments accepted by FastAPI's [`APIRouter.add_api_route()`](https://fastapi.tiangolo.com/reference/apirouter/) method are supported. These parameters are passed through to FastAPI when mounting the route. Common examples include `dependencies`, `responses`, `response_model`, `tags`, `summary`, `description`, `status_code`, etc.
+All keyword arguments accepted by FastAPI's [`APIRouter.add_api_route()`](https://github.com/fastapi/fastapi/blob/1c7e2540c22ba5e81250cc715d82db31e52a63d6/fastapi/routing.py#L965) method are supported. These parameters are passed through to FastAPI when mounting the route. Common examples include `dependencies`, `responses`, `response_model`, `tags`, `summary`, `description`, `status_code`, etc.
 
 ### Customer Decorators (for model customization)
 
