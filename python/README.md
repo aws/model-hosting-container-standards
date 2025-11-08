@@ -170,31 +170,45 @@ The system automatically resolves handlers in this order:
 
 **Note**: All handler detection and route setup happens automatically during bootstrap
 
-## Route Configuration
 
-The framework supports FastAPI route configuration parameters in handler registration decorators. This allows you to add request validation, response models, and other FastAPI features directly in the decorator.
 
-### Supported Parameters
+## Decorator Reference
 
-All FastAPI route parameters are supported, including:
+### Framework Decorators (for framework developers)
 
-- **`dependencies`**: List of FastAPI dependencies for request validation
-- **`responses`**: Dictionary of response models for OpenAPI documentation
-- **`tags`**: List of tags for OpenAPI grouping
-- **`summary`**: Short summary for OpenAPI documentation
-- **`description`**: Detailed description for OpenAPI documentation
-- **`response_model`**: Pydantic model for response validation
-- **`status_code`**: Default HTTP status code
-- And all other FastAPI route parameters
-
-### Example: Request Validation with Dependencies
+Framework decorators automatically create routes and register handlers as framework defaults:
 
 ```python
-from fastapi import Depends, HTTPException, Request
+# Basic registration
+@sagemaker_standards.register_ping_handler
+@sagemaker_standards.register_invocation_handler
+
+# LoRA adapter support
+@sagemaker_standards.inject_adapter_id("model")
+```
+
+#### Advanced: FastAPI Route Configuration
+
+All register decorators support FastAPI route parameters for request validation, response models, and OpenAPI documentation:
+
+```python
+from fastapi import Depends, HTTPException
+from pydantic import BaseModel
 import json
 
+# Define response models
+class ErrorResponse(BaseModel):
+    error: str
+    message: str
+    status_code: int
+
+class SuccessResponse(BaseModel):
+    predictions: list
+    model_id: str
+
+# Define validation dependencies
 async def validate_json_request(request: Request):
-    """Dependency that validates JSON format."""
+    """Validate JSON format before handler execution."""
     try:
         body = await request.body()
         if body:
@@ -202,33 +216,10 @@ async def validate_json_request(request: Request):
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
 
+# Register with full configuration
 @sagemaker_standards.register_invocation_handler(
-    dependencies=[Depends(validate_json_request)]
-)
-async def invocations(request: Request):
-    """Handler with automatic JSON validation."""
-    body = await request.json()  # Already validated by dependency
-    return {"result": "processed"}
-```
-
-### Example: OpenAPI Documentation with Response Models
-
-```python
-from pydantic import BaseModel
-
-class ErrorResponse(BaseModel):
-    """Error response model."""
-    error: str
-    message: str
-    status_code: int
-
-class SuccessResponse(BaseModel):
-    """Success response model."""
-    predictions: list
-    model_id: str
-
-@sagemaker_standards.register_invocation_handler(
-    responses={
+    dependencies=[Depends(validate_json_request)],  # Request validation
+    responses={  # OpenAPI documentation
         200: {"model": SuccessResponse},
         400: {"model": ErrorResponse},
         500: {"model": ErrorResponse},
@@ -237,102 +228,32 @@ class SuccessResponse(BaseModel):
     description="Invoke the model with input data and get predictions",
     tags=["inference"]
 )
+@sagemaker_standards.inject_adapter_id("model")  # LoRA support
 async def invocations(request: Request):
-    """Handler with full OpenAPI documentation."""
-    body = await request.json()
+    """Handler with validation, documentation, and LoRA support."""
+    body = await request.json()  # Already validated by dependency
+    adapter_id = body.get("model", "base-model")
+    # Process with model
     return SuccessResponse(
         predictions=["result1", "result2"],
-        model_id="my-model"
+        model_id=adapter_id
     )
 ```
 
-### Example: Complete Integration
-
-```python
-from fastapi import Depends, HTTPException, Request
-from pydantic import BaseModel
-import json
-
-# Define models
-class ErrorResponse(BaseModel):
-    error: str
-    message: str
-
-# Define dependencies
-async def validate_json(request: Request):
-    try:
-        body = await request.body()
-        if body:
-            json.loads(body.decode())
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
-
-async def validate_auth(request: Request):
-    auth = request.headers.get("authorization", "")
-    if not auth:
-        raise HTTPException(status_code=401, detail="Authorization required")
-
-# Register handler with all features
-@sagemaker_standards.register_invocation_handler(
-    dependencies=[Depends(validate_json), Depends(validate_auth)],
-    responses={
-        400: {"model": ErrorResponse},
-        401: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    },
-    summary="Authenticated Model Invocation",
-    tags=["inference", "authenticated"]
-)
-@sagemaker_standards.inject_adapter_id("model")
-async def invocations(request: Request):
-    """Handler with validation, documentation, and LoRA support."""
-    body = await request.json()
-    adapter_id = body.get("model", "base-model")
-    # Process with model
-    return {"result": "processed", "adapter": adapter_id}
-```
+**Supported Parameters:**
+- `dependencies`: List of FastAPI dependencies for request validation
+- `responses`: Dictionary of response models for OpenAPI documentation
+- `response_model`: Pydantic model for response validation
+- `tags`: List of tags for OpenAPI grouping
+- `summary`, `description`: OpenAPI documentation strings
+- `status_code`: Default HTTP status code
+- All other FastAPI route parameters
 
 **Benefits:**
-- ✅ **Request Validation**: Dependencies execute before handler, blocking invalid requests
-- ✅ **OpenAPI Schema**: Response models automatically appear in API documentation
-- ✅ **Type Safety**: Pydantic models provide runtime validation
-- ✅ **Composability**: Works seamlessly with transform decorators like `@inject_adapter_id`
-
-## Decorator Reference
-
-### Framework Decorators (for framework developers)
-
-```python
-# Automatically create routes and register as framework defaults
-@sagemaker_standards.register_ping_handler
-@sagemaker_standards.register_invocation_handler
-
-# With FastAPI route configuration (dependencies, responses, etc.)
-from fastapi import Depends
-from pydantic import BaseModel
-
-class ErrorResponse(BaseModel):
-    error: str
-    message: str
-
-async def validate_request(request: Request):
-    # Validation logic
-    pass
-
-@sagemaker_standards.register_invocation_handler(
-    dependencies=[Depends(validate_request)],
-    responses={
-        400: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    }
-)
-async def invocations(request: Request):
-    # Handler logic
-    pass
-
-# LoRA adapter support
-@sagemaker_standards.inject_adapter_id("model")
-```
+- ✅ Request validation executes before handler, blocking invalid requests
+- ✅ Response models automatically appear in OpenAPI schema
+- ✅ Type safety with Pydantic runtime validation
+- ✅ Works seamlessly with transform decorators like `@inject_adapter_id`
 
 ### Customer Decorators (for model customization)
 
@@ -362,50 +283,20 @@ import json
 # Create router like real vLLM does
 router = APIRouter()
 
-# Define error response model for OpenAPI documentation
-class ErrorResponse(BaseModel):
-    error: str
-    message: str
-    status_code: int
-
-# Define request validation dependency
-async def validate_json_request(request: Request):
-    """Validate that request contains valid JSON."""
-    try:
-        body = await request.body()
-        if body:
-            json.loads(body.decode())
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid JSON in request body: {str(e)}"
-        )
-
 @sagemaker_standards.register_ping_handler
 async def ping(raw_request: Request) -> Response:
     """Default vLLM ping handler with automatic routing."""
     return Response(
-        content='{"status": "healthy", "source": "vllm_default", "message": "Default ping from vLLM server"}',
+        content='{"status": "healthy", "source": "vllm_default"}',
         media_type="application/json",
     )
 
-@sagemaker_standards.register_invocation_handler(
-    dependencies=[Depends(validate_json_request)],  # Add request validation
-    responses={  # Document error responses in OpenAPI
-        400: {"model": ErrorResponse},
-        415: {"model": ErrorResponse},
-        500: {"model": ErrorResponse},
-    }
-)
+@sagemaker_standards.register_invocation_handler
 @sagemaker_standards.inject_adapter_id("model")
 async def invocations(raw_request: Request) -> Response:
-    """Default vLLM invocation handler with LoRA support and validation."""
-    # Get request body safely (already validated by dependency)
+    """Default vLLM invocation handler with LoRA support."""
     body_bytes = await raw_request.body()
-    try:
-        body = json.loads(body_bytes.decode()) if body_bytes else {}
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        body = {}
+    body = json.loads(body_bytes.decode()) if body_bytes else {}
 
     # Adapter ID injected by decorator from SageMakerLoRAApiHeader
     adapter_id = body.get("model", "base-model")
@@ -415,9 +306,7 @@ async def invocations(raw_request: Request) -> Response:
 
     response_data = {
         "predictions": ["Generated text from vLLM"],
-        "source": "vllm_default",
         "adapter_id": adapter_id,
-        "message": f"Response using adapter: {adapter_id}",
     }
 
     return Response(
@@ -433,12 +322,6 @@ app.include_router(router)
 from model_hosting_container_standards.sagemaker.sagemaker_router import setup_ping_invoke_routes
 setup_ping_invoke_routes(app)
 ```
-
-**Key Features:**
-- ✅ **Request Validation**: Use `dependencies` parameter to validate requests before handler execution
-- ✅ **OpenAPI Documentation**: Use `responses` parameter to document error responses
-- ✅ **Transform Decorators**: Combine with `@inject_adapter_id` for LoRA support
-- ✅ **All FastAPI Parameters**: Supports all FastAPI route parameters (dependencies, responses, tags, summary, etc.)
 
 ### Customer vLLM Customization
 
