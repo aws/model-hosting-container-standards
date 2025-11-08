@@ -72,7 +72,11 @@ def create_transform_decorator(
             # if no transform shapes specified (None), register as passthrough handler
             if request_shape is None and response_shape is None:
                 logger.info("No transform shapes defined, using passthrough")
-                handler_registry.set_handler(f"{handler_type}", func)
+                from ..handler.registry import HandlerInfo
+
+                handler_registry.set_handler(
+                    f"{handler_type}", HandlerInfo(func=func, route_kwargs={})
+                )
                 logger.info(
                     f"[{handler_type.upper()}] Registered transform handler for {func.__name__}"
                 )
@@ -111,7 +115,11 @@ def create_transform_decorator(
                 return final_response
 
             # Register the wrapped function in the handler registry
-            handler_registry.set_handler(handler_type, decorated_func)
+            from ..handler.registry import HandlerInfo
+
+            handler_registry.set_handler(
+                handler_type, HandlerInfo(func=decorated_func, route_kwargs={})
+            )
             logger.info(
                 f"[{handler_type.upper()}] Registered transform handler for {func.__name__}"
             )

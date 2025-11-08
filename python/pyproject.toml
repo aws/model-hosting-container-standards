@@ -9,7 +9,7 @@ readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi>=0.117.1",
+    "fastapi",
     "pydantic",
     "jmespath",
     "httpx",

@@ -25,19 +25,14 @@ class HandlerRegistry:
         self._framework_default_handlers: Dict[str, HandlerInfo] = {}
         self._decorator_handlers: Dict[str, HandlerInfo] = {}
 
-    def set_handler(self, name: str, handler: Any) -> None:
+    def set_handler(self, name: str, handler: HandlerInfo) -> None:
         """Set a handler by name.
 
         Args:
             name: The handler name/type
-            handler: Either a HandlerInfo object or a Callable (which will be wrapped
-                    in HandlerInfo with empty route_kwargs)
+            handler: HandlerInfo object containing the handler function and route config
         """
-        if isinstance(handler, HandlerInfo):
-            self._handlers[name] = handler
-        else:
-            # Assume it's a Callable, wrap it in HandlerInfo
-            self._handlers[name] = HandlerInfo(func=handler, route_kwargs={})
+        self._handlers[name] = handler
 
     def set_framework_default(
         self,

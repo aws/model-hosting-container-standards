@@ -44,7 +44,8 @@ class TestHandlerRegistry:
         def handler():
             return {"status": "ok"}
 
-        registry.set_handler("test", handler)
+        handler_info = HandlerInfo(func=handler, route_kwargs={})
+        registry.set_handler("test", handler_info)
         info = registry.get_handler("test")
 
         assert info.func == handler
