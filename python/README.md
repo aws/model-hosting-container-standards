@@ -241,19 +241,8 @@ async def invocations(request: Request):
 ```
 
 **Supported Parameters:**
-- `dependencies`: List of FastAPI dependencies for request validation
-- `responses`: Dictionary of response models for OpenAPI documentation
-- `response_model`: Pydantic model for response validation
-- `tags`: List of tags for OpenAPI grouping
-- `summary`, `description`: OpenAPI documentation strings
-- `status_code`: Default HTTP status code
-- All other FastAPI route parameters
 
-**Benefits:**
-- ✅ Request validation executes before handler, blocking invalid requests
-- ✅ Response models automatically appear in OpenAPI schema
-- ✅ Type safety with Pydantic runtime validation
-- ✅ Works seamlessly with transform decorators like `@inject_adapter_id`
+All parameters from FastAPI's `APIRouter.add_api_route()` are supported, including `dependencies`, `responses`, `response_model`, `tags`, `summary`, `description`, `status_code`, etc.
 
 ### Customer Decorators (for model customization)
 
