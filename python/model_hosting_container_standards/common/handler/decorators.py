@@ -14,7 +14,8 @@ def create_override_decorator(
     This decorator registers a function as a customer override handler, replacing
     any default implementation. It supports optional FastAPI route configuration.
 
-    Accepts any valid FastAPI add_api_route parameters:
+    Accepts any valid FastAPI add_api_route parameters (see:
+    https://github.com/fastapi/fastapi/blob/1c7e2540c22ba5e81250cc715d82db31e52a63d6/fastapi/routing.py#L965):
     - dependencies: List of FastAPI dependencies
     - responses: Dict mapping status codes to response models
     - response_model: Pydantic model for response validation
@@ -91,7 +92,8 @@ def create_register_decorator(
     This decorator registers a function as a framework handler and automatically
     sets up the appropriate routes when used with SageMaker handlers.
 
-    Accepts any valid FastAPI add_api_route parameters:
+    Accepts any valid FastAPI add_api_route parameters (see:
+    https://github.com/fastapi/fastapi/blob/1c7e2540c22ba5e81250cc715d82db31e52a63d6/fastapi/routing.py#L965):
     - dependencies: List of FastAPI dependencies
     - responses: Dict mapping status codes to response models
     - response_model: Pydantic model for response validation
