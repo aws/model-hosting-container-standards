@@ -1,65 +1,99 @@
 """Handler registry for managing Custom handlers."""
 
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+
+
+@dataclass
+class HandlerInfo:
+    """Container for handler function and its route configuration.
+
+    Attributes:
+        func: The handler function to be registered
+        route_kwargs: Optional FastAPI route parameters (dependencies, responses, etc.)
+    """
+
+    func: Callable[..., Any]
+    route_kwargs: Dict[str, Any] = field(default_factory=dict)
 
 
 class HandlerRegistry:
     """General registry for managing handlers by name with proper priority."""
 
     def __init__(self) -> None:
-        self._handlers: Dict[str, Callable[..., Any]] = {}
-        self._framework_default_handlers: Dict[str, Callable[..., Any]] = {}
-        self._decorator_handlers: Dict[str, Callable[..., Any]] = {}
+        self._handlers: Dict[str, HandlerInfo] = {}
+        self._framework_default_handlers: Dict[str, HandlerInfo] = {}
+        self._decorator_handlers: Dict[str, HandlerInfo] = {}
 
-    def set_handler(self, name: str, handler: Callable[..., Any]) -> None:
-        """Set a handler by name."""
-        self._handlers[name] = handler
+    def set_handler(self, name: str, handler: Any) -> None:
+        """Set a handler by name.
+
+        Args:
+            name: The handler name/type
+            handler: Either a HandlerInfo object or a Callable (which will be wrapped
+                    in HandlerInfo with empty route_kwargs)
+        """
+        if isinstance(handler, HandlerInfo):
+            self._handlers[name] = handler
+        else:
+            # Assume it's a Callable, wrap it in HandlerInfo
+            self._handlers[name] = HandlerInfo(func=handler, route_kwargs={})
 
     def set_framework_default(
-        self, handler_type: str, handler: Callable[..., Any]
+        self,
+        handler_type: str,
+        handler: Callable[..., Any],
+        route_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Set a framework default handler.
+        """Set a framework default handler with optional route configuration.
 
         Args:
             handler_type: The type of handler (e.g., 'ping', 'invoke')
             handler: The handler function to register as framework default
+            route_kwargs: Optional FastAPI route parameters (dependencies, responses, etc.)
         """
-        self._framework_default_handlers[handler_type] = handler
+        handler_info = HandlerInfo(func=handler, route_kwargs=route_kwargs or {})
+        self._framework_default_handlers[handler_type] = handler_info
 
     def set_decorator_handler(
-        self, handler_type: str, handler: Callable[..., Any]
+        self,
+        handler_type: str,
+        handler: Callable[..., Any],
+        route_kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Set a decorator handler.
+        """Set a decorator handler with optional route configuration.
 
         Args:
             handler_type: The type of handler (e.g., 'ping', 'invoke')
             handler: The handler function to register as decorator handler
+            route_kwargs: Optional FastAPI route parameters (dependencies, responses, etc.)
         """
-        self._decorator_handlers[handler_type] = handler
+        handler_info = HandlerInfo(func=handler, route_kwargs=route_kwargs or {})
+        self._decorator_handlers[handler_type] = handler_info
 
-    def get_handler(self, name: str) -> Optional[Callable[..., Any]]:
-        """Get a handler by name."""
+    def get_handler(self, name: str) -> Optional[HandlerInfo]:
+        """Get handler info (function + route_kwargs) by name."""
         return self._handlers.get(name)
 
-    def get_framework_default(self, handler_type: str) -> Optional[Callable[..., Any]]:
-        """Get a framework default handler.
+    def get_framework_default(self, handler_type: str) -> Optional[HandlerInfo]:
+        """Get framework default handler info.
 
         Args:
             handler_type: The type of handler (e.g., 'ping', 'invoke')
 
         Returns:
-            The framework default handler function, or None if not found
+            The framework default HandlerInfo, or None if not found
         """
         return self._framework_default_handlers.get(handler_type)
 
-    def get_decorator_handler(self, handler_type: str) -> Optional[Callable[..., Any]]:
-        """Get a decorator handler.
+    def get_decorator_handler(self, handler_type: str) -> Optional[HandlerInfo]:
+        """Get decorator handler info.
 
         Args:
             handler_type: The type of handler (e.g., 'ping', 'invoke')
 
         Returns:
-            The decorator handler function, or None if not found
+            The decorator HandlerInfo, or None if not found
         """
         return self._decorator_handlers.get(handler_type)
 

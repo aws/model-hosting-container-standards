@@ -34,9 +34,10 @@ class TestHandlerResolver:
         with patch.dict(
             os.environ, {FastAPIEnvVars.CUSTOM_FASTAPI_PING_HANDLER: "os.path:exists"}
         ):
-            handler = self.resolver.resolve_handler("ping")
-            assert handler is not None
-            assert callable(handler)
+            handler_info = self.resolver.resolve_handler("ping")
+            assert handler_info is not None
+            assert callable(handler_info.func)
+            assert handler_info.route_kwargs == {}
 
     def test_resolve_ping_from_registry(self):
         """Test resolving ping handler from registry (decorator)."""
@@ -44,8 +45,9 @@ class TestHandlerResolver:
         mock_handler = MagicMock()
         handler_registry.set_decorator_handler("ping", mock_handler)
 
-        handler = self.resolver.resolve_handler("ping")
-        assert handler == mock_handler
+        handler_info = self.resolver.resolve_handler("ping")
+        assert handler_info is not None
+        assert handler_info.func == mock_handler
 
     def test_resolve_ping_from_customer_script(self):
         """Test resolving ping handler from customer script."""
@@ -74,10 +76,11 @@ def custom_sagemaker_ping_handler():
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_handler("ping")
-                assert handler is not None
-                assert callable(handler)
-                assert handler() == "customer ping"
+                handler_info = self.resolver.resolve_handler("ping")
+                assert handler_info is not None
+                assert callable(handler_info.func)
+                assert handler_info.func() == "customer ping"
+                assert handler_info.route_kwargs == {}
         finally:
             os.unlink(script_path)
 
@@ -112,8 +115,9 @@ def custom_sagemaker_ping_handler():
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_handler("ping")
-                assert handler == registry_handler
+                handler_info = self.resolver.resolve_handler("ping")
+                assert handler_info is not None
+                assert handler_info.func == registry_handler
 
             # Test: Env var should take precedence over registry
             with patch.dict(
@@ -127,9 +131,10 @@ def custom_sagemaker_ping_handler():
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_handler("ping")
-                assert handler != registry_handler
-                assert callable(handler)
+                handler_info = self.resolver.resolve_handler("ping")
+                assert handler_info is not None
+                assert handler_info.func != registry_handler
+                assert callable(handler_info.func)
         finally:
             os.unlink(script_path)
 
@@ -144,13 +149,15 @@ def custom_sagemaker_ping_handler():
         handler_registry.set_decorator_handler("ping", mock_handler)
 
         # Test resolve_handler for ping
-        handler = self.resolver.resolve_handler("ping")
-        assert handler == mock_handler
+        handler_info = self.resolver.resolve_handler("ping")
+        assert handler_info is not None
+        assert handler_info.func == mock_handler
 
         # Test resolve_handler for invoke
         handler_registry.set_decorator_handler("invoke", mock_handler)
-        handler = self.resolver.resolve_handler("invoke")
-        assert handler == mock_handler
+        handler_info = self.resolver.resolve_handler("invoke")
+        assert handler_info is not None
+        assert handler_info.func == mock_handler
 
     def test_router_path_in_env_var(self):
         """Test that router paths in environment variables are handled correctly."""
@@ -175,8 +182,9 @@ def custom_sagemaker_ping_handler():
         mock_handler = MagicMock()
         handler_registry.set_decorator_handler("invoke", mock_handler)
 
-        handler = self.resolver.resolve_handler("invoke")
-        assert handler == mock_handler
+        handler_info = self.resolver.resolve_handler("invoke")
+        assert handler_info is not None
+        assert handler_info.func == mock_handler
 
     def test_resolve_invoke_from_customer_script(self):
         """Test resolving invoke handler from customer script."""
@@ -205,10 +213,11 @@ def custom_sagemaker_invocation_handler(data):
                 # Clear cache to pick up new environment
                 SageMakerFunctionLoader._default_function_loader = None
 
-                handler = self.resolver.resolve_handler("invoke")
-                assert handler is not None
-                assert callable(handler)
-                assert handler("test") == "customer invoke: test"
+                handler_info = self.resolver.resolve_handler("invoke")
+                assert handler_info is not None
+                assert callable(handler_info.func)
+                assert handler_info.func("test") == "customer invoke: test"
+                assert handler_info.route_kwargs == {}
         finally:
             os.unlink(script_path)
 

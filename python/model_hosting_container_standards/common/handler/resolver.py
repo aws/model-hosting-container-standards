@@ -36,7 +36,7 @@ invoke_handler = resolver.resolve_handler("invoke")
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 from model_hosting_container_standards.exceptions import (
     HandlerFileNotFoundError,
@@ -46,6 +46,9 @@ from model_hosting_container_standards.exceptions import (
 )
 
 from .registry import handler_registry
+
+if TYPE_CHECKING:
+    from .registry import HandlerInfo
 
 logger = logging.getLogger(__name__)
 
@@ -98,7 +101,7 @@ class GenericHandlerResolver:
     for each resolution step, making the code more maintainable and testable.
     """
 
-    def __init__(self, config: HandlerConfig, registry=None) -> None:
+    def __init__(self, config: HandlerConfig, registry: Optional[Any] = None) -> None:
         """Initialize the handler resolver.
 
         Args:
@@ -108,26 +111,29 @@ class GenericHandlerResolver:
         self.config = config
         self.registry = registry or handler_registry
 
-    def _try_env_handler(self, handler_type: str) -> Optional[Callable]:
+    def _try_env_handler(self, handler_type: str) -> Optional["HandlerInfo"]:
         """Try to resolve handler from environment variable.
 
         Args:
             handler_type: Type of handler to resolve
 
         Returns:
-            Handler function if found, None otherwise
+            HandlerInfo with function if found, None otherwise
 
         Raises:
             HandlerResolutionError: If env var is set but invalid
             InvalidHandlerSpecError: If handler spec is malformed
         """
+        from .registry import HandlerInfo
+
         try:
             env_handler = self.config.get_env_handler(handler_type)
             if callable(env_handler):
                 # Function handler (already validated by config)
                 handler_name = getattr(env_handler, "__name__", str(env_handler))
                 logger.info(f"Found env {handler_type} handler: {handler_name}")
-                return env_handler
+                # Wrap in HandlerInfo with empty route_kwargs
+                return HandlerInfo(func=env_handler, route_kwargs={})
             elif env_handler:
                 # Router path - not a callable handler
                 # redirection not implemented yet
@@ -144,35 +150,39 @@ class GenericHandlerResolver:
         logger.debug(f"No env {handler_type} handler found")
         return None
 
-    def _try_decorator_handler(self, handler_type: str) -> Optional[Callable]:
+    def _try_decorator_handler(self, handler_type: str) -> Optional["HandlerInfo"]:
         """Try to resolve handler from registry decorators.
 
         Args:
             handler_type: Type of handler to resolve
 
         Returns:
-            Handler function if found, None otherwise
+            HandlerInfo if found, None otherwise
         """
-        decorated_handler = self.registry.get_decorator_handler(handler_type)
-        if decorated_handler:
+        handler_info = self.registry.get_decorator_handler(handler_type)
+        if handler_info:
             handler_name = getattr(
-                decorated_handler, "__name__", str(decorated_handler)
+                handler_info.func, "__name__", str(handler_info.func)
             )
             logger.debug(f"Found decorator {handler_type} handler: {handler_name}")
-            return decorated_handler
+            return handler_info
 
         logger.debug(f"No decorator {handler_type} handler found")
         return None
 
-    def _try_customer_script_handler(self, handler_type: str) -> Optional[Callable]:
+    def _try_customer_script_handler(
+        self, handler_type: str
+    ) -> Optional["HandlerInfo"]:
         """Try to resolve handler from customer script.
 
         Args:
             handler_type: Type of handler to resolve
 
         Returns:
-            Handler function if found, None otherwise
+            HandlerInfo with function if found, None otherwise
         """
+        from .registry import HandlerInfo
+
         try:
             customer_handler = self.config.get_customer_script_handler(handler_type)
             if customer_handler:
@@ -180,7 +190,8 @@ class GenericHandlerResolver:
                     customer_handler, "__name__", str(customer_handler)
                 )
                 logger.debug(f"Found customer module {handler_type}: {handler_name}")
-                return customer_handler
+                # Wrap in HandlerInfo with empty route_kwargs
+                return HandlerInfo(func=customer_handler, route_kwargs={})
         except (HandlerFileNotFoundError, HandlerNotFoundError) as e:
             # File doesn't exist or handler not found - continue to next priority
             logger.debug(
@@ -194,7 +205,7 @@ class GenericHandlerResolver:
         logger.debug(f"No customer module {handler_type} found")
         return None
 
-    def resolve_handler(self, handler_type: str) -> Optional[Callable]:
+    def resolve_handler(self, handler_type: str) -> Optional["HandlerInfo"]:
         """
         Resolve handler with priority order:
         1. Environment variable specified function
@@ -206,7 +217,7 @@ class GenericHandlerResolver:
             handler_type: Type of handler to resolve (e.g., "ping", "invoke")
 
         Returns:
-            Resolved handler function or None if not found
+            Resolved HandlerInfo (with function and route_kwargs) or None if not found
         """
         logger.debug(f"resolve_{handler_type}_handler called")
 
@@ -216,15 +227,18 @@ class GenericHandlerResolver:
             self._try_decorator_handler,
             self._try_customer_script_handler,
         ]:
-            handler = resolver_method(handler_type)
-            if handler:
-                return handler
+            handler_info = resolver_method(handler_type)
+            if handler_info:
+                return handler_info
 
         # No handler found anywhere, use the framework default
-        handler = self.registry.get_framework_default(handler_type)
-        if handler:
-            logger.info(f"Use {handler_type} handler registered in framework")
-            return handler
+        handler_info = self.registry.get_framework_default(handler_type)
+        if handler_info:
+            logger.info(
+                f"Use {handler_type} handler registered in framework: "
+                f"{handler_info.func.__name__}"
+            )
+            return handler_info
 
         logger.debug(f"No {handler_type} handler found anywhere")
         return None

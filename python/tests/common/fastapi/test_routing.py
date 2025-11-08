@@ -12,6 +12,7 @@ from model_hosting_container_standards.common.fastapi.routing import (
     normalize_prefix,
     remove_conflicting_routes,
 )
+from model_hosting_container_standards.common.handler.registry import HandlerInfo
 
 
 class TestRouteConfig:
@@ -107,6 +108,7 @@ class TestMountHandlers:
         # Arrange
         router = APIRouter()
         mock_handler = Mock()
+        handler_info = HandlerInfo(func=mock_handler, route_kwargs={})
 
         # Mock route resolver
         def mock_resolver(handler_type: str):
@@ -115,7 +117,7 @@ class TestMountHandlers:
             return None
 
         mock_registry.list_handlers.return_value = ["test_handler"]
-        mock_registry.get_handler.return_value = mock_handler
+        mock_registry.get_handler.return_value = handler_info
 
         # Act
         mount_handlers(router, route_resolver=mock_resolver)
@@ -133,11 +135,13 @@ class TestMountHandlers:
         router = APIRouter()
         mock_handler1 = Mock()
         mock_handler2 = Mock()
+        handler_info1 = HandlerInfo(func=mock_handler1, route_kwargs={})
+        handler_info2 = HandlerInfo(func=mock_handler2, route_kwargs={})
 
         def mock_resolver(handler_type: str):
             return RouteConfig(path=f"/{handler_type}", method="POST")
 
-        mock_registry.get_handler.side_effect = [mock_handler1, mock_handler2]
+        mock_registry.get_handler.side_effect = [handler_info1, handler_info2]
 
         # Act
         mount_handlers(
@@ -183,13 +187,14 @@ class TestMountHandlers:
         # Arrange
         router = APIRouter()
         mock_handler = Mock()
+        handler_info = HandlerInfo(func=mock_handler, route_kwargs={})
 
         # Resolver returns None (no route configured)
         def mock_resolver(handler_type: str):
             return None
 
         mock_registry.list_handlers.return_value = ["test_handler"]
-        mock_registry.get_handler.return_value = mock_handler
+        mock_registry.get_handler.return_value = handler_info
 
         # Act
         mount_handlers(router, route_resolver=mock_resolver)
@@ -207,13 +212,14 @@ class TestMountHandlers:
         # Arrange
         router = APIRouter()
         mock_handler = Mock()
+        handler_info = HandlerInfo(func=mock_handler, route_kwargs={})
 
         # Resolver raises ValueError
         def mock_resolver(handler_type: str):
             raise ValueError("Unsupported handler type")
 
         mock_registry.list_handlers.return_value = ["invalid_handler"]
-        mock_registry.get_handler.return_value = mock_handler
+        mock_registry.get_handler.return_value = handler_info
 
         # Act
         mount_handlers(router, route_resolver=mock_resolver)
@@ -222,6 +228,286 @@ class TestMountHandlers:
         assert len(router.routes) == 0
         # Should log the error at DEBUG level
         assert mock_logger.debug.called
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_without_route_kwargs(self, mock_logger, mock_registry):
+        """Test mounting handler without route_kwargs (default behavior)."""
+        # Arrange
+        router = APIRouter()
+        mock_handler = Mock()
+        handler_info = HandlerInfo(func=mock_handler, route_kwargs={})
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(
+                path="/test", method="POST", tags=["default"], summary="Default summary"
+            )
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        assert len(router.routes) == 1
+        route = router.routes[0]
+        assert route.path == "/test"
+        assert "POST" in route.methods
+        assert route.tags == ["default"]
+        assert route.summary == "Default summary"
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_with_dependencies(self, mock_logger, mock_registry):
+        """Test mounting handler with dependencies in route_kwargs."""
+        # Arrange
+        from fastapi import Depends
+
+        router = APIRouter()
+        mock_handler = Mock()
+
+        # Create a mock dependency
+        def mock_dependency():
+            return "dependency_value"
+
+        handler_info = HandlerInfo(
+            func=mock_handler, route_kwargs={"dependencies": [Depends(mock_dependency)]}
+        )
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(path="/test", method="POST")
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        assert len(router.routes) == 1
+        route = router.routes[0]
+        assert route.path == "/test"
+        assert len(route.dependencies) == 1
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_with_responses(self, mock_logger, mock_registry):
+        """Test mounting handler with responses in route_kwargs."""
+        # Arrange
+        router = APIRouter()
+        mock_handler = Mock()
+
+        responses_config = {
+            400: {"description": "Bad Request"},
+            500: {"description": "Internal Server Error"},
+        }
+
+        handler_info = HandlerInfo(
+            func=mock_handler, route_kwargs={"responses": responses_config}
+        )
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(path="/test", method="POST")
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        assert len(router.routes) == 1
+        route = router.routes[0]
+        assert route.path == "/test"
+        assert route.responses == responses_config
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_with_multiple_route_parameters(
+        self, mock_logger, mock_registry
+    ):
+        """Test mounting handler with multiple route parameters."""
+        # Arrange
+        from fastapi import Depends
+
+        router = APIRouter()
+        mock_handler = Mock()
+
+        def mock_dependency():
+            return "dependency_value"
+
+        responses_config = {
+            400: {"description": "Bad Request"},
+            500: {"description": "Internal Server Error"},
+        }
+
+        handler_info = HandlerInfo(
+            func=mock_handler,
+            route_kwargs={
+                "dependencies": [Depends(mock_dependency)],
+                "responses": responses_config,
+                "status_code": 201,
+                "description": "Custom description",
+                "deprecated": True,
+            },
+        )
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(path="/test", method="POST")
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        assert len(router.routes) == 1
+        route = router.routes[0]
+        assert route.path == "/test"
+        assert len(route.dependencies) == 1
+        assert route.responses == responses_config
+        assert route.status_code == 201
+        assert route.description == "Custom description"
+        assert route.deprecated is True
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_route_kwargs_override_defaults(
+        self, mock_logger, mock_registry
+    ):
+        """Test that route_kwargs override default RouteConfig values."""
+        # Arrange
+        router = APIRouter()
+        mock_handler = Mock()
+
+        # route_kwargs should override the default tags and summary
+        handler_info = HandlerInfo(
+            func=mock_handler,
+            route_kwargs={"tags": ["override_tag"], "summary": "Override summary"},
+        )
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(
+                path="/test",
+                method="POST",
+                tags=["default_tag"],
+                summary="Default summary",
+            )
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        assert len(router.routes) == 1
+        route = router.routes[0]
+        assert route.path == "/test"
+        # route_kwargs should override defaults
+        assert route.tags == ["override_tag"]
+        assert route.summary == "Override summary"
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_default_config_when_no_route_kwargs(
+        self, mock_logger, mock_registry
+    ):
+        """Test that default RouteConfig is used when no route_kwargs present."""
+        # Arrange
+        router = APIRouter()
+        mock_handler = Mock()
+
+        # Empty route_kwargs
+        handler_info = HandlerInfo(func=mock_handler, route_kwargs={})
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(
+                path="/test",
+                method="POST",
+                tags=["default_tag"],
+                summary="Default summary",
+            )
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        assert len(router.routes) == 1
+        route = router.routes[0]
+        assert route.path == "/test"
+        # Should use default values from RouteConfig
+        assert route.tags == ["default_tag"]
+        assert route.summary == "Default summary"
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_partial_override(self, mock_logger, mock_registry):
+        """Test that route_kwargs can partially override defaults."""
+        # Arrange
+        router = APIRouter()
+        mock_handler = Mock()
+
+        # Only override tags, keep default summary
+        handler_info = HandlerInfo(
+            func=mock_handler, route_kwargs={"tags": ["override_tag"]}
+        )
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(
+                path="/test",
+                method="POST",
+                tags=["default_tag"],
+                summary="Default summary",
+            )
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        assert len(router.routes) == 1
+        route = router.routes[0]
+        assert route.path == "/test"
+        # Tags should be overridden
+        assert route.tags == ["override_tag"]
+        # Summary should remain default
+        assert route.summary == "Default summary"
+
+    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
+    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
+    def test_mount_handlers_logs_route_kwargs_application(
+        self, mock_logger, mock_registry
+    ):
+        """Test that applying route_kwargs is logged."""
+        # Arrange
+        router = APIRouter()
+        mock_handler = Mock()
+
+        handler_info = HandlerInfo(
+            func=mock_handler, route_kwargs={"dependencies": [], "responses": {}}
+        )
+
+        def mock_resolver(handler_type: str):
+            return RouteConfig(path="/test", method="POST")
+
+        mock_registry.list_handlers.return_value = ["test_handler"]
+        mock_registry.get_handler.return_value = handler_info
+
+        # Act
+        mount_handlers(router, route_resolver=mock_resolver)
+
+        # Assert
+        # Should log that route_kwargs were applied
+        debug_calls = [call[0][0] for call in mock_logger.debug.call_args_list]
+        assert any("Applied route kwargs" in call for call in debug_calls)
 
 
 class TestCreateRouter:

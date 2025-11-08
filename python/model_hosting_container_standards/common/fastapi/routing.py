@@ -112,11 +112,11 @@ def mount_handlers(
 
     # Iterate through each handler type and attempt to mount it
     for handler_name in handlers_to_mount:
-        # Get the handler function from the registry
-        handler = handler_registry.get_handler(handler_name)
+        # Get the handler info from the registry
+        handler_info = handler_registry.get_handler(handler_name)
 
         # Skip if no handler is registered for this type
-        if not handler:
+        if not handler_info:
             continue
 
         try:
@@ -124,16 +124,33 @@ def mount_handlers(
             route_config = route_resolver(handler_name)
 
             if route_config:
-                # Mount the handler to the router with the configured route
+                # Start with default params from RouteConfig
+                params = {
+                    "path": route_config.path,
+                    "methods": [route_config.method],
+                }
+
+                # Add optional default parameters if present
+                if route_config.tags:
+                    params["tags"] = route_config.tags
+                if route_config.summary:
+                    params["summary"] = route_config.summary
+
+                # Merge with stored route kwargs (these override defaults)
+                if handler_info.route_kwargs:
+                    params.update(handler_info.route_kwargs)
+                    logger.debug(
+                        f"Applied route kwargs for {handler_name}: "
+                        f"{list(handler_info.route_kwargs.keys())}"
+                    )
+
+                # Mount the handler to the router with merged configuration
                 router.add_api_route(
-                    route_config.path,
-                    handler,
-                    methods=[route_config.method],
-                    tags=route_config.tags,
-                    summary=route_config.summary,
+                    endpoint=handler_info.func,
+                    **params,
                 )
                 logger.info(
-                    f"Mounted handler: {route_config.method} {route_config.path} "
+                    f"Mounted handler: {params['methods']} {params['path']} "
                     f"-> {handler_name}"
                 )
             else:

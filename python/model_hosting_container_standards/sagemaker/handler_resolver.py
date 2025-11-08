@@ -95,10 +95,32 @@ _resolver = SageMakerHandlerResolver()
 
 
 def register_sagemaker_overrides():
-    def set_handler(handler_type):
-        handler_registry.set_handler(
-            handler_type, _resolver.resolve_handler(handler_type)
-        )
+    """Register resolved SageMaker handlers in the global registry.
+
+    This function resolves handlers using the priority order (env vars, decorators,
+    customer scripts, framework defaults) and registers them in the global handler
+    registry. Only handlers that are successfully resolved are registered.
+
+    The resolver returns HandlerInfo objects which contain both the handler function
+    and any route_kwargs (for decorator handlers). These are passed directly to
+    set_handler which preserves all information.
+    """
+
+    def set_handler(handler_type: str) -> None:
+        """Resolve and register a handler if found.
+
+        Args:
+            handler_type: The type of handler to resolve (e.g., 'ping', 'invoke')
+        """
+        handler_info = _resolver.resolve_handler(handler_type)
+        if handler_info is not None:
+            # set_handler accepts HandlerInfo and preserves route_kwargs
+            handler_registry.set_handler(handler_type, handler_info)
+            logger.debug(
+                f"Registered {handler_type} handler: {handler_info.func.__name__}"
+            )
+        else:
+            logger.debug(f"No {handler_type} handler found to register")
 
     set_handler("invoke")
     set_handler("ping")

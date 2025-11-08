@@ -526,3 +526,355 @@ async def custom_sagemaker_invocation_handler(request: Request):
 
 if __name__ == "__main__":
     pytest.main([__file__])
+
+
+class TestVLLMRouteConfigIntegration:
+    """Integration tests for vLLM use case with route configuration.
+
+    Tests handler registration with FastAPI route configuration parameters:
+    - Dependencies for request validation
+    - Response models for OpenAPI schema
+    - Complete integration with transform decorators
+    """
+
+    def setup_method(self):
+        """Setup for each test."""
+        from model_hosting_container_standards.common.handler import handler_registry
+
+        handler_registry.clear()
+        self.handler_called = False
+        self.adapter_id_received = None
+
+    def test_handler_with_dependencies_validates_request(self):
+        """Test handler registration with dependencies parameter.
+
+        Tests requirement 2.1, 2.2, 2.4, 3.1, 3.2:
+        - Register invocation handler with dependencies
+        - Dependencies execute before handler
+        - Invalid requests return 400 before handler executes
+        """
+        import json
+
+        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+        from fastapi.testclient import TestClient
+
+        import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+        async def validate_json_request(request: Request):
+            """Dependency that validates JSON request format."""
+            try:
+                body = await request.body()
+                if body:
+                    json.loads(body.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid JSON in request body: {str(e)}"
+                )
+
+        app = FastAPI()
+        router = APIRouter()
+
+        # Register handler with dependencies
+        @sagemaker_standards.register_invocation_handler(
+            dependencies=[Depends(validate_json_request)]
+        )
+        async def invocations(request: Request):
+            self.handler_called = True
+            return {"status": "success", "message": "Handler executed"}
+
+        # Bootstrap the app
+        app.include_router(router)
+        sagemaker_standards.bootstrap(app)
+        client = TestClient(app)
+
+        # Test 1: Invalid JSON should be blocked by dependency
+        self.handler_called = False
+        response = client.post(
+            "/invocations",
+            content="invalid json {{{",
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 400
+        assert "Invalid JSON" in response.json()["detail"]
+        assert not self.handler_called
+
+        # Test 2: Valid JSON should pass through
+        self.handler_called = False
+        response = client.post("/invocations", json={"prompt": "test"})
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+        assert self.handler_called
+
+    def test_handler_with_response_models_in_openapi_schema(self):
+        """Test handler registration with response models parameter.
+
+        Tests requirement 3.1, 3.2, 3.3:
+        - Register handler with responses parameter
+        - OpenAPI schema includes response models
+        - Error responses match ErrorResponse model
+        """
+        from fastapi import APIRouter, FastAPI, Request
+        from fastapi.testclient import TestClient
+        from pydantic import BaseModel
+
+        import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+        class ErrorResponse(BaseModel):
+            """Error response model for API documentation."""
+
+            error: str
+            message: str
+            status_code: int
+
+        app = FastAPI()
+        router = APIRouter()
+
+        # Register handler with response models
+        @sagemaker_standards.register_invocation_handler(
+            responses={
+                400: {"model": ErrorResponse},
+                415: {"model": ErrorResponse},
+                500: {"model": ErrorResponse},
+            }
+        )
+        async def invocations(request: Request):
+            # Check content type
+            content_type = request.headers.get("content-type", "")
+            if "application/json" not in content_type:
+                return ErrorResponse(
+                    error="UnsupportedMediaType",
+                    message="Content-Type must be application/json",
+                    status_code=415,
+                )
+            return {"status": "success"}
+
+        # Bootstrap the app
+        app.include_router(router)
+        sagemaker_standards.bootstrap(app)
+        client = TestClient(app)
+
+        # Test 1: Verify OpenAPI schema includes response models
+        response = client.get("/openapi.json")
+        assert response.status_code == 200
+        openapi_schema = response.json()
+        assert "/invocations" in openapi_schema["paths"]
+        invocations_endpoint = openapi_schema["paths"]["/invocations"]["post"]
+        assert "400" in invocations_endpoint["responses"]
+        assert "415" in invocations_endpoint["responses"]
+        assert "500" in invocations_endpoint["responses"]
+        assert (
+            "$ref"
+            in invocations_endpoint["responses"]["400"]["content"]["application/json"][
+                "schema"
+            ]
+        )
+        assert (
+            "ErrorResponse"
+            in invocations_endpoint["responses"]["400"]["content"]["application/json"][
+                "schema"
+            ]["$ref"]
+        )
+
+        # Test 2: Verify error response matches ErrorResponse model
+        response = client.post(
+            "/invocations",
+            content="test data",
+            headers={"Content-Type": "text/plain"},
+        )
+        assert response.status_code == 200
+        response_data = response.json()
+        assert "error" in response_data
+        assert "message" in response_data
+        assert "status_code" in response_data
+        assert response_data["error"] == "UnsupportedMediaType"
+        assert response_data["status_code"] == 415
+
+    def test_complete_vllm_integration(self):
+        """Test complete vLLM integration with all features.
+
+        Tests requirement 1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3:
+        - Handler registration with dependencies and responses
+        - Transform decorators (inject_adapter_id)
+        - All decorators work together correctly
+        - Schema validation works as expected
+        """
+        import json
+
+        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+        from fastapi.testclient import TestClient
+        from pydantic import BaseModel
+
+        import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+        class ErrorResponse(BaseModel):
+            """Error response model for API documentation."""
+
+            error: str
+            message: str
+            status_code: int
+
+        async def validate_json_request(request: Request):
+            """Dependency that validates JSON request format."""
+            try:
+                body = await request.body()
+                if body:
+                    json.loads(body.decode())
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                raise HTTPException(
+                    status_code=400, detail=f"Invalid JSON in request body: {str(e)}"
+                )
+
+        app = FastAPI()
+        router = APIRouter()
+
+        # Register handler with all features
+        @sagemaker_standards.register_invocation_handler(
+            dependencies=[Depends(validate_json_request)],
+            responses={
+                400: {"model": ErrorResponse},
+                415: {"model": ErrorResponse},
+                500: {"model": ErrorResponse},
+            },
+        )
+        @sagemaker_standards.inject_adapter_id("model")
+        async def invocations(request: Request):
+            self.handler_called = True
+
+            # Get the request body to check adapter ID injection
+            body_bytes = await request.body()
+            body = json.loads(body_bytes.decode()) if body_bytes else {}
+            self.adapter_id_received = body.get("model")
+
+            return {
+                "status": "success",
+                "adapter_id": self.adapter_id_received,
+                "message": f"Using adapter: {self.adapter_id_received}",
+            }
+
+        # Bootstrap the app
+        app.include_router(router)
+        sagemaker_standards.bootstrap(app)
+        client = TestClient(app)
+
+        # Test 1: Invalid JSON should be blocked by dependency
+        self.handler_called = False
+        response = client.post(
+            "/invocations",
+            content="invalid json {{{",
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 400
+        assert not self.handler_called
+
+        # Test 2: Valid request with adapter header should work
+        self.handler_called = False
+        response = client.post(
+            "/invocations",
+            json={"prompt": "test"},
+            headers={"X-Amzn-SageMaker-Adapter-Identifier": "my-adapter"},
+        )
+        assert response.status_code == 200
+        assert self.handler_called
+        assert self.adapter_id_received == "my-adapter"
+        assert response.json()["adapter_id"] == "my-adapter"
+
+        # Test 3: Valid request without adapter header
+        self.handler_called = False
+        response = client.post("/invocations", json={"prompt": "test"})
+        assert response.status_code == 200
+        assert self.handler_called
+        # When no header is present, inject_adapter_id injects None
+        assert (
+            self.adapter_id_received is None or self.adapter_id_received == "base-model"
+        )
+
+        # Test 4: Verify OpenAPI schema includes response models
+        response = client.get("/openapi.json")
+        assert response.status_code == 200
+        openapi_schema = response.json()
+        invocations_endpoint = openapi_schema["paths"]["/invocations"]["post"]
+        assert "400" in invocations_endpoint["responses"]
+        assert "415" in invocations_endpoint["responses"]
+        assert "500" in invocations_endpoint["responses"]
+
+    def test_vllm_integration_with_multiple_dependencies(self):
+        """Test vLLM integration with multiple dependencies.
+
+        Verify that multiple dependencies can be specified and all execute.
+        """
+        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+        from fastapi.testclient import TestClient
+
+        import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+        self.validation_1_called = False
+        self.validation_2_called = False
+
+        async def validate_content_type(request: Request):
+            """Dependency that validates content type."""
+            self.validation_1_called = True
+            content_type = request.headers.get("content-type", "")
+            if "application/json" not in content_type:
+                raise HTTPException(
+                    status_code=415, detail="Content-Type must be application/json"
+                )
+
+        async def validate_auth(request: Request):
+            """Dependency that validates authorization."""
+            self.validation_2_called = True
+            auth = request.headers.get("authorization", "")
+            if not auth:
+                raise HTTPException(status_code=401, detail="Authorization required")
+
+        app = FastAPI()
+        router = APIRouter()
+
+        # Register handler with multiple dependencies
+        @sagemaker_standards.register_invocation_handler(
+            dependencies=[Depends(validate_content_type), Depends(validate_auth)],
+        )
+        async def invocations(request: Request):
+            self.handler_called = True
+            return {"status": "success"}
+
+        # Bootstrap the app
+        app.include_router(router)
+        sagemaker_standards.bootstrap(app)
+        client = TestClient(app)
+
+        # Test 1: Missing content type should fail first dependency
+        self.validation_1_called = False
+        self.validation_2_called = False
+        self.handler_called = False
+        response = client.post(
+            "/invocations",
+            content="test",
+            headers={"Content-Type": "text/plain", "Authorization": "Bearer token"},
+        )
+        assert response.status_code == 415
+        assert self.validation_1_called
+        assert not self.handler_called
+
+        # Test 2: Missing auth should fail second dependency
+        self.validation_1_called = False
+        self.validation_2_called = False
+        self.handler_called = False
+        response = client.post("/invocations", json={"prompt": "test"})
+        assert response.status_code == 401
+        assert self.validation_1_called
+        assert self.validation_2_called
+        assert not self.handler_called
+
+        # Test 3: Valid request should pass all dependencies
+        self.validation_1_called = False
+        self.validation_2_called = False
+        self.handler_called = False
+        response = client.post(
+            "/invocations",
+            json={"prompt": "test"},
+            headers={"Authorization": "Bearer token"},
+        )
+        assert response.status_code == 200
+        assert self.validation_1_called
+        assert self.validation_2_called
+        assert self.handler_called
