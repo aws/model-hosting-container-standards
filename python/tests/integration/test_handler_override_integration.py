@@ -524,96 +524,95 @@ async def custom_sagemaker_invocation_handler(request: Request):
         assert response_data["source"] == "vllm_default"
 
     def test_custom_handler_with_route_config(self):
-        """Test customer override handler with route configuration.
+        """Test customer scenario: using @custom_invocation_handler with route config.
 
-        Verify that @custom_invocation_handler supports route config parameters:
+        Customer writes a script file with decorator that includes:
         - Dependencies for request validation
         - Response models for OpenAPI schema
-        - Customer handlers can override framework defaults with custom config
+        - Custom summary and tags
         """
-        import json
+        # Customer writes a script file with route config
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
+            f.write(
+                """
+import json
+from fastapi import Depends, HTTPException, Request
+from pydantic import BaseModel
+import model_hosting_container_standards.sagemaker as sagemaker_standards
 
-        from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
-        from fastapi.testclient import TestClient
-        from pydantic import BaseModel
+class ErrorResponse(BaseModel):
+    error: str
+    message: str
 
-        import model_hosting_container_standards.sagemaker as sagemaker_standards
+async def validate_json_request(request: Request):
+    try:
+        body = await request.body()
+        if body:
+            json.loads(body.decode())
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
 
-        class ErrorResponse(BaseModel):
-            """Error response model."""
+@sagemaker_standards.custom_invocation_handler(
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        400: {"model": ErrorResponse},
+        500: {"model": ErrorResponse},
+    },
+    summary="Customer Invocation Handler",
+    tags=["customer"],
+)
+async def custom_invocations(request: Request):
+    body = await request.json()
+    return {"source": "customer_with_config", "data": body}
+"""
+            )
+            script_path = f.name
 
-            error: str
-            message: str
+        try:
+            script_dir = os.path.dirname(script_path)
+            script_name = os.path.basename(script_path)
 
-        async def validate_json_request(request: Request):
-            """Dependency that validates JSON format."""
-            try:
-                body = await request.body()
-                if body:
-                    json.loads(body.decode())
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+            with patch.dict(
+                os.environ,
+                {
+                    SageMakerEnvVars.SAGEMAKER_MODEL_PATH: script_dir,
+                    SageMakerEnvVars.CUSTOM_SCRIPT_FILENAME: script_name,
+                },
+            ):
+                # Reload mock server to pick up customer script
+                mock_vllm_server = self._reload_mock_server()
+                client = mock_vllm_server.mock_server.get_client()
 
-        # First register a framework default
-        @sagemaker_standards.register_invocation_handler
-        async def framework_invocations(request: Request):
-            return {"source": "framework"}
+                # Test 1: Invalid JSON should be blocked by dependency
+                response = client.post(
+                    "/invocations",
+                    content="invalid json {{{",
+                    headers={"Content-Type": "application/json"},
+                )
+                assert response.status_code == 400
+                assert "Invalid JSON" in response.json()["detail"]
 
-        app = FastAPI()
-        router = APIRouter()
+                # Test 2: Valid request should use customer handler
+                response = client.post("/invocations", json={"prompt": "test"})
+                assert response.status_code == 200
+                assert response.json()["source"] == "customer_with_config"
+                assert response.json()["data"]["prompt"] == "test"
 
-        # Customer overrides with route config
-        @sagemaker_standards.custom_invocation_handler(
-            dependencies=[Depends(validate_json_request)],
-            responses={
-                400: {"model": ErrorResponse},
-                500: {"model": ErrorResponse},
-            },
-            summary="Customer Invocation Handler",
-            tags=["customer"],
-        )
-        async def custom_invocations(request: Request):
-            self.handler_called = True
-            body = await request.json()
-            return {"source": "customer", "data": body}
+                # Test 3: Verify OpenAPI schema includes custom config
+                response = client.get("/openapi.json")
+                assert response.status_code == 200
+                openapi_schema = response.json()
+                invocations_endpoint = openapi_schema["paths"]["/invocations"]["post"]
 
-        # Bootstrap the app
-        app.include_router(router)
-        sagemaker_standards.bootstrap(app)
-        client = TestClient(app)
+                # Check response models
+                assert "400" in invocations_endpoint["responses"]
+                assert "500" in invocations_endpoint["responses"]
 
-        # Test 1: Invalid JSON should be blocked by dependency
-        self.handler_called = False
-        response = client.post(
-            "/invocations",
-            content="invalid json {{{",
-            headers={"Content-Type": "application/json"},
-        )
-        assert response.status_code == 400
-        assert "Invalid JSON" in response.json()["detail"]
-        assert not self.handler_called
-
-        # Test 2: Valid request should use customer handler
-        self.handler_called = False
-        response = client.post("/invocations", json={"prompt": "test"})
-        assert response.status_code == 200
-        assert self.handler_called
-        assert response.json()["source"] == "customer"
-        assert response.json()["data"]["prompt"] == "test"
-
-        # Test 3: Verify OpenAPI schema includes custom config
-        response = client.get("/openapi.json")
-        assert response.status_code == 200
-        openapi_schema = response.json()
-        invocations_endpoint = openapi_schema["paths"]["/invocations"]["post"]
-
-        # Check response models
-        assert "400" in invocations_endpoint["responses"]
-        assert "500" in invocations_endpoint["responses"]
-
-        # Check custom summary and tags
-        assert invocations_endpoint["summary"] == "Customer Invocation Handler"
-        assert "customer" in invocations_endpoint["tags"]
+                # Check custom summary and tags
+                assert invocations_endpoint["summary"] == "Customer Invocation Handler"
+                assert "customer" in invocations_endpoint["tags"]
+        finally:
+            os.unlink(script_path)
 
 
 class TestVLLMRouteConfigIntegration:
