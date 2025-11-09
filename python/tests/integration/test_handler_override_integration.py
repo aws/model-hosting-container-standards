@@ -524,10 +524,6 @@ async def custom_sagemaker_invocation_handler(request: Request):
         assert response_data["source"] == "vllm_default"
 
 
-if __name__ == "__main__":
-    pytest.main([__file__])
-
-
 class TestVLLMRouteConfigIntegration:
     """Integration tests for vLLM use case with route configuration.
 
@@ -653,3 +649,7 @@ class TestVLLMRouteConfigIntegration:
         assert "400" in invocations_endpoint["responses"]
         assert "415" in invocations_endpoint["responses"]
         assert "500" in invocations_endpoint["responses"]
+
+
+if __name__ == "__main__":
+    pytest.main([__file__])
