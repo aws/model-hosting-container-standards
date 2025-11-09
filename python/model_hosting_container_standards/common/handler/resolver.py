@@ -36,7 +36,7 @@ invoke_handler = resolver.resolve_handler("invoke")
 
 import logging
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from model_hosting_container_standards.exceptions import (
     HandlerFileNotFoundError,
@@ -45,10 +45,7 @@ from model_hosting_container_standards.exceptions import (
     InvalidHandlerSpecError,
 )
 
-from .registry import handler_registry
-
-if TYPE_CHECKING:
-    from .registry import HandlerInfo
+from .registry import HandlerInfo, handler_registry
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +108,7 @@ class GenericHandlerResolver:
         self.config = config
         self.registry = registry or handler_registry
 
-    def _try_env_handler(self, handler_type: str) -> Optional["HandlerInfo"]:
+    def _try_env_handler(self, handler_type: str) -> Optional[HandlerInfo]:
         """Try to resolve handler from environment variable.
 
         Args:
@@ -124,7 +121,6 @@ class GenericHandlerResolver:
             HandlerResolutionError: If env var is set but invalid
             InvalidHandlerSpecError: If handler spec is malformed
         """
-        from .registry import HandlerInfo
 
         try:
             env_handler = self.config.get_env_handler(handler_type)
@@ -150,7 +146,7 @@ class GenericHandlerResolver:
         logger.debug(f"No env {handler_type} handler found")
         return None
 
-    def _try_decorator_handler(self, handler_type: str) -> Optional["HandlerInfo"]:
+    def _try_decorator_handler(self, handler_type: str) -> Optional[HandlerInfo]:
         """Try to resolve handler from registry decorators.
 
         Args:
@@ -170,9 +166,7 @@ class GenericHandlerResolver:
         logger.debug(f"No decorator {handler_type} handler found")
         return None
 
-    def _try_customer_script_handler(
-        self, handler_type: str
-    ) -> Optional["HandlerInfo"]:
+    def _try_customer_script_handler(self, handler_type: str) -> Optional[HandlerInfo]:
         """Try to resolve handler from customer script.
 
         Args:
@@ -181,7 +175,6 @@ class GenericHandlerResolver:
         Returns:
             HandlerInfo with function if found, None otherwise
         """
-        from .registry import HandlerInfo
 
         try:
             customer_handler = self.config.get_customer_script_handler(handler_type)
@@ -205,7 +198,7 @@ class GenericHandlerResolver:
         logger.debug(f"No customer module {handler_type} found")
         return None
 
-    def resolve_handler(self, handler_type: str) -> Optional["HandlerInfo"]:
+    def resolve_handler(self, handler_type: str) -> Optional[HandlerInfo]:
         """
         Resolve handler with priority order:
         1. Environment variable specified function
