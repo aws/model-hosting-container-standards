@@ -174,7 +174,13 @@ class TestCreateTransformDecorator:
         mock_logger.info.assert_any_call(
             "No transform shapes defined, using passthrough"
         )
-        mock_registry.set_handler.assert_called_once_with(handler_type, mock_func)
+        # Verify set_handler was called with HandlerInfo
+        mock_registry.set_handler.assert_called_once()
+        call_args = mock_registry.set_handler.call_args
+        assert call_args[0][0] == handler_type
+        handler_info = call_args[0][1]
+        assert handler_info.func == mock_func
+        assert handler_info.route_kwargs == {}
         mock_logger.info.assert_any_call(
             f"[{handler_type.upper()}] Registered transform handler for {mock_func.__name__}"
         )
@@ -228,7 +234,13 @@ class TestCreateTransformDecorator:
         mock_logger.info.assert_any_call(
             f"[{handler_type.upper()}] Transform decorator applied to: {mock_func.__name__}"
         )
-        mock_registry.set_handler.assert_called_once_with(handler_type, wrapped_func)
+        # Verify set_handler was called with HandlerInfo
+        mock_registry.set_handler.assert_called_once()
+        call_args = mock_registry.set_handler.call_args
+        assert call_args[0][0] == handler_type
+        handler_info = call_args[0][1]
+        assert callable(handler_info.func)
+        assert handler_info.route_kwargs == {}
         assert callable(wrapped_func)
 
     @patch(
@@ -504,7 +516,10 @@ class TestIntegration:
         mock_registry.set_handler.assert_called_once()
         call_args = mock_registry.set_handler.call_args
         assert call_args[0][0] == handler_type
-        assert callable(call_args[0][1])  # The wrapped function
+        # Verify HandlerInfo was registered
+        handler_info = call_args[0][1]
+        assert callable(handler_info.func)
+        assert handler_info.route_kwargs == {}
 
         # Verify final result
         assert result == {"status": "registered"}
