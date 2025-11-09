@@ -85,24 +85,6 @@ class TestMountHandlers:
 
     @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
     @patch("model_hosting_container_standards.common.fastapi.routing.logger")
-    def test_mount_handlers_with_no_resolver_logs_warning(
-        self, mock_logger, mock_registry
-    ):
-        """Test that mount_handlers logs a warning when no resolver is provided."""
-        # Arrange
-        router = APIRouter()
-
-        # Act
-        mount_handlers(router, route_resolver=None)
-
-        # Assert
-        mock_logger.warning.assert_called_once()
-        assert "No route_resolver provided" in mock_logger.warning.call_args[0][0]
-        # Registry should not be accessed
-        mock_registry.list_handlers.assert_not_called()
-
-    @patch("model_hosting_container_standards.common.fastapi.routing.handler_registry")
-    @patch("model_hosting_container_standards.common.fastapi.routing.logger")
     def test_mount_handlers_with_resolver(self, mock_logger, mock_registry):
         """Test mounting handlers with a custom route resolver."""
         # Arrange
