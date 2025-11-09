@@ -8,24 +8,22 @@ container standards middlewares.
 
 from typing import TYPE_CHECKING, Any
 
+from starlette.middleware import Middleware
+
 from ....logging_config import logger
 from .registry import middleware_registry
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
-    from starlette.middleware import Middleware
 
 
-def _create_asgi_middleware(middleware_class: Any) -> "Middleware":
+def _create_asgi_middleware(middleware_class: Any) -> Middleware:
     """Create Middleware wrapper for ASGI class."""
-    from starlette.middleware import Middleware
-
     return Middleware(middleware_class)
 
 
-def _wrap_http_middleware(middleware_func: Any) -> "Middleware":
+def _wrap_http_middleware(middleware_func: Any) -> Middleware:
     """Wrap HTTP middleware function as ASGI middleware."""
-    from starlette.middleware import Middleware
     from starlette.middleware.base import BaseHTTPMiddleware
 
     class HTTPMiddlewareWrapper(BaseHTTPMiddleware):
@@ -40,7 +38,7 @@ def _wrap_http_middleware(middleware_func: Any) -> "Middleware":
     return Middleware(HTTPMiddlewareWrapper)
 
 
-def create_middleware_object(middleware_info: Any) -> "Middleware":
+def create_middleware_object(middleware_info: Any) -> Middleware:
     """Create appropriate middleware object based on middleware type."""
     if middleware_info.is_class:
         return _create_asgi_middleware(middleware_info.middleware)
