@@ -548,7 +548,6 @@ class TestVLLMRouteConfigIntegration:
     def test_handler_with_dependencies_validates_request(self):
         """Test handler registration with dependencies parameter.
 
-        Tests requirement 2.1, 2.2, 2.4, 3.1, 3.2:
         - Register invocation handler with dependencies
         - Dependencies execute before handler
         - Invalid requests return 400 before handler executes
@@ -608,7 +607,6 @@ class TestVLLMRouteConfigIntegration:
     def test_handler_with_response_models_in_openapi_schema(self):
         """Test handler registration with response models parameter.
 
-        Tests requirement 3.1, 3.2, 3.3:
         - Register handler with responses parameter
         - OpenAPI schema includes response models
         - Error responses match ErrorResponse model
@@ -692,7 +690,6 @@ class TestVLLMRouteConfigIntegration:
     def test_complete_vllm_integration(self):
         """Test complete vLLM integration with all features.
 
-        Tests requirement 1.1, 1.2, 1.3, 2.1, 2.2, 2.3, 2.4, 3.1, 3.2, 3.3:
         - Handler registration with dependencies and responses
         - Transform decorators (inject_adapter_id)
         - All decorators work together correctly
