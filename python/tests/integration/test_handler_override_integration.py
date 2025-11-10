@@ -433,7 +433,10 @@ async def custom_sagemaker_invocation_handler(request: Request):
             os.unlink(script_path)
 
     def test_framework_routes_are_created_automatically(self):
-        """Test that framework @register_ping_handler creates routes and works when no customer overrides exist."""
+        """Test that framework @register_ping_handler creates routes and works when no customer overrides exist.
+
+        Also validates that request validation (content-type, JSON parsing) works with framework defaults.
+        """
         import asyncio
 
         # Clear any existing handlers
@@ -444,7 +447,7 @@ async def custom_sagemaker_invocation_handler(request: Request):
         mock_vllm_server = self._reload_mock_server()
 
         # Initialize the app by getting the client
-        mock_vllm_server.mock_server.get_client()
+        client = mock_vllm_server.mock_server.get_client()
 
         # Get the FastAPI app to inspect routes
         app = mock_vllm_server.mock_server.app
@@ -482,6 +485,43 @@ async def custom_sagemaker_invocation_handler(request: Request):
 
         assert invoke_response["predictions"] == ["Default vLLM response"]
         assert invoke_response["source"] == "vllm_default"
+
+        # Test request validation works with framework defaults
+        # Test 1: Valid JSON request should succeed
+        response_valid = client.post(
+            "/invocations",
+            json={"prompt": "test"},
+            headers={"Content-Type": "application/json"},
+        )
+        assert response_valid.status_code == 200
+        assert response_valid.json()["source"] == "vllm_default"
+
+        # Test 2: Invalid content-type should fail with 415 Unsupported Media Type
+        response_invalid_content_type = client.post(
+            "/invocations",
+            data="not json",
+            headers={"Content-Type": "text/plain"},
+        )
+        assert response_invalid_content_type.status_code == 415
+        assert (
+            "Unsupported media type" in response_invalid_content_type.json()["detail"]
+        )
+
+        # Test 3: Invalid JSON should fail with 400 Bad Request
+        response_invalid_json = client.post(
+            "/invocations",
+            data="{invalid json}",
+            headers={"Content-Type": "application/json"},
+        )
+        assert response_invalid_json.status_code == 400
+        assert "JSON decode error" in response_invalid_json.json()["detail"]
+
+        # Test 4: Missing content-type header should fail with 415
+        response_no_content_type = client.post(
+            "/invocations",
+            data='{"prompt": "test"}',
+        )
+        assert response_no_content_type.status_code == 415
 
     def test_framework_inject_adapter_id_decorator(self):
         """Test that @inject_adapter_id decorator works in framework code."""

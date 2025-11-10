@@ -209,7 +209,8 @@ import json
 
 # Create router like real vLLM does
 router = APIRouter()
-
+@router.post("/ping", response_class=Response)
+@router.get("/ping", response_class=Response)
 @sagemaker_standards.register_ping_handler
 async def ping(raw_request: Request) -> Response:
     """Default vLLM ping handler with automatic routing."""
@@ -217,7 +218,15 @@ async def ping(raw_request: Request) -> Response:
         content='{"status": "healthy", "source": "vllm_default", "message": "Default ping from vLLM server"}',
         media_type="application/json",
     )
-
+@router.post(
+        "/invocations",
+        dependencies=[Depends(validate_json_request)],
+        responses={
+            HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+            HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value: {"model": ErrorResponse},
+            HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+        },
+    )
 @sagemaker_standards.register_invocation_handler
 @sagemaker_standards.inject_adapter_id("model")
 async def invocations(raw_request: Request) -> Response:

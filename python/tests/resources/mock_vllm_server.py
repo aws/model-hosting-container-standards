@@ -7,10 +7,12 @@ This simulates exactly how a real vLLM server works:
 - Calls SageMaker bootstrap at the end to setup handler overrides
 """
 
+from http import HTTPStatus
 from typing import Any, Dict
 
-from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 
@@ -19,10 +21,34 @@ import model_hosting_container_standards.sagemaker as sagemaker_standards
 #     setup_ping_invoke_routes,
 # )
 
+
+# Response models for error handling
+class ErrorResponse(BaseModel):
+    """Error response model."""
+
+    error: Dict[str, Any]
+    message: str
+    code: int = HTTPStatus.INTERNAL_SERVER_ERROR.value
+
+
+# Validation dependency
+async def validate_json_request(request: Request):
+    """Validate that request has valid JSON content type."""
+    content_type = request.headers.get("content-type", "")
+    if not content_type.startswith("application/json"):
+        raise HTTPException(
+            status_code=HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value,
+            detail=f"Unsupported media type: {content_type}. Expected application/json",
+        )
+    return request
+
+
 # Create router like real vLLM does
 router = APIRouter()
 
 
+@router.post("/ping", response_class=Response)
+@router.get("/ping", response_class=Response)
 @sagemaker_standards.register_ping_handler
 async def ping(raw_request: Request) -> Response:
     """Ping check. Endpoint required for SageMaker"""
@@ -32,7 +58,17 @@ async def ping(raw_request: Request) -> Response:
     )
 
 
+@router.post(
+    "/invocations",
+    dependencies=[Depends(validate_json_request)],
+    responses={
+        HTTPStatus.BAD_REQUEST.value: {"model": ErrorResponse},
+        HTTPStatus.UNSUPPORTED_MEDIA_TYPE.value: {"model": ErrorResponse},
+        HTTPStatus.INTERNAL_SERVER_ERROR.value: {"model": ErrorResponse},
+    },
+)
 @sagemaker_standards.register_invocation_handler
+@sagemaker_standards.stateful_session_manager()
 @sagemaker_standards.inject_adapter_id("model")
 async def invocations(raw_request: Request) -> Response:
     """Model invocations endpoint like real vLLM with LoRA adapter injection"""
@@ -42,8 +78,16 @@ async def invocations(raw_request: Request) -> Response:
     body_bytes = await raw_request.body()
     try:
         body = json.loads(body_bytes.decode()) if body_bytes else {}
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        body = {}
+    except json.JSONDecodeError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST.value,
+            detail=f"JSON decode error: {e}",
+        ) from e
+    except UnicodeDecodeError as e:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST.value,
+            detail=f"Unicode decode error: {e}",
+        ) from e
 
     # Check if adapter ID was injected by the decorator
     adapter_id = body.get("model")
