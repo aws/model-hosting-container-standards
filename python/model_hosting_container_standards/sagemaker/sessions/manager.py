@@ -9,9 +9,9 @@ import tempfile
 import time
 import uuid
 from threading import RLock
-from typing import Dict, Optional
+from typing import Optional
 
-from ..config import get_configs_from_env_vars
+from ..config import SageMakerConfig
 
 
 class Session:
@@ -250,20 +250,22 @@ class SessionManager:
                     self.close_session(session_id)
 
 
-def _init_session_manager(sessions_configs: Dict[str, str]) -> SessionManager | None:
+def _init_session_manager(config: SageMakerConfig) -> SessionManager | None:
     """Initialize a SessionManager if stateful sessions are enabled.
 
     Args:
-        sessions_configs: Configuration dictionary with session settings
+        config: SagemakerConfig instance with session settings
 
     Returns:
         SessionManager instance if enabled, None otherwise
     """
-    enable_stateful_sessions = sessions_configs.get(
-        "enable_stateful_sessions", "false"
-    ).lower()
-    if enable_stateful_sessions == "true":
-        return SessionManager(sessions_configs)
+    if config.enable_stateful_sessions:
+        # Convert config to dict for SessionManager
+        config_dict = {
+            "sessions_expiration": str(config.sessions_expiration),
+            "sessions_path": config.sessions_path,
+        }
+        return SessionManager(config_dict)
     return None
 
 
@@ -286,11 +288,11 @@ def init_session_manager_from_env() -> SessionManager | None:
         The initialized SessionManager instance, or None if disabled
     """
     global session_manager
-    sessions_configs = get_configs_from_env_vars()
-    session_manager = _init_session_manager(sessions_configs)
+    config = SageMakerConfig.from_env()
+    session_manager = _init_session_manager(config)
     return session_manager
 
 
 # Global SessionManager instance - initialized from environment variables
-_sessions_configs = get_configs_from_env_vars()
-session_manager = _init_session_manager(_sessions_configs)
+_config = SageMakerConfig.from_env()
+session_manager = _init_session_manager(_config)

@@ -73,9 +73,9 @@ def enable_sessions_env(monkeypatch, temp_session_storage):
     This fixture sets the necessary environment variables and reinitializes
     the global session manager from those variables.
     """
-    monkeypatch.setenv("OPTION_ENABLE_STATEFUL_SESSIONS", "true")
-    monkeypatch.setenv("OPTION_SESSIONS_PATH", temp_session_storage)
-    monkeypatch.setenv("OPTION_SESSIONS_EXPIRATION", "600")
+    monkeypatch.setenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", "true")
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_PATH", temp_session_storage)
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_EXPIRATION", "600")
 
     # Reinitialize the global session manager with the new environment variables
     init_session_manager_from_env()
@@ -83,7 +83,7 @@ def enable_sessions_env(monkeypatch, temp_session_storage):
     yield
 
     # Clean up - reinitialize with empty env (will set session_manager to None)
-    monkeypatch.delenv("OPTION_ENABLE_STATEFUL_SESSIONS", raising=False)
-    monkeypatch.delenv("OPTION_SESSIONS_PATH", raising=False)
-    monkeypatch.delenv("OPTION_SESSIONS_EXPIRATION", raising=False)
+    monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_PATH", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_EXPIRATION", raising=False)
     init_session_manager_from_env()

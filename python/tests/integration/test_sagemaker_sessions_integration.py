@@ -42,9 +42,9 @@ def enable_sessions_for_integration(monkeypatch):
     """Automatically enable sessions for all integration tests in this module."""
     temp_dir = tempfile.mkdtemp()
 
-    monkeypatch.setenv("OPTION_ENABLE_STATEFUL_SESSIONS", "true")
-    monkeypatch.setenv("OPTION_SESSIONS_PATH", temp_dir)
-    monkeypatch.setenv("OPTION_SESSIONS_EXPIRATION", "600")
+    monkeypatch.setenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", "true")
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_PATH", temp_dir)
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_EXPIRATION", "600")
 
     # Reinitialize the global session manager
     init_session_manager_from_env()
@@ -54,9 +54,9 @@ def enable_sessions_for_integration(monkeypatch):
     # Clean up
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
-    monkeypatch.delenv("OPTION_ENABLE_STATEFUL_SESSIONS", raising=False)
-    monkeypatch.delenv("OPTION_SESSIONS_PATH", raising=False)
-    monkeypatch.delenv("OPTION_SESSIONS_EXPIRATION", raising=False)
+    monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_PATH", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_EXPIRATION", raising=False)
     init_session_manager_from_env()
 
 
