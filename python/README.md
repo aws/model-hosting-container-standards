@@ -98,7 +98,7 @@ async def invocations(request: Request) -> dict:
 
 # Optional: Add LoRA adapter support
 @sagemaker_standards.register_invocation_handler
-@sagemaker_standards.inject_adapter_id("model")
+@sagemaker_standards.inject_adapter_id("model")  # Replace mode
 async def invocations_with_lora(request: Request) -> dict:
     """Invocation handler with LoRA adapter ID injection."""
     body = await request.json()
@@ -180,7 +180,8 @@ The system automatically resolves handlers in this order:
 @sagemaker_standards.register_invocation_handler
 
 # LoRA adapter support
-@sagemaker_standards.inject_adapter_id("model")
+@sagemaker_standards.inject_adapter_id("model")  # Replace mode (default)
+@sagemaker_standards.inject_adapter_id("model", append=True, separator=":")  # Append mode
 ```
 
 ### Customer Decorators (for model customization)
@@ -193,6 +194,10 @@ The system automatically resolves handlers in this order:
 # LoRA transform decorators
 @sagemaker_standards.register_load_adapter_handler(request_shape={...}, response_shape={...})
 @sagemaker_standards.register_unload_adapter_handler(request_shape={...}, response_shape={...})
+
+# LoRA adapter injection modes
+@sagemaker_standards.inject_adapter_id("model")  # Replace mode (default)
+@sagemaker_standards.inject_adapter_id("model", append=True, separator=":")  # Append mode
 ```
 
 ## Framework Examples
@@ -249,6 +254,32 @@ async def invocations(raw_request: Request) -> Response:
         "source": "vllm_default",
         "adapter_id": adapter_id,
         "message": f"Response using adapter: {adapter_id}",
+    }
+
+    return Response(
+        content=json.dumps(response_data),
+        media_type="application/json",
+    )
+
+# Alternative: append mode for model field
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.inject_adapter_id("model", append=True, separator=":")
+async def invocations_append_mode(raw_request: Request) -> Response:
+    """vLLM invocation handler with adapter ID appending."""
+    body_bytes = await raw_request.body()
+    try:
+        body = json.loads(body_bytes.decode()) if body_bytes else {}
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        body = {}
+
+    # If body has {"model": "Qwen-7B"} and header has "my-lora"
+    # Result will be {"model": "Qwen-7B:my-lora"}
+    model_with_adapter = body.get("model", "base-model")
+
+    response_data = {
+        "predictions": ["Generated text from vLLM"],
+        "model_used": model_with_adapter,
+        "message": f"Response using model: {model_with_adapter}",
     }
 
     return Response(

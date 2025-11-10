@@ -5,9 +5,10 @@ from .request import (
     SageMakerRegisterLoRAAdapterRequest,
     SageMakerUpdateLoRAAdapterRequest,
 )
-from .transform import BaseLoRATransformRequestOutput
+from .transform import AppendOperation, BaseLoRATransformRequestOutput
 
 __all__: List[str] = [
+    "AppendOperation",
     "BaseLoRATransformRequestOutput",
     "SageMakerListLoRAAdaptersRequest",
     "SageMakerRegisterLoRAAdapterRequest",

@@ -61,6 +61,38 @@ lora/                             # LoRA-specific implementation
 - **LoRA Implementation** (`lora`): LoRA-specific transformers and handlers
 - **Public API** (`sagemaker/__init__.py`): Convenience functions for users
 
+## Models
+
+### AppendOperation
+
+The `AppendOperation` model (in `models/transform.py`) enables append-mode functionality for the `inject_adapter_id` decorator:
+
+```python
+from model_hosting_container_standards.sagemaker.lora.models import AppendOperation
+
+# Create an append operation
+append_op = AppendOperation(
+    separator=":",
+    expression='headers."X-Amzn-SageMaker-Adapter-Identifier"'
+)
+
+# Use in request_shape for InjectToBodyApiTransform
+request_shape = {
+    "model": append_op  # Will append adapter ID to existing model value
+}
+```
+
+**Fields:**
+- `operation`: Always "append" (literal type)
+- `separator`: String to use when appending (e.g., ":", "-", "")
+- `expression`: JMESPath expression to extract the adapter ID
+- `compiled_expression`: Auto-compiled JMESPath expression (internal use)
+
+**Behavior:**
+- If target field exists: `existing_value + separator + adapter_id`
+- If target field doesn't exist: `adapter_id` (no separator)
+- JMESPath expression is automatically compiled on model creation
+
 ## Request Response Transformations
 
 ### How Transformations Work
@@ -197,14 +229,21 @@ Used for injecting adapter information into the request body from various source
 **Transformer**: `InjectToBodyApiTransform`
 - Extracts data from sources (headers, query params, etc.) using JMESPath expressions in request_shape
 - Injects extracted data into request body at specified paths (supports nested paths using dot notation)
+- Supports two injection modes: **replace** (default) and **append**
 - Useful for inference requests with adapter identifiers in headers
-- Only accepts flat request_shape mappings (target paths to source expressions as strings)
+- Only accepts flat request_shape mappings (target paths to source expressions as strings or AppendOperation objects)
 - Does not support response transformations (response_shape is ignored with a warning)
+
+**Injection Modes:**
+
+1. **Replace Mode (Default)**: Replaces the existing value at the target path
+2. **Append Mode**: Appends the adapter ID to the existing value using a separator
 
 **Example Usage:**
 ```python
 from model_hosting_container_standards.sagemaker import inject_adapter_id
 
+# Replace mode (default)
 @inject_adapter_id("adapter_id")
 async def inference_handler(raw_request: Request):
     # Request body is automatically modified before reaching this handler
@@ -215,13 +254,20 @@ async def inference_handler(raw_request: Request):
     #   "original_field": "original_value"  # Other fields preserved
     # }
     return Response(status_code=200)
+
+# Append mode
+@inject_adapter_id("model", append=True, separator=":")
+async def inference_handler_append(raw_request: Request):
+    body = await raw_request.json()
+    return Response(status_code=200)
 ```
 
 **Important Notes:**
 - The request_shape keys use dot notation for nested paths (e.g., `"config.adapter_name"`)
 - Parent objects must exist in the request body before injecting nested values
 - The transformer modifies the raw request body in place
-- Non-string values in request_shape will raise a `ValueError`
+- Request_shape values can be strings (JMESPath expressions) or AppendOperation objects for append mode
+- Non-string, non-AppendOperation values in request_shape will raise a `ValueError`
 
 ### Decorator Behavior
 
