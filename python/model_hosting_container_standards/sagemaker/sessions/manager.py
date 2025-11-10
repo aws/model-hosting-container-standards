@@ -143,7 +143,7 @@ class SessionManager:
 
         # Create sessions directory if it doesn't exist
         if not os.path.exists(self.sessions_path):
-            os.makedirs(self.sessions_path)
+            os.makedirs(self.sessions_path, exist_ok=True)
 
         # Load any previously saved sessions from disk (for persistence across restarts)
         for session_id in os.listdir(self.sessions_path):
