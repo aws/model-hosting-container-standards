@@ -88,14 +88,17 @@ def inject_adapter_id(
     """
     # validate and preprocess
     if not adapter_path:
-        logger.exception("adapter_path cannot be empty")
+        logger.error("adapter_path cannot be empty")
         raise ValueError("adapter_path cannot be empty")
     if not isinstance(adapter_path, str):
-        logger.exception("adapter_path must be a string")
+        logger.error("adapter_path must be a string")
         raise ValueError("adapter_path must be a string")
     if append and separator is None:
-        logger.exception("separator must be provided when append=True")
-        raise ValueError("separator must be provided when append=True")
+        logger.error(f"separator must be provided when {append=}")
+        raise ValueError(f"separator must be provided when {append=}")
+    if separator and not append:
+        logger.error(f"separator is specified {separator} but {append=}")
+        raise ValueError(f"separator is specified {separator} but {append=}")
 
     # create request_shape with operation encoding
     request_shape: Dict[str, Union[str, AppendOperation]] = {}
