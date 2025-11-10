@@ -9,7 +9,9 @@ import tempfile
 import time
 import uuid
 from threading import RLock
-from typing import Optional
+from typing import Dict, Optional
+
+from ..config import get_configs_from_env_vars
 
 
 class Session:
@@ -248,5 +250,15 @@ class SessionManager:
                     self.close_session(session_id)
 
 
+def _init_session_manager(sessions_configs: Dict[str, str]) -> SessionManager | None:
+    enable_stateful_sessions = sessions_configs.get(
+        "enable_stateful_sessions", "false"
+    ).lower()
+    if enable_stateful_sessions == "true":
+        return SessionManager(sessions_configs)
+    return None
+
+
+_sessions_configs = get_configs_from_env_vars()
 # Global SessionManager instance
-session_manager = SessionManager({})
+session_manager = _init_session_manager(_sessions_configs)

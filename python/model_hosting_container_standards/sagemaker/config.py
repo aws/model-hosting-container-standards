@@ -1,5 +1,18 @@
 """SageMaker-specific configuration constants."""
 
+import os
+
+SAGEMAKER_ENV_VAR_PREFIX = "OPTION_"
+
+
+def get_configs_from_env_vars():
+    sagemaker_args = {
+        key[len(SAGEMAKER_ENV_VAR_PREFIX) :].lower(): val
+        for key, val in os.environ.items()
+        if key.startswith(SAGEMAKER_ENV_VAR_PREFIX)
+    }
+    return sagemaker_args
+
 
 class SageMakerEnvVars:
     """SageMaker environment variable names."""
