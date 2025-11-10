@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
 from .handlers import get_handler_for_request_type
-from .manager import SessionManager, session_manager
+from .manager import get_session_manager, SessionManager
 from .models import SessionRequest
 from .utils import get_session, get_session_id_from_request
 
@@ -124,7 +124,7 @@ class SessionApiTransform(BaseApiTransform):
             The request/response shapes are passed to the parent class but not used
             for validation in this transform, as session requests use their own validation.
         """
-        self._session_manager = session_manager
+        self._session_manager = get_session_manager()
         super().__init__(request_shape, response_shape)
 
     async def transform_request(self, raw_request):

@@ -251,6 +251,14 @@ class SessionManager:
 
 
 def _init_session_manager(sessions_configs: Dict[str, str]) -> SessionManager | None:
+    """Initialize a SessionManager if stateful sessions are enabled.
+
+    Args:
+        sessions_configs: Configuration dictionary with session settings
+
+    Returns:
+        SessionManager instance if enabled, None otherwise
+    """
     enable_stateful_sessions = sessions_configs.get(
         "enable_stateful_sessions", "false"
     ).lower()
@@ -259,6 +267,30 @@ def _init_session_manager(sessions_configs: Dict[str, str]) -> SessionManager | 
     return None
 
 
+def get_session_manager() -> SessionManager | None:
+    """Get the global session manager instance.
+
+    Returns:
+        The global SessionManager instance, or None if not initialized
+    """
+    return session_manager
+
+
+def init_session_manager_from_env() -> SessionManager | None:
+    """Initialize the global session manager from environment variables.
+
+    This can be called to reinitialize the session manager after environment
+    variables have been set.
+
+    Returns:
+        The initialized SessionManager instance, or None if disabled
+    """
+    global session_manager
+    sessions_configs = get_configs_from_env_vars()
+    session_manager = _init_session_manager(sessions_configs)
+    return session_manager
+
+
+# Global SessionManager instance - initialized from environment variables
 _sessions_configs = get_configs_from_env_vars()
-# Global SessionManager instance
 session_manager = _init_session_manager(_sessions_configs)
