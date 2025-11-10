@@ -18,6 +18,9 @@ Key Testing Pattern:
 """
 
 import json
+import os
+import shutil
+import tempfile
 from typing import Optional
 
 import pytest
@@ -26,9 +29,35 @@ from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
 import model_hosting_container_standards.sagemaker as sagemaker_standards
+from model_hosting_container_standards.sagemaker.sessions.manager import (
+    init_session_manager_from_env,
+)
 from model_hosting_container_standards.sagemaker.sessions.models import (
     SageMakerSessionHeader,
 )
+
+
+@pytest.fixture(autouse=True)
+def enable_sessions_for_integration(monkeypatch):
+    """Automatically enable sessions for all integration tests in this module."""
+    temp_dir = tempfile.mkdtemp()
+
+    monkeypatch.setenv("OPTION_ENABLE_STATEFUL_SESSIONS", "true")
+    monkeypatch.setenv("OPTION_SESSIONS_PATH", temp_dir)
+    monkeypatch.setenv("OPTION_SESSIONS_EXPIRATION", "600")
+
+    # Reinitialize the global session manager
+    init_session_manager_from_env()
+
+    yield
+
+    # Clean up
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    monkeypatch.delenv("OPTION_ENABLE_STATEFUL_SESSIONS", raising=False)
+    monkeypatch.delenv("OPTION_SESSIONS_PATH", raising=False)
+    monkeypatch.delenv("OPTION_SESSIONS_EXPIRATION", raising=False)
+    init_session_manager_from_env()
 
 
 def extract_session_id_from_header(header_value: str) -> str:

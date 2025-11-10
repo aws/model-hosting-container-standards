@@ -250,18 +250,20 @@ class TestSessionApiTransform:
     """Test SessionApiTransform class."""
 
     @pytest.fixture
-    def transform(self):
+    def transform(self, enable_sessions_env):
         """Create SessionApiTransform instance."""
         return SessionApiTransform(request_shape={}, response_shape={})
 
-    def test_initialization_creates_session_manager(self):
+    def test_initialization_creates_session_manager(self, enable_sessions_env):
         """Test initialization creates internal session manager."""
         transform = SessionApiTransform(request_shape={}, response_shape={})
 
         assert hasattr(transform, "_session_manager")
         assert isinstance(transform._session_manager, SessionManager)
 
-    def test_initialization_accepts_request_and_response_shapes(self):
+    def test_initialization_accepts_request_and_response_shapes(
+        self, enable_sessions_env
+    ):
         """Test initialization accepts request and response shapes."""
         request_shape = {"field": "value"}
         response_shape = {"output": "format"}

@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
 from .handlers import get_handler_for_request_type
-from .manager import get_session_manager, SessionManager
+from .manager import SessionManager, get_session_manager
 from .models import SessionRequest
 from .utils import get_session, get_session_id_from_request
 
