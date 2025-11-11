@@ -220,11 +220,11 @@ class GenericHandlerResolver:
             if handler:
                 return handler
 
-        # No handler found anywhere, use the framework default
-        handler = self.registry.get_framework_default(handler_type)
-        if handler:
-            logger.info(f"Use {handler_type} handler registered in framework")
-            return handler
+        # No handler found anywhere, let us just do nothing
+        # handler = self.registry.get_framework_default(handler_type)
+        # if handler:
+        #     logger.info(f"Use {handler_type} handler registered in framework")
+        #     return handler
 
         logger.debug(f"No {handler_type} handler found anywhere")
         return None
