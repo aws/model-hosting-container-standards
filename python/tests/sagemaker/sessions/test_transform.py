@@ -183,7 +183,7 @@ class TestProcessSessionRequest:
         )
 
         assert isinstance(result, BaseTransformRequestOutput)
-        assert result.request == mock_session_manager
+        assert result.request is None
         assert result.raw_request == mock_request
         assert result.intercept_func == create_session
 
@@ -198,7 +198,7 @@ class TestProcessSessionRequest:
         )
 
         assert isinstance(result, BaseTransformRequestOutput)
-        assert result.request == mock_session_manager
+        assert result.request is None
         assert result.raw_request == mock_request
         assert result.intercept_func == close_session
 
@@ -335,10 +335,10 @@ class TestSessionApiTransform:
 
         # Verify we get an intercept function
         assert result.intercept_func == create_session
-        assert result.request == transform._session_manager
+        assert result.request is None
 
         # Verify we can call the handler
-        response = await result.intercept_func(result.request, mock_request)
+        response = await result.intercept_func(mock_request)
         assert response.status_code == HTTPStatus.OK.value
         assert SageMakerSessionHeader.NEW_SESSION_ID in response.headers
 
