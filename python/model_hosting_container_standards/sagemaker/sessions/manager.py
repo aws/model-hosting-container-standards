@@ -139,7 +139,7 @@ class SessionManager:
         else:
             session_dir = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
 
-        self.sessions_path = properties.get("sessions_path", session_dir)
+        self.sessions_path = properties.get("sessions_path") or session_dir
         self.sessions: dict[str, Session] = {}
         self._lock = RLock()  # Thread safety for concurrent session access
 

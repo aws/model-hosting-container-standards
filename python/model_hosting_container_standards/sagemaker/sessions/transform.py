@@ -45,7 +45,9 @@ def _parse_session_request(request_data: dict) -> Optional[SessionRequest]:
         return None
 
 
-def _validate_session_if_present(raw_request: Request, session_manager: SessionManager):
+def _validate_session_if_present(
+    raw_request: Request, session_manager: Optional[SessionManager]
+):
     """Validate that the session ID in the request exists and is not expired.
 
     Args:
