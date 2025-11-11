@@ -96,9 +96,9 @@ _resolver = SageMakerHandlerResolver()
 
 def register_sagemaker_overrides():
     def set_handler(handler_type):
-        handler_registry.set_handler(
-            handler_type, _resolver.resolve_handler(handler_type)
-        )
+        handler = _resolver.resolve_handler(handler_type)
+        if handler:
+            handler_registry.set_handler(handler_type, handler)
 
     set_handler("invoke")
     set_handler("ping")

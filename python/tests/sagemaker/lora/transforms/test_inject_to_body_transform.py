@@ -8,6 +8,7 @@ import pytest
 from fastapi import Request, Response
 
 from model_hosting_container_standards.sagemaker.lora.models.transform import (
+    AppendOperation,
     BaseLoRATransformRequestOutput,
 )
 from model_hosting_container_standards.sagemaker.lora.transforms.inject_to_body import (
@@ -176,7 +177,7 @@ class TestInjectToBodyApiTransform:
         }
 
         # Call method
-        await transformer.transform_request(mock_raw_request)
+        output = await transformer.transform_request(mock_raw_request)
 
         # Verify final body includes both original and header data
         expected_merged_body = {
@@ -184,5 +185,125 @@ class TestInjectToBodyApiTransform:
             "adapter_name": "production-adapter",
             "priority": "high",
         }
-        actual_body = json.loads(mock_raw_request._body.decode("utf-8"))
+        actual_body = json.loads(output.raw_request._body.decode("utf-8"))
         assert actual_body == expected_merged_body
+
+    @pytest.mark.asyncio
+    async def test_append_operation_with_colon_separator(self):
+        """Test append operation with colon separator."""
+        # Create transformer with append operation
+        request_shape = {
+            "model": AppendOperation(separator=":", expression='headers."x-adapter-id"')
+        }
+        transformer = InjectToBodyApiTransform(request_shape)
+
+        # Setup mock request
+        original_body = {"model": "Qwen-7B"}
+        mock_raw_request = Mock(spec=Request)
+        mock_raw_request.json = AsyncMock(return_value=original_body)
+        mock_raw_request.headers = {"x-adapter-id": "my-lora-adapter"}
+
+        # Call method
+        output = await transformer.transform_request(mock_raw_request)
+
+        # Verify append operation
+        expected_body = {"model": "Qwen-7B:my-lora-adapter"}
+        actual_body = json.loads(output.raw_request._body.decode("utf-8"))
+        assert actual_body == expected_body
+
+    @pytest.mark.asyncio
+    async def test_append_operation_with_empty_separator(self):
+        """Test append operation with empty string separator."""
+        # Create transformer with append operation using empty separator
+        request_shape = {
+            "model": AppendOperation(separator="", expression='headers."x-adapter-id"')
+        }
+        transformer = InjectToBodyApiTransform(request_shape)
+
+        # Setup mock request
+        original_body = {"model": "base"}
+        mock_raw_request = Mock(spec=Request)
+        mock_raw_request.json = AsyncMock(return_value=original_body)
+        mock_raw_request.headers = {"x-adapter-id": "suffix"}
+
+        # Call method
+        output = await transformer.transform_request(mock_raw_request)
+
+        # Verify direct concatenation
+        expected_body = {"model": "basesuffix"}
+        actual_body = json.loads(output.raw_request._body.decode("utf-8"))
+        assert actual_body == expected_body
+
+    @pytest.mark.asyncio
+    async def test_append_operation_no_existing_value(self):
+        """Test append operation when field doesn't exist - should just use adapter ID."""
+        # Create transformer with append operation
+        request_shape = {
+            "model": AppendOperation(separator=":", expression='headers."x-adapter-id"')
+        }
+        transformer = InjectToBodyApiTransform(request_shape)
+
+        # Setup mock request without the model field
+        original_body = {"other_field": "value"}
+        mock_raw_request = Mock(spec=Request)
+        mock_raw_request.json = AsyncMock(return_value=original_body)
+        mock_raw_request.headers = {"x-adapter-id": "my-adapter"}
+
+        # Call method
+        output = await transformer.transform_request(mock_raw_request)
+
+        # Verify only adapter ID is used (no separator since no base value)
+        expected_body = {"other_field": "value", "model": "my-adapter"}
+        actual_body = json.loads(output.raw_request._body.decode("utf-8"))
+        assert actual_body == expected_body
+
+    def test_constructor_invalid_value_type(self):
+        """Test constructor rejects invalid value types."""
+        with pytest.raises(
+            ValueError, match="Only strings and AppendOperation instances"
+        ):
+            InjectToBodyApiTransform({"model": 123})
+
+    @pytest.mark.asyncio
+    async def test_constructor_mixed_operations(self):
+        """Test constructor handles mixed string and AppendOperation values."""
+        request_shape = {
+            "model": AppendOperation(
+                separator=":", expression='headers."x-adapter-id"'
+            ),
+            "other_field": 'headers."x-adapter-id"',
+        }
+        transformer = InjectToBodyApiTransform(request_shape)
+        assert len(transformer._append_operations) == 1
+
+        original_body = {"model": "base-model"}
+        mock_raw_request = Mock(spec=Request)
+        mock_raw_request.json = AsyncMock(return_value=original_body)
+        mock_raw_request.headers = {"x-adapter-id": "suffix"}
+
+        output = await transformer.transform_request(mock_raw_request)
+        expected_body = {"model": "base-model:suffix", "other_field": "suffix"}
+        actual_body = json.loads(output.raw_request._body.decode("utf-8"))
+        assert actual_body == expected_body
+
+    @pytest.mark.asyncio
+    async def test_append_operation_missing_adapter_id(self):
+        """Test append operation when adapter ID is not in headers."""
+        request_shape = {
+            "model": AppendOperation(
+                separator=":", expression='headers."missing-header"'
+            )
+        }
+        transformer = InjectToBodyApiTransform(request_shape)
+
+        original_body = {"model": "base-model"}
+        mock_raw_request = Mock(spec=Request)
+        mock_raw_request.json = AsyncMock(return_value=original_body)
+        mock_raw_request.headers = {}
+
+        output = await transformer.transform_request(mock_raw_request)
+
+        # Should remain unchanged when no adapter ID found
+        expected_body = {"model": "base-model"}
+        actual_body = json.loads(output.raw_request._body.decode("utf-8"))
+        assert actual_body == expected_body
