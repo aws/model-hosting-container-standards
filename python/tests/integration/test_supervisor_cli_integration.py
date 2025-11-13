@@ -44,7 +44,6 @@ class TestSupervisorCLIIntegration:
         # Clear supervisor-related variables
         for key in list(os.environ.keys()):
             if key.startswith("SUPERVISOR_") or key in [
-                "ENABLE_SUPERVISOR",
                 "PROCESS_AUTO_RECOVERY",
                 "PROCESS_MAX_START_RETRIES",
                 "LOG_LEVEL",
