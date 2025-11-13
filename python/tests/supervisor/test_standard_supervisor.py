@@ -31,39 +31,6 @@ class TestProcessManager:
         assert manager.logger == logger
         assert manager.process is None
 
-    @patch("shutil.which")
-    def test_check_tools_available_success(self, mock_which):
-        """Test successful tool availability check."""
-        mock_which.return_value = "/usr/bin/supervisord"
-
-        logger = Mock()
-        manager = ProcessManager(logger)
-
-        available, missing = manager.check_tools_available()
-
-        assert available is True
-        assert missing == ""
-        assert mock_which.call_count == 1  # Only supervisord
-
-    @patch("shutil.which")
-    def test_check_tools_available_missing_supervisord(self, mock_which):
-        """Test tool availability check with missing supervisord."""
-
-        def mock_which_side_effect(tool):
-            if tool == "supervisord":
-                return None
-            return "/usr/bin/tool"
-
-        mock_which.side_effect = mock_which_side_effect
-
-        logger = Mock()
-        manager = ProcessManager(logger)
-
-        available, missing = manager.check_tools_available()
-
-        assert available is False
-        assert missing == "supervisord"
-
     @patch("subprocess.Popen")
     @patch("subprocess.run")
     @patch("time.sleep")
@@ -255,7 +222,6 @@ class TestStandardSupervisor:
         mock_process.returncode = 0
 
         supervisor = StandardSupervisor()
-        supervisor.process_manager.check_tools_available = Mock(return_value=(True, ""))
         supervisor.process_manager.start = Mock(return_value=mock_process)
         supervisor.signal_handler.setup = Mock()
 
@@ -266,18 +232,6 @@ class TestStandardSupervisor:
         assert result == 0
         mock_write_config.assert_called_once()
         supervisor.process_manager.start.assert_called_once()
-
-    def test_run_missing_tools(self):
-        """Test run with missing supervisor tools."""
-        supervisor = StandardSupervisor()
-        supervisor.process_manager.check_tools_available = Mock(
-            return_value=(False, "supervisord")
-        )
-
-        with patch.object(sys, "argv", ["standard-supervisor", "echo", "test"]):
-            result = supervisor.run()
-
-        assert result == 1
 
     @patch(
         "model_hosting_container_standards.supervisor.scripts.standard_supervisor.parse_environment_variables"
@@ -297,6 +251,97 @@ class TestStandardSupervisor:
             result = supervisor.run()
 
         assert result == 1
+
+
+class TestHelperFunctions:
+    """Test helper functions in standard_supervisor module."""
+
+    def test_is_supervisor_enabled_true_values(self):
+        """Test _is_supervisor_enabled with values that should return True."""
+        from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
+            _is_supervisor_enabled,
+        )
+
+        true_values = ["true", "True", "TRUE", "1"]
+        for value in true_values:
+            with patch.dict(os.environ, {"ENABLE_SUPERVISOR": value}):
+                assert (
+                    _is_supervisor_enabled() is True
+                ), f"ENABLE_SUPERVISOR={value} should return True"
+
+    def test_is_supervisor_enabled_false_values(self):
+        """Test _is_supervisor_enabled with values that should return False."""
+        from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
+            _is_supervisor_enabled,
+        )
+
+        false_values = ["false", "False", "0", "yes", "on", "no", "off", ""]
+        for value in false_values:
+            with patch.dict(os.environ, {"ENABLE_SUPERVISOR": value}):
+                assert (
+                    _is_supervisor_enabled() is False
+                ), f"ENABLE_SUPERVISOR={value} should return False"
+
+    def test_is_supervisor_enabled_default(self):
+        """Test _is_supervisor_enabled with no environment variable set."""
+        from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
+            _is_supervisor_enabled,
+        )
+
+        # Clear ENABLE_SUPERVISOR if it exists
+        env = {k: v for k, v in os.environ.items() if k != "ENABLE_SUPERVISOR"}
+        with patch.dict(os.environ, env, clear=True):
+            assert (
+                _is_supervisor_enabled() is False
+            ), "Default should be False when ENABLE_SUPERVISOR is not set"
+
+    def test_launch_command_directly_no_args(self):
+        """Test _launch_command_directly with no arguments."""
+        from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
+            _launch_command_directly,
+        )
+
+        with patch.object(sys, "argv", ["standard-supervisor"]):
+            with pytest.raises(SystemExit) as exc_info:
+                _launch_command_directly()
+            assert exc_info.value.code == 1
+
+    @patch("os.execvp")
+    def test_launch_command_directly_success(self, mock_execvp):
+        """Test _launch_command_directly with valid command."""
+        from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
+            _launch_command_directly,
+        )
+
+        with patch.object(sys, "argv", ["standard-supervisor", "echo", "test"]):
+            _launch_command_directly()
+            mock_execvp.assert_called_once_with("echo", ["echo", "test"])
+
+    @patch("os.execvp")
+    def test_launch_command_directly_file_not_found(self, mock_execvp):
+        """Test _launch_command_directly with non-existent command."""
+        from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
+            _launch_command_directly,
+        )
+
+        mock_execvp.side_effect = FileNotFoundError("Command not found")
+
+        with patch.object(sys, "argv", ["standard-supervisor", "nonexistent_command"]):
+            with pytest.raises(FileNotFoundError):
+                _launch_command_directly()
+
+    @patch("os.execvp")
+    def test_launch_command_directly_permission_error(self, mock_execvp):
+        """Test _launch_command_directly with permission error."""
+        from model_hosting_container_standards.supervisor.scripts.standard_supervisor import (
+            _launch_command_directly,
+        )
+
+        mock_execvp.side_effect = PermissionError("Permission denied")
+
+        with patch.object(sys, "argv", ["standard-supervisor", "echo", "test"]):
+            with pytest.raises(PermissionError):
+                _launch_command_directly()
 
 
 if __name__ == "__main__":

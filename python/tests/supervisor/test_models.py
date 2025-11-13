@@ -27,6 +27,7 @@ class TestSupervisorConfig:
         """Test SupervisorConfig with default values."""
         config = SupervisorConfig()
 
+        assert config.enable_supervisor is False
         assert config.auto_recovery is True
         assert config.max_start_retries == 3
         assert config.config_path == "/tmp/supervisord.conf"
@@ -37,6 +38,7 @@ class TestSupervisorConfig:
         """Test SupervisorConfig with custom values."""
         custom_sections = {"program": {"startsecs": "10"}}
         config = SupervisorConfig(
+            enable_supervisor=True,
             auto_recovery=False,
             max_start_retries=5,
             config_path="/custom/path.conf",
@@ -44,6 +46,7 @@ class TestSupervisorConfig:
             custom_sections=custom_sections,
         )
 
+        assert config.enable_supervisor is True
         assert config.auto_recovery is False
         assert config.max_start_retries == 5
         assert config.config_path == "/custom/path.conf"
@@ -386,6 +389,7 @@ class TestParseEnvironmentVariables:
             for k, v in os.environ.items()
             if k.startswith(
                 (
+                    "ENABLE_SUPERVISOR",
                     "PROCESS_AUTO_RECOVERY",
                     "PROCESS_MAX_START_RETRIES",
                     "LOG_LEVEL",
@@ -402,6 +406,7 @@ class TestParseEnvironmentVariables:
             try:
                 config = parse_environment_variables()
 
+                assert config.enable_supervisor is False
                 assert config.auto_recovery is True
                 assert config.max_start_retries == 3
                 assert config.config_path == "/tmp/supervisord.conf"
@@ -414,6 +419,7 @@ class TestParseEnvironmentVariables:
     def test_all_custom_values(self):
         """Test parsing with all custom values."""
         test_env = {
+            "ENABLE_SUPERVISOR": "true",
             "PROCESS_AUTO_RECOVERY": "false",
             "PROCESS_MAX_START_RETRIES": "5",
             "SUPERVISOR_CONFIG_PATH": "/custom/supervisord.conf",
@@ -425,6 +431,7 @@ class TestParseEnvironmentVariables:
         with patch.dict(os.environ, test_env):
             config = parse_environment_variables()
 
+            assert config.enable_supervisor is True
             assert config.auto_recovery is False
             assert config.max_start_retries == 5
             assert config.config_path == "/custom/supervisord.conf"

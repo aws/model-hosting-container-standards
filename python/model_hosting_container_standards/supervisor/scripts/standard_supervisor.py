@@ -14,7 +14,6 @@ Example:
 
 import logging
 import os
-import shutil
 import signal
 import subprocess
 import sys
@@ -37,12 +36,6 @@ class ProcessManager:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
         self.process: Optional[subprocess.Popen] = None
-
-    def check_tools_available(self) -> tuple[bool, str]:
-        """Check if supervisord is available."""
-        if not shutil.which("supervisord"):
-            return False, "supervisord"
-        return True, ""
 
     def start(self, config_path: str) -> subprocess.Popen:
         """Start supervisord process with the given configuration."""
@@ -147,12 +140,6 @@ class StandardSupervisor:
         launch_command = self.parse_arguments()
         self.logger.info(f"Starting: {' '.join(launch_command)}")
 
-        # Check system requirements
-        tools_available, missing_tool = self.process_manager.check_tools_available()
-        if not tools_available:
-            self.logger.error(f"{missing_tool} not found. Install supervisor package.")
-            return 1
-
         # Parse configuration
         try:
             config = parse_environment_variables()
@@ -204,8 +191,32 @@ class StandardSupervisor:
                     self.logger.warning(f"Failed to clean up config file: {e}")
 
 
+def _is_supervisor_enabled() -> bool:
+    """Check if supervisor mode is enabled via environment variable."""
+    return os.getenv("ENABLE_SUPERVISOR", "false").lower() in ("true", "1")
+
+
+def _launch_command_directly() -> None:
+    """Launch command directly without supervisor (replaces current process)."""
+    launch_command = sys.argv[1:]
+
+    if not launch_command:
+        print("ERROR: No launch command provided", file=sys.stderr)
+        print("Usage: standard-supervisor <launch_command> [args...]", file=sys.stderr)
+        sys.exit(1)
+
+    # Replace current process with the command
+    # If execvp fails, it will raise an exception and Python will exit
+    os.execvp(launch_command[0], launch_command)
+
+
 def main() -> int:
     """Main entry point for standard-supervisor CLI."""
+    if not _is_supervisor_enabled():
+        _launch_command_directly()
+        # Note: execvp replaces process, so we never reach here
+
+    # Run with supervisor
     supervisor = StandardSupervisor()
     return supervisor.run()
 

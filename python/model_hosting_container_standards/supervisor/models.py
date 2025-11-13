@@ -9,6 +9,7 @@ from ..logging_config import get_logger
 logger = get_logger(__name__)
 
 # Environment variable constants
+ENABLE_SUPERVISOR = "ENABLE_SUPERVISOR"
 PROCESS_AUTO_RECOVERY = "PROCESS_AUTO_RECOVERY"
 PROCESS_MAX_START_RETRIES = "PROCESS_MAX_START_RETRIES"
 LOG_LEVEL = "LOG_LEVEL"
@@ -31,6 +32,7 @@ class SupervisorConfig:
     - Section names with colons: Use double underscore __ to represent colon :
 
     Examples:
+    - ENABLE_SUPERVISOR=true (enable supervisor process management)
     - PROCESS_AUTO_RECOVERY=false (application behavior)
     - PROCESS_MAX_START_RETRIES=5 (application behavior)
     - LOG_LEVEL=debug (application behavior)
@@ -40,6 +42,7 @@ class SupervisorConfig:
     - SUPERVISOR_RPCINTERFACE__SUPERVISOR_FACTORY=... (supervisord [rpcinterface:supervisor] section)
     """
 
+    enable_supervisor: bool = False
     auto_recovery: bool = True
     max_start_retries: int = 3
     config_path: str = "/tmp/supervisord.conf"
@@ -84,6 +87,7 @@ def parse_environment_variables() -> SupervisorConfig:
         custom_sections = _parse_supervisor_custom_sections()
 
         return SupervisorConfig(
+            enable_supervisor=_parse_bool(os.getenv(ENABLE_SUPERVISOR, "false")),
             auto_recovery=_parse_bool(os.getenv(PROCESS_AUTO_RECOVERY, "true")),
             max_start_retries=_get_env_int(PROCESS_MAX_START_RETRIES, 3),
             config_path=_get_env_str(SUPERVISOR_CONFIG_PATH, "/tmp/supervisord.conf"),

@@ -44,6 +44,7 @@ class TestSupervisorCLIIntegration:
         # Clear supervisor-related variables
         for key in list(os.environ.keys()):
             if key.startswith("SUPERVISOR_") or key in [
+                "ENABLE_SUPERVISOR",
                 "PROCESS_AUTO_RECOVERY",
                 "PROCESS_MAX_START_RETRIES",
                 "LOG_LEVEL",
@@ -59,6 +60,7 @@ class TestSupervisorCLIIntegration:
     def test_basic_cli_execution_and_config_generation(self, clean_env):
         """Test basic CLI execution with configuration generation and validation."""
         env = {
+            "ENABLE_SUPERVISOR": "true",
             "PROCESS_MAX_START_RETRIES": "2",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "2",
             "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "5",
@@ -125,6 +127,7 @@ class TestSupervisorCLIIntegration:
     def test_ml_framework_configuration(self, clean_env):
         """Test supervisor configuration for ML framework scenarios."""
         env = {
+            "ENABLE_SUPERVISOR": "true",
             "PROCESS_MAX_START_RETRIES": "3",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "30",  # ML models need longer startup
             "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "60",  # Graceful shutdown time
@@ -190,6 +193,7 @@ class TestSupervisorCLIIntegration:
     def test_signal_handling(self, clean_env):
         """Test that supervisor handles signals correctly."""
         env = {
+            "ENABLE_SUPERVISOR": "true",
             "PROCESS_MAX_START_RETRIES": "1",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "1",
             "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "5",
@@ -240,6 +244,7 @@ class TestSupervisorCLIIntegration:
     def test_continuous_restart_behavior(self, clean_env):
         """Test that supervisor continuously restarts processes when autorestart=true."""
         env = {
+            "ENABLE_SUPERVISOR": "true",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "2",
             "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
             "SUPERVISOR_PROGRAM__APP_STARTRETRIES": "10",
@@ -332,6 +337,7 @@ sys.exit(0)
     def test_startup_retry_limit(self, clean_env):
         """Test that supervisor respects startretries limit."""
         env = {
+            "ENABLE_SUPERVISOR": "true",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "5",  # Process must run 5 seconds to be "started"
             "SUPERVISOR_PROGRAM__APP_STARTRETRIES": "3",  # Only 3 startup attempts
             "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
@@ -432,6 +438,7 @@ exit(1)
     def test_configuration_validation_error(self, clean_env):
         """Test CLI with invalid configuration."""
         env = {
+            "ENABLE_SUPERVISOR": "true",
             "PROCESS_MAX_START_RETRIES": "invalid_number",  # Invalid value
         }
 
@@ -458,6 +465,193 @@ exit(1)
             or "must be an integer" in output
             or "Configuration validation failed" in output
         )
+
+    def test_direct_launch_without_supervisor(self, clean_env):
+        """Test direct launch mode when ENABLE_SUPERVISOR is false (default)."""
+        # No ENABLE_SUPERVISOR set, should launch directly
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
+                sys.executable,
+                "-c",
+                "print('Direct launch success'); import sys; sys.exit(0)",
+            ],
+            env=os.environ,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=get_python_cwd(),
+        )
+
+        assert result.returncode == 0
+        assert "Direct launch success" in result.stdout
+
+    def test_direct_launch_with_explicit_false(self, clean_env):
+        """Test direct launch when ENABLE_SUPERVISOR is explicitly false."""
+        env = {"ENABLE_SUPERVISOR": "false"}
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
+                sys.executable,
+                "-c",
+                "print('Direct launch with false'); import sys; sys.exit(0)",
+            ],
+            env={**os.environ, **env},
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=get_python_cwd(),
+        )
+
+        assert result.returncode == 0
+        assert "Direct launch with false" in result.stdout
+
+    def test_direct_launch_exit_code_propagation(self, clean_env):
+        """Test that exit codes are properly propagated in direct launch mode."""
+        # Test exit code 0
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
+                sys.executable,
+                "-c",
+                "import sys; sys.exit(0)",
+            ],
+            env=os.environ,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=get_python_cwd(),
+        )
+        assert result.returncode == 0
+
+        # Test exit code 42
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
+                sys.executable,
+                "-c",
+                "import sys; sys.exit(42)",
+            ],
+            env=os.environ,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=get_python_cwd(),
+        )
+        assert result.returncode == 42
+
+    def test_direct_launch_command_not_found(self, clean_env):
+        """Test direct launch with non-existent command."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
+                "nonexistent_command_12345",
+                "arg1",
+                "arg2",
+            ],
+            env=os.environ,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=get_python_cwd(),
+        )
+
+        # Should exit with non-zero code (Python exception)
+        assert result.returncode != 0
+        # Python will show FileNotFoundError traceback
+        assert "FileNotFoundError" in result.stderr or "No such file" in result.stderr
+
+    def test_direct_launch_no_command_provided(self, clean_env):
+        """Test direct launch with no command provided."""
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
+            ],
+            env=os.environ,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=get_python_cwd(),
+        )
+
+        # Should exit with error
+        assert result.returncode == 1
+        assert "No launch command provided" in result.stderr
+
+    def test_enable_supervisor_accepts_true_and_1_only(self, clean_env):
+        """Test that ENABLE_SUPERVISOR only accepts 'true', 'True', or '1'."""
+        test_cases = [
+            ("true", True),  # Should enable
+            ("True", True),  # Should enable
+            ("TRUE", True),  # Should enable
+            ("1", True),  # Should enable
+            ("false", False),  # Should NOT enable
+            ("0", False),  # Should NOT enable
+            ("yes", False),  # Should NOT enable
+            ("on", False),  # Should NOT enable
+            ("", False),  # Should NOT enable
+        ]
+
+        for value, should_use_supervisor in test_cases:
+            with tempfile.TemporaryDirectory() as temp_dir:
+                config_path = os.path.join(temp_dir, f"supervisord_{value}.conf")
+                env = {
+                    "ENABLE_SUPERVISOR": value,
+                    "SUPERVISOR_CONFIG_PATH": config_path,
+                    "SUPERVISOR_PROGRAM__APP_STARTSECS": "1",
+                }
+
+                process = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-m",
+                        "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
+                        sys.executable,
+                        "-c",
+                        "import time; time.sleep(2)",
+                    ],
+                    env={**os.environ, **env},
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    cwd=get_python_cwd(),
+                )
+
+                try:
+                    time.sleep(1.5)
+
+                    if should_use_supervisor:
+                        # Config should exist
+                        assert os.path.exists(
+                            config_path
+                        ), f"ENABLE_SUPERVISOR={value} should use supervisor"
+                    else:
+                        # Config should NOT exist
+                        assert not os.path.exists(
+                            config_path
+                        ), f"ENABLE_SUPERVISOR={value} should NOT use supervisor"
+
+                finally:
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.communicate(timeout=5)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.communicate()
 
 
 if __name__ == "__main__":
