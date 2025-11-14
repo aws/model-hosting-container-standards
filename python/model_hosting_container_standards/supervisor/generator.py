@@ -45,9 +45,7 @@ def get_base_config_template(
         "supervisord": {
             "nodaemon": "true",
             "loglevel": log_level,
-            "logfile": f"/tmp/supervisord-{program_name}.log",
-            "logfile_maxbytes": "50MB",
-            "logfile_backups": "3",
+            "logfile": "/dev/null",
             "pidfile": f"/tmp/supervisord-{program_name}.pid",
         },
         f"program:{program_name}": {
@@ -59,6 +57,7 @@ def get_base_config_template(
             "stdout_logfile_maxbytes": "0",
             "stderr_logfile": "/dev/stderr",
             "stderr_logfile_maxbytes": "0",
+            "redirect_stderr": "true",
             "exitcodes": "255",
             "startsecs": "1",
             "stopsignal": "TERM",
