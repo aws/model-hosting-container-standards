@@ -16,11 +16,16 @@ logger = get_logger(__name__)
 # Supervisord configuration template for LLM service monitoring
 #
 # Key behavior: LLM services are expected to run indefinitely. Any exit is considered an error.
-# - exitcodes=255: Only exit code 255 is "expected" - all other exits (0,1,2...) trigger restart
+# - exitcodes=255: Only exit code 255 is "expected" - all other exits (0,1,2...) are unexpected
 # - startsecs=1: Process must run at least 1 second to be considered successfully started
-# - autorestart=unexpected: Only restart on unexpected exit codes (not 255)
-#   When ENGINE_AUTO_RECOVERY=false, autorestart=false to disable all restarts
+# - autorestart=true/false: Controls restart behavior
+#   When PROCESS_AUTO_RECOVERY=true: autorestart=true (restart on unexpected exits)
+#   When PROCESS_AUTO_RECOVERY=false: autorestart=false (never restart)
 # - startretries=N: Maximum restart attempts before entering FATAL state
+#
+# Exit code behavior with autorestart=true:
+# - Exit 0-254: Unexpected → triggers restart (up to startretries limit)
+# - Exit 255: Expected → no restart, process stays in EXITED state
 #
 # FATAL state examples (supervisorctl status output):
 #   app                       FATAL     Exited too quickly (process log may have details)
@@ -104,7 +109,8 @@ def generate_supervisord_config(
         raise ValueError(error_msg)
 
     # Convert boolean auto_recovery to supervisord format
-    # Use "true" to always restart (except for exitcodes=255 which is "expected")
+    # autorestart=true: restart on unexpected exits (exitcodes not in exitcodes list)
+    # autorestart=false: never restart
     auto_restart = "true" if config.auto_recovery else "false"
 
     try:
