@@ -80,7 +80,7 @@ class TestGetBaseConfigTemplate:
 
         assert supervisord_section["nodaemon"] == "true"
         assert supervisord_section["loglevel"] == "debug"
-        assert "test_program" in supervisord_section["logfile"]
+        assert supervisord_section["logfile"] == "/dev/null"
         assert "test_program" in supervisord_section["pidfile"]
 
 

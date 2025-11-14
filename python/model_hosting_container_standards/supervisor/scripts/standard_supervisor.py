@@ -193,7 +193,7 @@ class StandardSupervisor:
 
 def _is_supervisor_enabled() -> bool:
     """Check if supervisor mode is enabled via environment variable."""
-    return os.getenv("ENABLE_SUPERVISOR", "false").lower() in ("true", "1")
+    return os.getenv("PROCESS_AUTO_RECOVERY", "false").lower() in ("true", "1")
 
 
 def _launch_command_directly() -> None:

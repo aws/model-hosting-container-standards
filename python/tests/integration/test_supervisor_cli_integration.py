@@ -59,7 +59,7 @@ class TestSupervisorCLIIntegration:
     def test_basic_cli_execution_and_config_generation(self, clean_env):
         """Test basic CLI execution with configuration generation and validation."""
         env = {
-            "ENABLE_SUPERVISOR": "true",
+            "PROCESS_AUTO_RECOVERY": "true",
             "PROCESS_MAX_START_RETRIES": "2",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "2",
             "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "5",
@@ -126,7 +126,7 @@ class TestSupervisorCLIIntegration:
     def test_ml_framework_configuration(self, clean_env):
         """Test supervisor configuration for ML framework scenarios."""
         env = {
-            "ENABLE_SUPERVISOR": "true",
+            "PROCESS_AUTO_RECOVERY": "true",
             "PROCESS_MAX_START_RETRIES": "3",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "30",  # ML models need longer startup
             "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "60",  # Graceful shutdown time
@@ -192,7 +192,7 @@ class TestSupervisorCLIIntegration:
     def test_signal_handling(self, clean_env):
         """Test that supervisor handles signals correctly."""
         env = {
-            "ENABLE_SUPERVISOR": "true",
+            "PROCESS_AUTO_RECOVERY": "true",
             "PROCESS_MAX_START_RETRIES": "1",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "1",
             "SUPERVISOR_PROGRAM__APP_STOPWAITSECS": "5",
@@ -243,7 +243,7 @@ class TestSupervisorCLIIntegration:
     def test_continuous_restart_behavior(self, clean_env):
         """Test that supervisor continuously restarts processes when autorestart=true."""
         env = {
-            "ENABLE_SUPERVISOR": "true",
+            "PROCESS_AUTO_RECOVERY": "true",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "2",
             "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
             "SUPERVISOR_PROGRAM__APP_STARTRETRIES": "10",
@@ -336,7 +336,7 @@ sys.exit(0)
     def test_startup_retry_limit(self, clean_env):
         """Test that supervisor respects startretries limit."""
         env = {
-            "ENABLE_SUPERVISOR": "true",
+            "PROCESS_AUTO_RECOVERY": "true",
             "SUPERVISOR_PROGRAM__APP_STARTSECS": "5",  # Process must run 5 seconds to be "started"
             "SUPERVISOR_PROGRAM__APP_STARTRETRIES": "3",  # Only 3 startup attempts
             "SUPERVISOR_PROGRAM__APP_AUTORESTART": "true",
@@ -437,7 +437,7 @@ exit(1)
     def test_configuration_validation_error(self, clean_env):
         """Test CLI with invalid configuration."""
         env = {
-            "ENABLE_SUPERVISOR": "true",
+            "PROCESS_AUTO_RECOVERY": "true",
             "PROCESS_MAX_START_RETRIES": "invalid_number",  # Invalid value
         }
 
@@ -466,8 +466,8 @@ exit(1)
         )
 
     def test_direct_launch_without_supervisor(self, clean_env):
-        """Test direct launch mode when ENABLE_SUPERVISOR is false (default)."""
-        # No ENABLE_SUPERVISOR set, should launch directly
+        """Test direct launch mode when PROCESS_AUTO_RECOVERY is false (default)."""
+        # No PROCESS_AUTO_RECOVERY set, should launch directly
         result = subprocess.run(
             [
                 sys.executable,
@@ -488,8 +488,8 @@ exit(1)
         assert "Direct launch success" in result.stdout
 
     def test_direct_launch_with_explicit_false(self, clean_env):
-        """Test direct launch when ENABLE_SUPERVISOR is explicitly false."""
-        env = {"ENABLE_SUPERVISOR": "false"}
+        """Test direct launch when PROCESS_AUTO_RECOVERY is explicitly false."""
+        env = {"PROCESS_AUTO_RECOVERY": "false"}
 
         result = subprocess.run(
             [
@@ -590,8 +590,8 @@ exit(1)
         assert result.returncode == 1
         assert "No launch command provided" in result.stderr
 
-    def test_enable_supervisor_accepts_true_and_1_only(self, clean_env):
-        """Test that ENABLE_SUPERVISOR only accepts 'true', 'True', or '1'."""
+    def test_process_auto_recovery_accepts_true_and_1_only(self, clean_env):
+        """Test that PROCESS_AUTO_RECOVERY only accepts 'true', 'True', or '1'."""
         test_cases = [
             ("true", True),  # Should enable
             ("True", True),  # Should enable
@@ -608,7 +608,7 @@ exit(1)
             with tempfile.TemporaryDirectory() as temp_dir:
                 config_path = os.path.join(temp_dir, f"supervisord_{value}.conf")
                 env = {
-                    "ENABLE_SUPERVISOR": value,
+                    "PROCESS_AUTO_RECOVERY": value,
                     "SUPERVISOR_CONFIG_PATH": config_path,
                     "SUPERVISOR_PROGRAM__APP_STARTSECS": "1",
                 }
@@ -636,12 +636,12 @@ exit(1)
                         # Config should exist
                         assert os.path.exists(
                             config_path
-                        ), f"ENABLE_SUPERVISOR={value} should use supervisor"
+                        ), f"PROCESS_AUTO_RECOVERY={value} should use supervisor"
                     else:
                         # Config should NOT exist
                         assert not os.path.exists(
                             config_path
-                        ), f"ENABLE_SUPERVISOR={value} should NOT use supervisor"
+                        ), f"PROCESS_AUTO_RECOVERY={value} should NOT use supervisor"
 
                 finally:
                     if process.poll() is None:

@@ -43,8 +43,8 @@ Configure supervisor behavior using the unified `SUPERVISOR_*` environment varia
 
 ### Default Behavior
 - **Config file**: `/tmp/supervisord.conf` (generated automatically)
-- **Auto-recovery**: Enabled by default
-- **Max retries**: 3 attempts
+- **Auto-recovery**: Disabled by default (enable with `PROCESS_AUTO_RECOVERY=true`)
+- **Max retries**: 3 attempts (when auto-recovery is enabled)
 - **Log level**: info
 
 ### Configuration Options
@@ -54,8 +54,8 @@ Use these simple environment variables for common settings:
 
 ```bash
 # Basic application behavior
-export PROCESS_AUTO_RECOVERY=true                   # Auto-restart on failure (default: true)
-export PROCESS_MAX_START_RETRIES=3                  # Max restart attempts (default: 3)
+export PROCESS_AUTO_RECOVERY=true                   # Auto-restart on failure (default: false)
+export PROCESS_MAX_START_RETRIES=3                  # Max restart attempts (default: 3, only applies when auto-recovery is enabled)
 export LOG_LEVEL=info                               # Log level (default: info, options: debug, info, warn, error, critical)
 ```
 
@@ -101,9 +101,9 @@ export SUPERVISOR_PROGRAM__APP_STARTSECS=1
 export SUPERVISOR_PROGRAM__APP_STOPWAITSECS=5
 export SUPERVISOR_PROGRAM__APP_STARTRETRIES=1
 
-# Disable auto-recovery for debugging
-export PROCESS_AUTO_RECOVERY=false
-export PROCESS_MAX_START_RETRIES=1
+# Enable auto-recovery for production
+export PROCESS_AUTO_RECOVERY=true
+export PROCESS_MAX_START_RETRIES=3
 ```
 
 ### Runtime Override Examples
@@ -114,8 +114,8 @@ Environment variables set in the Dockerfile can be overridden when launching the
 # Override max retries at runtime (recommended)
 docker run -e PROCESS_MAX_START_RETRIES=5 my-image
 
-# Disable auto-recovery at runtime (recommended)
-docker run -e PROCESS_AUTO_RECOVERY=false my-image
+# Enable auto-recovery at runtime (recommended for production)
+docker run -e PROCESS_AUTO_RECOVERY=true my-image
 
 # Change log level for debugging (recommended)
 docker run -e LOG_LEVEL=debug my-image
@@ -242,9 +242,9 @@ pip install supervisor
 
 **Process keeps restarting**
 ```bash
-# Fix: Disable auto-recovery to see the actual error (recommended)
+# Note: Auto-recovery is disabled by default
+# If you enabled it and want to see the actual error, disable it:
 export PROCESS_AUTO_RECOVERY=false
-export PROCESS_MAX_START_RETRIES=1
 ```
 
 **Configuration not taking effect**

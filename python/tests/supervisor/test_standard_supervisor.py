@@ -264,10 +264,10 @@ class TestHelperFunctions:
 
         true_values = ["true", "True", "TRUE", "1"]
         for value in true_values:
-            with patch.dict(os.environ, {"ENABLE_SUPERVISOR": value}):
+            with patch.dict(os.environ, {"PROCESS_AUTO_RECOVERY": value}):
                 assert (
                     _is_supervisor_enabled() is True
-                ), f"ENABLE_SUPERVISOR={value} should return True"
+                ), f"PROCESS_AUTO_RECOVERY={value} should return True"
 
     def test_is_supervisor_enabled_false_values(self):
         """Test _is_supervisor_enabled with values that should return False."""
@@ -277,10 +277,10 @@ class TestHelperFunctions:
 
         false_values = ["false", "False", "0", "yes", "on", "no", "off", ""]
         for value in false_values:
-            with patch.dict(os.environ, {"ENABLE_SUPERVISOR": value}):
+            with patch.dict(os.environ, {"PROCESS_AUTO_RECOVERY": value}):
                 assert (
                     _is_supervisor_enabled() is False
-                ), f"ENABLE_SUPERVISOR={value} should return False"
+                ), f"PROCESS_AUTO_RECOVERY={value} should return False"
 
     def test_is_supervisor_enabled_default(self):
         """Test _is_supervisor_enabled with no environment variable set."""
@@ -288,12 +288,12 @@ class TestHelperFunctions:
             _is_supervisor_enabled,
         )
 
-        # Clear ENABLE_SUPERVISOR if it exists
-        env = {k: v for k, v in os.environ.items() if k != "ENABLE_SUPERVISOR"}
+        # Clear PROCESS_AUTO_RECOVERY if it exists
+        env = {k: v for k, v in os.environ.items() if k != "PROCESS_AUTO_RECOVERY"}
         with patch.dict(os.environ, env, clear=True):
             assert (
                 _is_supervisor_enabled() is False
-            ), "Default should be False when ENABLE_SUPERVISOR is not set"
+            ), "Default should be False when PROCESS_AUTO_RECOVERY is not set"
 
     def test_launch_command_directly_no_args(self):
         """Test _launch_command_directly with no arguments."""
