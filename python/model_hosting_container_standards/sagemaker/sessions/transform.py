@@ -8,12 +8,14 @@ from fastapi.exceptions import HTTPException
 from pydantic import ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
+from ...common.handler import handler_registry
 from .handlers import get_handler_for_request_type
 from .manager import SessionManager, get_session_manager
 from .models import (
     SESSION_DISABLED_ERROR_DETAIL,
     SESSION_DISABLED_LOG_MESSAGE,
     SessionRequest,
+    SessionRequestType,
 )
 from .utils import get_session, get_session_id_from_request
 
@@ -91,9 +93,18 @@ def process_session_request(
     """
     session_request = _parse_session_request(request_data)
 
-    # Validate session if session ID is present in headers
-    # and raise error if session ID is invalid
-    _validate_session_if_present(raw_request, session_manager)
+    if (
+        session_request
+        and session_request.requestType == SessionRequestType.NEW_SESSION
+        and not handler_registry.has_handler("create_session")
+    ) or (
+        session_request
+        and session_request.requestType == SessionRequestType.CLOSE
+        and not handler_registry.has_handler("close_session")
+    ):
+        # Validate session if session ID is present in headers
+        # and raise error if session ID is invalid
+        _validate_session_if_present(raw_request, session_manager)
 
     # Not a session request - pass through for normal processing
     if session_request is None:

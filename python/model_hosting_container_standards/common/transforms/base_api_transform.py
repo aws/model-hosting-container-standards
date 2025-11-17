@@ -7,7 +7,7 @@ from fastapi import Request, Response
 from pydantic import BaseModel, Field
 
 from ...logging_config import logger
-from ..fastapi.utils import serialize_request
+from ..fastapi.utils import serialize_request, serialize_response
 from .utils import _compile_jmespath_expressions
 
 
@@ -54,7 +54,8 @@ class BaseApiTransform(abc.ABC):
             if isinstance(nested_or_compiled, jmespath.parser.ParsedResult):
                 # Apply compiled JMESPath expression to extract value
                 value = nested_or_compiled.search(source_data)
-                transformed_request[target_key] = value
+                if value:
+                    transformed_request[target_key] = value
             elif isinstance(nested_or_compiled, dict):
                 # Recursively transform nested structures
                 transformed_request[target_key] = self._transform(
@@ -102,6 +103,19 @@ class BaseApiTransform(abc.ABC):
         :raises NotImplementedError: Must be implemented by subclasses
         """
         raise NotImplementedError()
+
+    def _transform_response(self, response: Response):
+        """Transform the response based on the request processing results.
+
+        Subclasses must implement this method to handle request parsing, validation,
+        and transformation according to their specific operation requirements.
+
+        :param Response response: The response to transform
+        :param transform_request_output: Output from the request transformation
+        :raises NotImplementedError: Must be implemented by subclasses
+        """
+        response_data = serialize_response(response)
+        return self._transform(response_data, self._response_shape)
 
     def _transform_request(
         self, request: Optional[BaseModel], raw_request: Request

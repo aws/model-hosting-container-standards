@@ -1,7 +1,12 @@
+import json
+from logging import getLogger
 from typing import Any, Dict, Optional, Union
 
-from fastapi import Request
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+logger = getLogger(__name__)
 
 
 def serialize_request(
@@ -32,4 +37,31 @@ def serialize_request(
         "headers": raw_request.headers,
         "query_params": raw_request.query_params,
         "path_params": raw_request.path_params,
+    }
+
+
+def serialize_response(response: Union[Response, JSONResponse]):
+    """Create a structured data dictionary for JMESPath transformations.
+
+    Extracts and organizes response data into a standardized format that can be used
+    with JMESPath expressions to transform and extract specific data elements.
+
+    :param Union[Response, JSONResponse] response: Response body data - can be:
+        - FastAPI Response object
+        - JSONResponse object
+    :return Dict[str, Any]: Structured data with body, headers, status_code, and media_type
+    """
+    # Process response body based on type
+    body = response.body.decode(response.charset)
+    try:
+        body = json.loads(body)
+    except json.JSONDecodeError as e:
+        # If body is not JSON, leave it as a string
+        logger.warning(f"Response body is not JSON: {e}")
+        pass
+
+    logger.info(body)
+    return {
+        "body": body,
+        "headers": response.headers,
     }

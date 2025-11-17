@@ -43,6 +43,11 @@ def get_sagemaker_route_config(handler_type: str) -> Optional[RouteConfig]:
             summary="Model inference endpoint",
         )
 
+    if handler_type in ["create_session", "close_session"]:
+        # It's a request transformer, not a standalone API endpoint
+        # It modifies requests in-flight but doesn't expose its own route
+        return None
+
     # Delegate to LoRA route resolver for LoRA-specific handlers
     return get_lora_route_config(handler_type)
 

@@ -5,6 +5,7 @@ from http import HTTPStatus
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 
+from ...common.handler import handler_registry
 from .manager import get_session_manager
 from .models import (
     SESSION_DISABLED_ERROR_DETAIL,
@@ -27,10 +28,21 @@ def get_handler_for_request_type(request_type: SessionRequestType):
         Handler function for the request type, or None if no handler
     """
     if request_type == SessionRequestType.NEW_SESSION:
-        return create_session
+        registered_handler = handler_registry.get_handler("create_session")
+        logger.info(f"Handler for {request_type} request: {registered_handler}")
+        if not registered_handler:
+            logger.debug(f"No handler found for {request_type} request, using default")
+            registered_handler = create_session  # Default use SageMaker system
+        return registered_handler
     elif request_type == SessionRequestType.CLOSE:
-        return close_session
+        registered_handler = handler_registry.get_handler("close_session")
+        logger.info(f"Handler for {request_type} request: {registered_handler}")
+        if not registered_handler:
+            logger.debug(f"No handler found for {request_type} request, using default")
+            registered_handler = close_session  # Default use SageMaker system
+        return registered_handler
     else:
+        logger.warning(f"No handler found for {request_type} request")
         return None
 
 
