@@ -6,14 +6,21 @@ import sys
 
 
 def get_logger(name: str = "model_hosting_container_standards") -> logging.Logger:
-    """Get a configured logger for the package."""
+    """Get a configured logger for the package.
+
+    The logger uses SAGEMAKER_CONTAINER_LOG_LEVEL (or LOG_LEVEL) to determine the log level.
+    If not set, defaults to ERROR level, which effectively disables most package logging.
+
+    Returns:
+        Configured logger instance for the package.
+    """
     logger = logging.getLogger(name)
 
     # Only configure if not already configured
     if not logger.handlers:
-        # Get log level from environment or default to INFO
+        # Get log level from environment, default to ERROR (effectively disabled)
         level = os.getenv(
-            "SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "INFO")
+            "SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "ERROR")
         )
 
         # Set up handler with consistent format

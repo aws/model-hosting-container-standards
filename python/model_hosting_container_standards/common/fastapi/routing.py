@@ -1,13 +1,11 @@
-import logging
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
 from fastapi import APIRouter, FastAPI
 from fastapi.routing import APIRoute
 
+from ...logging_config import logger
 from ..handler import handler_registry
-
-logger = logging.getLogger(__name__)
 
 
 def normalize_prefix(prefix: str) -> str:

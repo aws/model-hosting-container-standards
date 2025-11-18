@@ -556,19 +556,53 @@ SageMakerEnvVars.CUSTOM_SCRIPT_FILENAME
 SageMakerEnvVars.SAGEMAKER_MODEL_PATH
 ```
 
-### Debug Logging
+### Logging Control
 
-```python
-from model_hosting_container_standards.logging_config import enable_debug_logging
+The package provides centralized logging control using standard SageMaker environment variables.
 
-# Enable detailed handler resolution logging
-enable_debug_logging()
-```
+**By default, the package uses ERROR level logging**, which effectively keeps it silent in production unless there are actual errors.
+
+#### Log Level Configuration
 
 ```bash
-# Or via environment variable
-export SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG
+# Set log level using SageMaker standard variable (recommended)
+export SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG  # or INFO, WARNING, ERROR (default)
+
+# Alternative: Use generic LOG_LEVEL variable
+export LOG_LEVEL=INFO  # Falls back to this if SAGEMAKER_CONTAINER_LOG_LEVEL not set
 ```
+
+#### Log Levels
+
+- **ERROR (default)**: Only errors are logged - effectively silent in normal operation
+- **WARNING**: Errors and warnings
+- **INFO**: Informational messages, warnings, and errors
+- **DEBUG**: Detailed debug information including handler resolution
+
+#### Log Format
+
+All package logs use a consistent format:
+```
+[LEVEL] logger_name - filename:line: message
+```
+
+#### Examples
+
+```bash
+# Production: ERROR level by default (silent unless errors occur)
+vllm serve model --dtype auto
+
+# Development: Enable INFO level logging
+SAGEMAKER_CONTAINER_LOG_LEVEL=INFO vllm serve model --dtype auto
+
+# Debug mode: Enable detailed DEBUG logging
+SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG vllm serve model --dtype auto
+
+# Using alternative LOG_LEVEL variable
+LOG_LEVEL=DEBUG vllm serve model --dtype auto
+```
+
+**Note**: These environment variables only control package logging. Your application's logging configuration is independent and unaffected.
 
 ## Testing
 
