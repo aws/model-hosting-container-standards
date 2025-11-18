@@ -5,4 +5,4 @@ Framework-specific functionality should be imported from their respective submod
 - FastAPI: from .common.fastapi import EnvVars, ENV_CONFIG
 """
 
-__version__ = "0.1.4"
+__version__ = "0.1.7"

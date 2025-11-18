@@ -25,6 +25,9 @@ def get_logger(name: str = "model_hosting_container_standards") -> logging.Logge
         logger.addHandler(handler)
         logger.setLevel(getattr(logging, level.upper()))
 
+        # Prevent propagation to avoid duplicate logs
+        logger.propagate = False
+
     return logger
 
 

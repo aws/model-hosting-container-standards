@@ -1,23 +1,30 @@
-[project]
+[tool.poetry]
 name = "model-hosting-container-standards"
-version = "0.1.4"
+version = "0.1.7"
 description = "Python toolkit for standardized model hosting container implementations with Amazon SageMaker integration"
-authors = [
-    {name = "Amazon Web Services"}
-]
+authors = ["Amazon Web Services"]
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.10"
-dependencies = [
-    "fastapi",
-    "starlette>=0.49.1",
-    "pydantic",
-    "jmespath",
-    "httpx",
+packages = [{include = "model_hosting_container_standards"}]
+# Include supervisor scripts in the package
+include = [
+    "model_hosting_container_standards/supervisor/scripts/*",
 ]
 
-[tool.poetry]
-packages = [{include = "model_hosting_container_standards"}]
+[tool.poetry.dependencies]
+python = ">=3.10"
+fastapi = "*"
+starlette = ">=0.49.1"
+pydantic = "*"
+jmespath = "*"
+httpx = "*"
+setuptools = "*"
+supervisor = ">=4.2.0"
+
+# Console scripts for easy access
+[tool.poetry.scripts]
+generate-supervisor-config = "model_hosting_container_standards.supervisor.scripts.generate_supervisor_config:main"
+standard-supervisor = "model_hosting_container_standards.supervisor.scripts.standard_supervisor:main"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
