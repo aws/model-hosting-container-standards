@@ -1,24 +1,20 @@
-import json
 from http import HTTPStatus
+from logging import getLogger
 from typing import Any, Dict
 
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 
-from ....common import BaseApiTransform, BaseTransformRequestOutput
+from ....common import BaseTransformRequestOutput
 from ..models import SageMakerSessionHeader
 from ..utils import get_session_id_from_request
-
-
-from pydantic import BaseModel
-from logging import getLogger
-
-RESPONSE_CONTENT_KEY = "content"
+from .base_engine_session_api_transform import BaseEngineSessionApiTransform
+from .constants import RESPONSE_CONTENT_KEY
 
 logger = getLogger(__name__)
 
 
-class CloseSessionApiTransform(BaseApiTransform):
+class CloseSessionApiTransform(BaseEngineSessionApiTransform):
     def __init__(
         self, request_shape: Dict[str, Any], response_shape: Dict[str, Any] = {}
     ):
@@ -26,54 +22,48 @@ class CloseSessionApiTransform(BaseApiTransform):
             assert RESPONSE_CONTENT_KEY in response_shape.keys()
         except AssertionError as e:
             raise ValueError(
-                f"Response shape must contain {SageMakerSessionHeader.CLOSED_SESSION_ID} and {RESPONSE_CONTENT_KEY} keys"
+                f"Response shape must contain {RESPONSE_CONTENT_KEY} key"
             ) from e
 
         super().__init__(request_shape, response_shape)
 
-    async def transform_request(self, raw_request: Request):
-        try:
-            request_data = await raw_request.json()
-        except json.JSONDecodeError as e:
+    def _validate_request_preconditions(self, raw_request: Request) -> None:
+        """Validate that session ID exists in request headers before processing.
+
+        :param Request raw_request: The incoming request to validate
+        :raises HTTPException: If session ID is missing from headers
+        """
+        session_id = get_session_id_from_request(raw_request)
+        if not session_id:
+            logger.error("No session ID found in request headers for close session")
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST.value,
-                detail=f"JSON decode error: {e}",
-            ) from e
-        transformed_request = self._transform_request(None, raw_request)
-        logger.info(transformed_request)
-        raw_request._body = json.dumps(transformed_request).encode("utf-8")
-        return BaseTransformRequestOutput(
-            request=transformed_request,
-            raw_request=raw_request,
-            intercept_func=None,
-        )
-    
-    def transform_response(self, response: Response, transform_request_output):
-        session_id = get_session_id_from_request(
-            transform_request_output.raw_request
-        )
-        if not hasattr(response, 'status_code'):
-            # Handle the case where the response is not a Response object
-            if isinstance(response, BaseModel):
-                response = response.model_dump_json()
-            elif not isinstance(response, str):
-                response = json.dumps(response)
-            response = Response(
-                status_code=HTTPStatus.OK.value,
-                content=response,
+                detail="Session ID is required in request headers to close a session",
             )
-        if response.status_code == HTTPStatus.OK.value:
-            return self._transform_ok_response(response, session_id=session_id)
-        else:
-            return self._transform_error_response(response)
-    
-    def _transform_error_response(self, response: Response, **kwargs):
-        return response
 
-    def _transform_ok_response(self, response: Response, **kwargs):
-        session_id = kwargs.get("session_id")
+    def _transform_ok_response(self, response: Response, **kwargs) -> Response:
+        """Transform successful close session response.
+
+        Extracts session ID from request headers and content from engine response,
+        validates them, and returns formatted response with CLOSED_SESSION_ID header.
+
+        :param Response response: The successful response to transform
+        :param BaseTransformRequestOutput transform_request_output: Output from the request transformation
+        :return Response: Transformed response with session headers
+        """
+        transform_request_output: BaseTransformRequestOutput = kwargs.get("transform_request_output")  # type: ignore
+        # Session ID already validated in transform_request, safe to extract
+        session_id = get_session_id_from_request(transform_request_output.raw_request)
+
         transformed_response_data = self._transform_response(response)
         content = transformed_response_data.get(RESPONSE_CONTENT_KEY)
+
+        # Validate that content was extracted from the response
+        if not content:
+            logger.debug(
+                f"No content extracted from close session response for session {session_id}"
+            )
+
         logger.info(f"Session {session_id}: {content}")
         return Response(
             status_code=HTTPStatus.OK.value,

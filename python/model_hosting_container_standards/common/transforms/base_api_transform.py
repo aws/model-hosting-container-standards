@@ -54,8 +54,7 @@ class BaseApiTransform(abc.ABC):
             if isinstance(nested_or_compiled, jmespath.parser.ParsedResult):
                 # Apply compiled JMESPath expression to extract value
                 value = nested_or_compiled.search(source_data)
-                if value:
-                    transformed_request[target_key] = value
+                transformed_request[target_key] = value
             elif isinstance(nested_or_compiled, dict):
                 # Recursively transform nested structures
                 transformed_request[target_key] = self._transform(
