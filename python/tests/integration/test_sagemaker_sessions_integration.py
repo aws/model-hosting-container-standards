@@ -18,6 +18,9 @@ Key Testing Pattern:
 """
 
 import json
+import os
+import shutil
+import tempfile
 from typing import Optional
 
 import pytest
@@ -26,9 +29,36 @@ from fastapi.responses import Response
 from fastapi.testclient import TestClient
 
 import model_hosting_container_standards.sagemaker as sagemaker_standards
+from model_hosting_container_standards.sagemaker.sessions.manager import (
+    init_session_manager_from_env,
+)
 from model_hosting_container_standards.sagemaker.sessions.models import (
+    SESSION_DISABLED_ERROR_DETAIL,
     SageMakerSessionHeader,
 )
+
+
+@pytest.fixture(autouse=True)
+def enable_sessions_for_integration(monkeypatch):
+    """Automatically enable sessions for all integration tests in this module."""
+    temp_dir = tempfile.mkdtemp()
+
+    monkeypatch.setenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", "true")
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_PATH", temp_dir)
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_EXPIRATION", "600")
+
+    # Reinitialize the global session manager
+    init_session_manager_from_env()
+
+    yield
+
+    # Clean up
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_PATH", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_EXPIRATION", raising=False)
+    init_session_manager_from_env()
 
 
 def extract_session_id_from_header(header_value: str) -> str:
@@ -511,6 +541,98 @@ class TestSessionEndToEndFlow(BaseSessionIntegrationTest):
             headers={SageMakerSessionHeader.SESSION_ID: session2_id},
         )
         assert response.status_code == 200
+
+
+class TestSessionsDisabled:
+    """Test behavior when stateful sessions are disabled.
+
+    These tests verify that session management requests fail gracefully
+    when the SAGEMAKER_ENABLE_STATEFUL_SESSIONS flag is not set.
+    """
+
+    @pytest.fixture
+    def app_with_sessions_disabled(self, monkeypatch):
+        """Create app with sessions disabled."""
+        # Explicitly disable sessions
+        monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
+        monkeypatch.delenv("SAGEMAKER_SESSIONS_PATH", raising=False)
+        monkeypatch.delenv("SAGEMAKER_SESSIONS_EXPIRATION", raising=False)
+
+        # Reinitialize the global session manager (should be None)
+        init_session_manager_from_env()
+
+        # Now create the app with sessions disabled
+        app = FastAPI()
+        router = APIRouter()
+
+        @router.post("/invocations")
+        @sagemaker_standards.stateful_session_manager()
+        async def invocations(request: Request):
+            """Stateful invocation handler."""
+            body_bytes = await request.body()
+            body = json.loads(body_bytes.decode())
+
+            return Response(
+                status_code=200,
+                content=json.dumps({"message": "success", "echo": body}),
+            )
+
+        app.include_router(router)
+        sagemaker_standards.bootstrap(app)
+
+        return TestClient(app)
+
+    def test_new_session_request_fails_when_disabled(self, app_with_sessions_disabled):
+        """Test that NEW_SESSION request fails when sessions are disabled."""
+        response = app_with_sessions_disabled.post(
+            "/invocations", json={"requestType": "NEW_SESSION"}
+        )
+
+        # Should fail with 400 BAD_REQUEST since sessions are not enabled
+        assert response.status_code == 400
+        assert SESSION_DISABLED_ERROR_DETAIL in response.text
+
+    def test_close_session_request_fails_when_disabled(
+        self, app_with_sessions_disabled
+    ):
+        """Test that CLOSE request fails when sessions are disabled."""
+        response = app_with_sessions_disabled.post(
+            "/invocations",
+            json={"requestType": "CLOSE"},
+            headers={SageMakerSessionHeader.SESSION_ID: "some-session-id"},
+        )
+
+        # Should fail with 400 BAD_REQUEST due to session header when sessions disabled
+        assert response.status_code == 400
+        assert SESSION_DISABLED_ERROR_DETAIL in response.text
+
+    def test_regular_requests_work_when_sessions_disabled(
+        self, app_with_sessions_disabled
+    ):
+        """Test that regular requests still work when sessions are disabled."""
+        response = app_with_sessions_disabled.post(
+            "/invocations", json={"prompt": "test request"}
+        )
+
+        # Regular requests should still work
+        assert response.status_code == 200
+        data = json.loads(response.text)
+        assert data["message"] == "success"
+        assert data["echo"]["prompt"] == "test request"
+
+    def test_regular_requests_with_session_header_when_disabled(
+        self, app_with_sessions_disabled
+    ):
+        """Test that requests with session headers fail validation when sessions disabled."""
+        response = app_with_sessions_disabled.post(
+            "/invocations",
+            json={"prompt": "test"},
+            headers={SageMakerSessionHeader.SESSION_ID: "invalid-session"},
+        )
+
+        # Should fail with 400 BAD_REQUEST since sessions are not enabled
+        assert response.status_code == 400
+        assert SESSION_DISABLED_ERROR_DETAIL in response.text
 
 
 if __name__ == "__main__":

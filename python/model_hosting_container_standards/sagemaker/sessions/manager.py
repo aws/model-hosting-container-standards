@@ -11,6 +11,8 @@ import uuid
 from threading import RLock
 from typing import Optional
 
+from ..config import SageMakerConfig
+
 
 class Session:
     """Represents a single stateful session with file-based storage.
@@ -137,7 +139,7 @@ class SessionManager:
         else:
             session_dir = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
 
-        self.sessions_path = properties.get("sessions_path", session_dir)
+        self.sessions_path = properties.get("sessions_path") or session_dir
         self.sessions: dict[str, Session] = {}
         self._lock = RLock()  # Thread safety for concurrent session access
 
@@ -248,5 +250,49 @@ class SessionManager:
                     self.close_session(session_id)
 
 
-# Global SessionManager instance
-session_manager = SessionManager({})
+def _init_session_manager(config: SageMakerConfig) -> SessionManager | None:
+    """Initialize a SessionManager if stateful sessions are enabled.
+
+    Args:
+        config: SagemakerConfig instance with session settings
+
+    Returns:
+        SessionManager instance if enabled, None otherwise
+    """
+    if config.enable_stateful_sessions:
+        # Convert config to dict for SessionManager
+        config_dict = {
+            "sessions_expiration": str(config.sessions_expiration),
+            "sessions_path": config.sessions_path,
+        }
+        return SessionManager(config_dict)
+    return None
+
+
+def get_session_manager() -> SessionManager | None:
+    """Get the global session manager instance.
+
+    Returns:
+        The global SessionManager instance, or None if not initialized
+    """
+    return session_manager
+
+
+def init_session_manager_from_env() -> SessionManager | None:
+    """Initialize the global session manager from environment variables.
+
+    This can be called to reinitialize the session manager after environment
+    variables have been set.
+
+    Returns:
+        The initialized SessionManager instance, or None if disabled
+    """
+    global session_manager
+    config = SageMakerConfig.from_env()
+    session_manager = _init_session_manager(config)
+    return session_manager
+
+
+# Global SessionManager instance - initialized from environment variables
+_config = SageMakerConfig.from_env()
+session_manager = _init_session_manager(_config)

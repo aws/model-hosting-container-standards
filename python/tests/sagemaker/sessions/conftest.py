@@ -12,6 +12,7 @@ from fastapi import Request
 from model_hosting_container_standards.sagemaker.sessions.manager import (
     Session,
     SessionManager,
+    init_session_manager_from_env,
 )
 from model_hosting_container_standards.sagemaker.sessions.models import (
     SageMakerSessionHeader,
@@ -63,3 +64,26 @@ def session_manager(temp_session_storage):
     """Create a real session manager with temporary storage for integration tests."""
     properties = {"sessions_path": temp_session_storage, "sessions_expiration": "600"}
     return SessionManager(properties)
+
+
+@pytest.fixture
+def enable_sessions_env(monkeypatch, temp_session_storage):
+    """Set environment variables to enable stateful sessions for tests.
+
+    This fixture sets the necessary environment variables and reinitializes
+    the global session manager from those variables.
+    """
+    monkeypatch.setenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", "true")
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_PATH", temp_session_storage)
+    monkeypatch.setenv("SAGEMAKER_SESSIONS_EXPIRATION", "600")
+
+    # Reinitialize the global session manager with the new environment variables
+    init_session_manager_from_env()
+
+    yield
+
+    # Clean up - reinitialize with empty env (will set session_manager to None)
+    monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_PATH", raising=False)
+    monkeypatch.delenv("SAGEMAKER_SESSIONS_EXPIRATION", raising=False)
+    init_session_manager_from_env()

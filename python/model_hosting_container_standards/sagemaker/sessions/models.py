@@ -37,3 +37,11 @@ class SageMakerSessionHeader:
     SESSION_ID = "X-Amzn-SageMaker-Session-Id"
     NEW_SESSION_ID = "X-Amzn-SageMaker-New-Session-Id"
     CLOSED_SESSION_ID = "X-Amzn-SageMaker-Closed-Session-Id"
+
+
+# Error messages for session management
+SESSION_DISABLED_ERROR_DETAIL = "Invalid payload. stateful sessions not enabled"
+SESSION_DISABLED_LOG_MESSAGE = (
+    f"Invalid payload. stateful sessions not enabled, "
+    f"{SageMakerSessionHeader.SESSION_ID} header not supported"
+)

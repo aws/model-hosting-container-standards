@@ -9,8 +9,12 @@ from pydantic import ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
 from .handlers import get_handler_for_request_type
-from .manager import SessionManager, session_manager
-from .models import SessionRequest
+from .manager import SessionManager, get_session_manager
+from .models import (
+    SESSION_DISABLED_ERROR_DETAIL,
+    SESSION_DISABLED_LOG_MESSAGE,
+    SessionRequest,
+)
 from .utils import get_session, get_session_id_from_request
 
 logger = logging.getLogger(__name__)
@@ -41,7 +45,9 @@ def _parse_session_request(request_data: dict) -> Optional[SessionRequest]:
         return None
 
 
-def _validate_session_if_present(raw_request: Request, session_manager: SessionManager):
+def _validate_session_if_present(
+    raw_request: Request, session_manager: Optional[SessionManager]
+):
     """Validate that the session ID in the request exists and is not expired.
 
     Args:
@@ -63,7 +69,7 @@ def _validate_session_if_present(raw_request: Request, session_manager: SessionM
 
 
 def process_session_request(
-    request_data: dict, raw_request: Request, session_manager: SessionManager
+    request_data: dict, raw_request: Request, session_manager: Optional[SessionManager]
 ):
     """Process a potential session management request.
 
@@ -92,16 +98,22 @@ def process_session_request(
     # Not a session request - pass through for normal processing
     if session_request is None:
         return BaseTransformRequestOutput(
-            request=None,
             raw_request=raw_request,
             intercept_func=None,
+        )
+
+    if session_manager is None:
+        logger.error(SESSION_DISABLED_LOG_MESSAGE)
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST.value,
+            detail=SESSION_DISABLED_ERROR_DETAIL,
         )
 
     # Route to appropriate session management handler
     intercept_func = get_handler_for_request_type(session_request.requestType)
 
     return BaseTransformRequestOutput(
-        request=session_manager, raw_request=raw_request, intercept_func=intercept_func
+        raw_request=raw_request, intercept_func=intercept_func
     )
 
 
@@ -124,7 +136,7 @@ class SessionApiTransform(BaseApiTransform):
             The request/response shapes are passed to the parent class but not used
             for validation in this transform, as session requests use their own validation.
         """
-        self._session_manager = session_manager
+        self._session_manager = get_session_manager()
         super().__init__(request_shape, response_shape)
 
     async def transform_request(self, raw_request):

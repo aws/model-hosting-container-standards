@@ -2,7 +2,7 @@
 
 import time
 from http import HTTPStatus
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from fastapi import Response
@@ -61,7 +61,11 @@ class TestCreateSession:
         """Test successfully creates a session and returns response."""
         mock_session_manager.create_session.return_value = mock_session_with_expiration
 
-        response = await create_session(mock_session_manager, mock_request)
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.handlers.get_session_manager",
+            return_value=mock_session_manager,
+        ):
+            response = await create_session(mock_request)
 
         assert isinstance(response, Response)
         assert response.status_code == HTTPStatus.OK.value
@@ -80,7 +84,11 @@ class TestCreateSession:
         """Test calls session_manager.create_session method."""
         mock_session_manager.create_session.return_value = mock_session_with_expiration
 
-        await create_session(mock_session_manager, mock_request)
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.handlers.get_session_manager",
+            return_value=mock_session_manager,
+        ):
+            await create_session(mock_request)
 
         mock_session_manager.create_session.assert_called_once()
 
@@ -91,8 +99,12 @@ class TestCreateSession:
         """Test raises HTTPException when session creation fails."""
         mock_session_manager.create_session.side_effect = Exception("Creation failed")
 
-        with pytest.raises(HTTPException) as exc_info:
-            await create_session(mock_session_manager, mock_request)
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.handlers.get_session_manager",
+            return_value=mock_session_manager,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await create_session(mock_request)
 
         assert exc_info.value.status_code == HTTPStatus.FAILED_DEPENDENCY.value
         assert "Failed to create session" in exc_info.value.detail
@@ -109,7 +121,11 @@ class TestCloseSession:
         session_id = "test-session-123"
         mock_session_manager.close_session.return_value = None
 
-        response = await close_session(mock_session_manager, mock_request_with_session)
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.handlers.get_session_manager",
+            return_value=mock_session_manager,
+        ):
+            response = await close_session(mock_request_with_session)
 
         assert isinstance(response, Response)
         assert response.status_code == HTTPStatus.OK.value
@@ -124,8 +140,12 @@ class TestCloseSession:
         """Test raises HTTPException when session close fails."""
         mock_session_manager.close_session.side_effect = ValueError("Session not found")
 
-        with pytest.raises(HTTPException) as exc_info:
-            await close_session(mock_session_manager, mock_request_with_session)
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.handlers.get_session_manager",
+            return_value=mock_session_manager,
+        ):
+            with pytest.raises(HTTPException) as exc_info:
+                await close_session(mock_request_with_session)
 
         assert exc_info.value.status_code == HTTPStatus.FAILED_DEPENDENCY.value
         assert "Failed to close session" in exc_info.value.detail

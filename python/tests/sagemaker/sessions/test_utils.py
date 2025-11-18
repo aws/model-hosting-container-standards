@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.exceptions import HTTPException
 
 from model_hosting_container_standards.sagemaker.sessions.models import (
+    SESSION_DISABLED_ERROR_DETAIL,
     SageMakerSessionHeader,
 )
 from model_hosting_container_standards.sagemaker.sessions.utils import (
@@ -92,7 +93,7 @@ class TestGetSession:
             get_session(None, raw_request)
 
         assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
-        assert "stateful sessions not enabled" in exc_info.value.detail
+        assert SESSION_DISABLED_ERROR_DETAIL in exc_info.value.detail
         assert SageMakerSessionHeader.SESSION_ID in exc_info.value.detail
 
     def test_returns_none_when_sessions_not_enabled_and_no_header(self):
