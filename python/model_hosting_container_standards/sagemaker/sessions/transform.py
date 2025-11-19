@@ -8,12 +8,14 @@ from fastapi.exceptions import HTTPException
 from pydantic import ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
+from ...common.handler import handler_registry
 from .handlers import get_handler_for_request_type
 from .manager import SessionManager, get_session_manager
 from .models import (
     SESSION_DISABLED_ERROR_DETAIL,
     SESSION_DISABLED_LOG_MESSAGE,
     SessionRequest,
+    SessionRequestType,
 )
 from .utils import get_session, get_session_id_from_request
 
@@ -43,6 +45,31 @@ def _parse_session_request(request_data: dict) -> Optional[SessionRequest]:
             )
         # Not a session request
         return None
+
+
+def _should_validate_session(session_request: Optional[SessionRequest]) -> bool:
+    """Determine if session validation is needed for the given request.
+
+    Session validation is required when:
+    - Request is a NEW_SESSION without a custom create_session handler
+    - Request is a CLOSE without a custom close_session handler
+
+    Args:
+        session_request: Parsed session request, or None if not a session request
+
+    Returns:
+        True if session validation should be performed, False otherwise
+    """
+    if not session_request:
+        return False
+
+    if session_request.requestType == SessionRequestType.NEW_SESSION:
+        return not handler_registry.has_handler("create_session")
+
+    if session_request.requestType == SessionRequestType.CLOSE:
+        return not handler_registry.has_handler("close_session")
+
+    return False
 
 
 def _validate_session_if_present(
@@ -90,10 +117,11 @@ def process_session_request(
         HTTPException: If request is malformed or session validation fails
     """
     session_request = _parse_session_request(request_data)
-
-    # Validate session if session ID is present in headers
-    # and raise error if session ID is invalid
-    _validate_session_if_present(raw_request, session_manager)
+    should_validate = _should_validate_session(session_request)
+    if should_validate:
+        # Validate session if session ID is present in headers
+        # and raise error if session ID is invalid
+        _validate_session_if_present(raw_request, session_manager)
 
     # Not a session request - pass through for normal processing
     if session_request is None:
@@ -102,7 +130,7 @@ def process_session_request(
             intercept_func=None,
         )
 
-    if session_manager is None:
+    if should_validate and session_manager is None:
         logger.error(SESSION_DISABLED_LOG_MESSAGE)
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST.value,

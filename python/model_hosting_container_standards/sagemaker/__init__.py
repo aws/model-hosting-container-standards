@@ -21,7 +21,10 @@ from .lora import (
 from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
-from .sessions import create_session_transform_decorator
+from .sessions import (
+    create_session_transform_decorator,
+    register_engine_session_handler,
+)
 
 # SageMaker decorator instances - created using utility functions
 
@@ -129,6 +132,23 @@ def stateful_session_manager():
         A decorator that can be applied to route handlers to enable session management
     """
     return create_session_transform_decorator()(request_shape={}, response_shape={})
+
+
+def register_create_session_handler(
+    request_shape, session_id_path: str, content_path: Optional[str] = None
+):
+    return register_engine_session_handler(
+        "create_session",
+        request_shape=request_shape,
+        session_id_path=session_id_path,
+        content_path=content_path,
+    )
+
+
+def register_close_session_handler(request_shape, content_path: Optional[str] = None):
+    return register_engine_session_handler(
+        "close_session", request_shape=request_shape, content_path=content_path
+    )
 
 
 def bootstrap(app: FastAPI) -> FastAPI:
