@@ -3,6 +3,26 @@
 import logging
 import os
 import sys
+from typing import Union
+
+
+def parse_level(level: str) -> Union[int, str]:
+    """Parse a log level string into a valid logging level.
+
+    Args:
+        level: Log level string to parse.
+
+    Returns:
+        Valid logging level.
+    """
+    # Convert level to uppercase
+    level = level.upper()
+
+    # Convert numeric log level string to int so `setLevel` can recognize it
+    try:
+        return int(level)
+    except ValueError:
+        return level
 
 
 def get_logger(name: str = "model_hosting_container_standards") -> logging.Logger:
@@ -22,7 +42,7 @@ def get_logger(name: str = "model_hosting_container_standards") -> logging.Logge
         # Convert level to uppercase
         level = os.getenv(
             "SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "ERROR")
-        ).upper()
+        )
 
         # Set up handler with consistent format
         handler = logging.StreamHandler(sys.stdout)
@@ -32,10 +52,13 @@ def get_logger(name: str = "model_hosting_container_standards") -> logging.Logge
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
-        # Convert numeric log level string to int so `setLevel` can recognize it
-        # Will raise error if the set log level is not registered in
-        # logging.getLevelNamesMapping()
-        logger.setLevel(int(level) if level.isdigit() else level.upper())
+        try:
+            # Will raise error if the set log level is not registered in
+            # logging.getLevelNamesMapping()
+            logger.setLevel(parse_level(level))
+        except (ValueError, AttributeError, TypeError):
+            # if setLevel with environment variable fails, default to ERROR
+            logger.setLevel(logging.ERROR)
 
         # Prevent propagation to avoid duplicate logs
         logger.propagate = False
