@@ -19,9 +19,10 @@ def get_logger(name: str = "model_hosting_container_standards") -> logging.Logge
     # Only configure if not already configured
     if not logger.handlers:
         # Get log level from environment, default to ERROR (effectively disabled)
+        # Convert level to uppercase
         level = os.getenv(
             "SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "ERROR")
-        )
+        ).upper()
 
         # Set up handler with consistent format
         handler = logging.StreamHandler(sys.stdout)
@@ -30,7 +31,11 @@ def get_logger(name: str = "model_hosting_container_standards") -> logging.Logge
         )
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        logger.setLevel(getattr(logging, level.upper()))
+
+        # Convert numeric log level string to int so `setLevel` can recognize it
+        # Will raise error if the set log level is not registered in
+        # logging.getLevelNamesMapping()
+        logger.setLevel(int(level) if level.isdigit() else level.upper())
 
         # Prevent propagation to avoid duplicate logs
         logger.propagate = False
