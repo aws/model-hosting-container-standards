@@ -1,6 +1,6 @@
 # MHCS Integration Runbook
 
-**Version**: 1.0  
+**Version**: 1.0  container
 **Last Updated**: November 16, 2025  
 **Target Audience**: ML framework developers integrating with Amazon SageMaker
 
@@ -30,12 +30,11 @@
    - 4.1 [Transform System Overview](#41-transform-system-overview)
    - 4.2 [Transform System Components](#42-transform-system-components)
    - 4.3 [JMESPath Basics](#43-jmespath-basics)
-   - 4.4 [Deconstructing @inject_adapter_id](#44-deconstructing-inject_adapter_id)
-   - 4.5 [Creating Custom Transforms](#45-creating-custom-transforms)
+   - 4.4 [Creating Custom Transforms](#44-creating-custom-transforms)
 
 5. [LoRA Adapter Support](#5-lora-adapter-support)
    - 5.1 [LoRA Overview](#51-lora-overview)
-   - 5.2 [Adapter ID Injection](#52-adapter-id-injection)
+   - 5.2 [Adapter ID Injection with @inject_adapter_id](#52-adapter-id-injection-with-inject_adapter_id)
    - 5.3 [Load/Unload Adapter Handlers](#53-loadunload-adapter-handlers)
    - 5.4 [Complete LoRA Example](#54-complete-lora-example)
 
@@ -712,9 +711,538 @@ curl http://localhost:8000/ping
 
 ## 4. Transform Decorators
 
+### 4.1 Transform System Overview
+
+The transform system is MHCS's mechanism for adapting between different API formats. It enables features like LoRA adapter injection, session management, and custom request/response transformations without writing boilerplate code.
+
+**What are Transforms?**
+
+Transforms automatically extract data from incoming requests (headers, body, path parameters, query parameters) and inject it into your handler functions in a structured format. They can also transform responses before sending them back to clients.
+
+**Why Transforms Matter:**
+
+Different systems use different API formats:
+- **SageMaker** sends adapter IDs in the `X-Amzn-SageMaker-Adapter-Identifier` header
+- **Your framework** expects adapter IDs in the request body as `{"model": "adapter-name"}`
+- **Transforms bridge this gap** automatically
+
+Without transforms, you'd write repetitive code in every handler:
+
+```python
+# Without transforms - repetitive boilerplate
+async def invocations(request: Request):
+    body = await request.json()
+    adapter_id = request.headers.get("X-Amzn-SageMaker-Adapter-Identifier")
+    if adapter_id:
+        body["model"] = adapter_id
+    # Now process the request...
+```
+
+With transforms, this happens automatically:
+
+```python
+# With transforms - clean and declarative
+@inject_adapter_id("model")
+async def invocations(request: Request):
+    body = await request.json()
+    # adapter_id is already in body["model"]
+```
+
+**Transform System Architecture:**
+
+The transform system has three layers:
+
+```mermaid
+graph TD
+    A[BaseApiTransform] -->|extends| B[Specific Transform Classes]
+    B -->|used by| C[create_transform_decorator Factory]
+    C -->|creates| D[Decorator Functions]
+    D -->|applied to| E[Your Handler Functions]
+    
+    B1[RegisterLoRAApiTransform] -.->|example| B
+    B2[InjectToBodyApiTransform] -.->|example| B
+    B3[SessionApiTransform] -.->|example| B
+    
+    D1[inject_adapter_id decorator] -.->|example| D
+    D2[register_load_adapter_handler decorator] -.->|example| D
+    D3[stateful_session_manager decorator] -.->|example| D
+    
+    style A fill:#e1f5ff
+    style C fill:#fff4e1
+    style D fill:#e8f5e9
+```
+
+**Layer 1: BaseApiTransform (Abstract Base Class)**
+
+The foundation that defines how transformations work:
+
+```python
+class BaseApiTransform:
+    def __init__(self, request_shape: Dict, response_shape: Dict):
+        # Compiles JMESPath expressions for efficient execution
+        self._request_shape = _compile_jmespath_expressions(request_shape)
+        self._response_shape = _compile_jmespath_expressions(response_shape)
+    
+    def _transform(self, source_data: Dict, target_shape: Dict) -> Dict:
+        # Applies JMESPath expressions to extract and transform data
+        pass
+    
+    async def transform_request(self, raw_request: Request):
+        # Subclasses implement specific request transformation logic
+        raise NotImplementedError()
+    
+    def transform_response(self, response: Response, transform_request_output):
+        # Subclasses implement specific response transformation logic
+        raise NotImplementedError()
+```
+
+**Layer 2: Specific Transform Classes**
+
+Concrete implementations for different use cases:
+
+- **`RegisterLoRAApiTransform`** - Transforms requests for loading LoRA adapters
+- **`UnregisterLoRAApiTransform`** - Transforms requests for unloading LoRA adapters
+- **`InjectToBodyApiTransform`** - Injects adapter IDs from headers into request body
+- **`SessionTransform`** - Manages session headers and request types
+
+Each class extends `BaseApiTransform` and implements the abstract methods for its specific use case.
+
+**Layer 3: Decorator Factory (create_transform_decorator)**
+
+A factory function that creates decorators dynamically:
+
+```python
+def create_transform_decorator(handler_type: str, transform_resolver: Callable):
+    """Creates a decorator factory for a specific handler type."""
+    
+    def decorator_with_params(request_shape: Dict = None, response_shape: Dict = None):
+        """Configures the transformation shapes."""
+        
+        def decorator(func: Callable):
+            """The actual decorator that wraps your handler."""
+            # Resolves the appropriate transform class
+            transformer = _resolve_transforms(handler_type, transform_resolver, 
+                                             request_shape, response_shape)
+            
+            async def decorated_func(raw_request: Request):
+                # Apply request transformation
+                transform_output = await transformer.transform_request(raw_request)
+                
+                # Call your handler with transformed data
+                response = await transformer.intercept(func, transform_output)
+                
+                # Apply response transformation
+                return transformer.transform_response(response, transform_output)
+            
+            return decorated_func
+        return decorator
+    return decorator_with_params
+```
+
+**Layer 4: Decorator Functions (What You Use)**
+
+High-level decorators created by the factory:
+
+```python
+# LoRA decorators
+@inject_adapter_id("model")                    # Injects adapter ID into body
+@register_load_adapter_handler(request_shape={...})   # Loads adapters
+@register_unload_adapter_handler(request_shape={...}) # Unloads adapters
+
+# Session decorator
+@stateful_session_manager()                    # Manages sessions
+
+# Core decorators
+@register_ping_handler                         # Registers ping handler
+@register_invocation_handler                   # Registers invocation handler
+```
+
+**How Transforms Enable LoRA and Other Features:**
+
+**Example 1: LoRA Adapter ID Injection**
+
+The `@inject_adapter_id("model")` decorator:
+
+1. **Extracts** adapter ID from `X-Amzn-SageMaker-Adapter-Identifier` header
+2. **Injects** it into the request body at the `model` field
+3. **Passes** the modified request to your handler
+
+This happens automatically before your handler executes.
+
+**Example 2: LoRA Adapter Loading**
+
+The `@register_load_adapter_handler` decorator:
+
+1. **Transforms** SageMaker's request format (`{"name": "...", "src": "..."}`)
+2. **Maps** to your framework's format using JMESPath expressions
+3. **Passes** structured data to your handler as a `SimpleNamespace` object
+4. **Transforms** your response back to SageMaker's expected format
+
+**Example 3: Session Management**
+
+The `@stateful_session_manager()` decorator:
+
+1. **Detects** session request types (`NEW_SESSION`, `CLOSE`)
+2. **Manages** session creation, retrieval, and cleanup
+3. **Injects** session headers into responses
+4. **Validates** that sessions are enabled before processing
+
+**Example Request Flow with Transforms (`@inject_adapter_id`):**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FastAPI
+    participant Transform
+    participant Handler
+    
+    Client->>FastAPI: POST /invocations<br/>Header: X-Amzn-SageMaker-Adapter-Identifier: my-adapter<br/>Body: {"prompt": "..."}
+    FastAPI->>Transform: Raw Request
+    Transform->>Transform: Extract adapter ID from header
+    Transform->>Transform: Inject into body["model"]
+    Transform->>Handler: Modified Request<br/>Body: {"prompt": "...", "model": "my-adapter"}
+    Handler->>Handler: Process inference
+    Handler->>Transform: Response
+    Transform->>Transform: Transform response (if needed)
+    Transform->>FastAPI: Final Response
+    FastAPI->>Client: Response
+```
+
+**Key Concepts:**
+
+1. **JMESPath Expressions**: Query language for extracting data from JSON structures (covered in [Section 4.3](#43-jmespath-basics))
+
+2. **Request Shape**: Dictionary defining what data to extract and where to put it
+   ```python
+   request_shape = {
+       "adapter_id": "body.name",           # Extract body.name → adapter_id
+       "adapter_source": "body.src",        # Extract body.src → adapter_source
+   }
+   ```
+
+3. **Response Shape**: Dictionary defining how to transform responses (optional)
+   ```python
+   response_shape = {
+       "status": "body.result.status",     # Map response fields
+       "message": "body.result.message"
+   }
+   ```
+
+4. **Transform vs Passthrough**: 
+   - Pass `request_shape=None` for no transformation (passthrough mode)
+   - Pass `request_shape={}` for transform infrastructure without JMESPath
+   - Pass `request_shape={...}` for full transformation
+
+**When to Use Transforms:**
+
+✅ **Use transforms when:**
+- Adapting between different API formats (SageMaker ↔ your framework)
+- Extracting data from headers, path params, or query params
+- Building reusable request/response patterns
+
+**Deeper Understanding:**
+
+For a complete understanding of the transform system:
+
+- **Next section**: [Section 4.2: Transform System Components](#42-transform-system-components) - Detailed component breakdown
+- **JMESPath guide**: [Section 4.3: JMESPath Basics](#43-jmespath-basics) - Learn the query language
+- **Practical example**: [Section 4.4: Deconstructing @inject_adapter_id](#44-deconstructing-inject_adapter_id) - See how a real decorator works
+- **Custom transforms**: [Section 4.5: Creating Custom Transforms](#45-creating-custom-transforms) - Build your own
+- **LoRA factory details**: `python/model_hosting_container_standards/sagemaker/lora/FACTORY_USAGE.md` - Deep dive into LoRA-specific usage
+
+**Summary:**
+
+The transform system is a three-layer architecture that automatically adapts between API formats:
+1. **BaseApiTransform** provides the transformation engine using JMESPath
+2. **Specific transform classes** implement use-case-specific logic
+3. **Decorator factory** creates high-level decorators you use in your code
+
+---
+
+### 4.2 Transform System Components
+
 [Content to be added in subsequent tasks]
 
+---
+
+### 4.3 JMESPath Basics
+
+[Content to be added in subsequent tasks]
+
+---
+
+### 4.4 Creating Custom Transforms
+
+This section provides a step-by-step guide for extending `BaseApiTransform` to create custom request/response transformations for your specific use cases.
+
+**When to Create Custom Transforms:**
+
+You should create a custom transform when you need to:
+- Adapt between your framework's API format and SageMaker's expected format
+- Extract data from multiple sources (headers, body, path params, query params)
+- Validate and transform request data before passing to your handler
+- Transform response data to match SageMaker's expected format
+- Implement reusable transformation logic across multiple handlers
+
+**Prerequisites:**
+
+Before creating custom transforms, you should understand:
+- Python async/await syntax
+- FastAPI Request and Response objects
+- JMESPath expressions (see [Section 4.3](#43-jmespath-basics))
+- The transform system architecture (see [Section 4.1](#41-transform-system-overview))
+
+#### Step 1: Extend BaseApiTransform
+
+Create a new class that extends `BaseApiTransform` and implements the two required abstract methods:
+
+```python
+from fastapi import Request, Response
+from model_hosting_container_standards.common import BaseApiTransform, BaseTransformRequestOutput
+
+class MyCustomTransform(BaseApiTransform):
+    """Custom transform for my specific use case."""
+    
+    def __init__(self, request_shape, response_shape={}):
+        """Initialize with request and response shapes.
+        
+        Args:
+            request_shape: JMESPath expressions for extracting request data
+            response_shape: JMESPath expressions for transforming responses
+        """
+        super().__init__(request_shape, response_shape)
+        # Add any custom initialization here
+    
+    async def transform_request(self, raw_request: Request):
+        """Transform incoming request.
+        
+        This method is called before your handler executes.
+        Extract and validate data, then return a BaseTransformRequestOutput.
+        """
+        raise NotImplementedError()
+    
+    def transform_response(self, response: Response, transform_request_output):
+        """Transform outgoing response.
+        
+        This method is called after your handler executes.
+        Modify the response based on the request transformation output.
+        """
+        raise NotImplementedError()
+```
+
+**Key Points:**
+
+- **`__init__`**: Call `super().__init__(request_shape, response_shape)` to initialize JMESPath compilation
+- **`transform_request`**: Must be async, receives raw FastAPI Request, returns `BaseTransformRequestOutput`
+- **`transform_response`**: Receives the handler's response and the request transformation output
+- Both methods are required - implement them even if one is just a passthrough
+
+#### Step 2: Implement transform_request
+
+The `transform_request` method extracts and validates data from the incoming request:
+
+```python
+import json
+from http import HTTPStatus
+from fastapi.exceptions import HTTPException
+from pydantic import BaseModel, ValidationError
+
+class MyRequestModel(BaseModel):
+    """Pydantic model for request validation."""
+    required_field: str
+    optional_field: str = "default"
+
+class MyCustomTransform(BaseApiTransform):
+    async def transform_request(self, raw_request: Request):
+        """Transform and validate incoming request."""
+        # Step 1: Parse JSON body
+        try:
+            request_data = await raw_request.json()
+        except json.JSONDecodeError as e:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=f"JSON decode error: {e}",
+            )
+        
+        # Step 2: Validate using Pydantic model
+        try:
+            validated_request = MyRequestModel.model_validate(request_data)
+        except ValidationError as e:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=e.json(include_url=False),
+            )
+        
+        # Step 3: Apply JMESPath transformations (if request_shape provided)
+        transformed_data = self._transform_request(validated_request, raw_request)
+        
+        # Step 4: Return BaseTransformRequestOutput
+        return BaseTransformRequestOutput(
+            request=transformed_data,  # Transformed data passed to handler
+            raw_request=raw_request,   # Original request for context
+        )
+```
+
+**What's Happening:**
+
+1. **Parse JSON**: Extract request body using `await raw_request.json()`
+2. **Validate**: Use Pydantic models to validate required fields and types
+3. **Transform**: Call `self._transform_request()` to apply JMESPath expressions from `request_shape`
+4. **Return**: Wrap in `BaseTransformRequestOutput` with both transformed and raw request
+
+**The `_transform_request` Helper:**
+
+The parent class provides `_transform_request(request, raw_request)` which:
+- Serializes the request and raw_request into a dictionary
+- Applies JMESPath expressions from `request_shape`
+- Returns a dictionary of extracted values
+
+You can skip this step if you don't need JMESPath transformations.
+
+#### Step 3: Implement transform_response
+
+The `transform_response` method modifies the response after your handler executes:
+
+```python
+class MyCustomTransform(BaseApiTransform):
+    def transform_response(self, response: Response, transform_request_output):
+        """Transform the response based on request processing."""
+        # Option 1: Simple passthrough (no transformation)
+        return response
+        
+        # Option 2: Route based on status code
+        if response.status_code == HTTPStatus.OK:
+            return self._transform_ok_response(response, transform_request_output)
+        else:
+            return self._transform_error_response(response, transform_request_output)
+    
+    def _transform_ok_response(self, response: Response, transform_request_output):
+        """Transform successful responses."""
+        # Extract data from request transformation
+        adapter_name = transform_request_output.request.get("adapter_name")
+        
+        # Create custom response
+        return Response(
+            status_code=HTTPStatus.OK.value,
+            content=f"Success: Processed {adapter_name}",
+        )
+    
+    def _transform_error_response(self, response: Response, transform_request_output):
+        """Transform error responses."""
+        # Pass through or customize error responses
+        return response
+```
+
+**Response Transformation Patterns:**
+
+1. **Passthrough**: Return response unchanged (simplest)
+2. **Status-based routing**: Different logic for success vs error responses
+3. **Custom messages**: Generate standardized response messages
+4. **Header injection**: Add custom headers based on request data
+
+**Accessing Request Data in Response Transform:**
+
+The `transform_request_output` parameter contains:
+- `transform_request_output.request` - The transformed request data
+- `transform_request_output.raw_request` - The original FastAPI Request object
+
+Use this to access request context when building responses.
+
+#### Step 4: Create a Decorator Using create_transform_decorator
+
+Once your transform class is ready, create a decorator factory using `create_transform_decorator`:
+
+```python
+from model_hosting_container_standards.common.transforms.base_factory import create_transform_decorator
+
+# Define a resolver function that maps handler types to transform classes
+def my_transform_resolver(handler_type: str):
+    """Resolve handler type to appropriate transform class."""
+    if handler_type == "my_custom_operation":
+        return MyCustomTransform
+    else:
+        raise ValueError(f"Unsupported handler type: {handler_type}")
+
+# Create the decorator factory
+my_custom_decorator = create_transform_decorator(
+    handler_type="my_custom_operation",
+    transform_resolver=my_transform_resolver
+)
+```
+
+**How It Works:**
+
+1. **`create_transform_decorator`**: Factory function that creates decorators
+2. **`handler_type`**: String identifier for your operation (e.g., "register_adapter", "my_custom_operation")
+3. **`transform_resolver`**: Function that maps handler types to transform classes
+
+The factory returns a decorator that you can use on your handler functions.
+
+#### Step 5: Apply the Decorator to Your Handler
+
+Use your custom decorator on handler functions:
+
+```python
+from fastapi import Request
+
+@my_custom_decorator(
+    request_shape={
+        "adapter_name": "body.name",
+        "adapter_path": "body.path",
+        "custom_header": "headers.\"x-custom-header\""
+    },
+    response_shape={}
+)
+async def my_handler(transformed_data, raw_request: Request):
+    """Handler receives transformed data as first argument.
+    
+    Args:
+        transformed_data: SimpleNamespace with attributes from request_shape
+        raw_request: Original FastAPI Request for additional context
+    """
+    # Access transformed data via attributes
+    adapter_name = transformed_data.adapter_name
+    adapter_path = transformed_data.adapter_path
+    custom_header = transformed_data.custom_header
+    
+    # Your handler logic here
+    result = f"Processing {adapter_name} from {adapter_path}"
+    
+    return {"status": "success", "message": result}
+```
+
+**Handler Signature:**
+
+When using transforms with `request_shape`:
+- **First argument**: `transformed_data` - A `SimpleNamespace` object with attributes matching `request_shape` keys
+- **Second argument**: `raw_request` - The original FastAPI Request object
+
+When using passthrough mode (`request_shape=None`):
+- **Only argument**: `raw_request` - The original FastAPI Request object
+
+---
+
 ## 5. LoRA Adapter Support
+
+### 5.1 LoRA Overview
+
+[Content to be added in subsequent tasks]
+
+---
+
+### 5.2 Adapter ID Injection with @inject_adapter_id
+
+[Content to be added in subsequent tasks]
+
+---
+
+### 5.3 Load/Unload Adapter Handlers
+
+[Content to be added in subsequent tasks]
+
+---
+
+### 5.4 Complete LoRA Example
 
 [Content to be added in subsequent tasks]
 
