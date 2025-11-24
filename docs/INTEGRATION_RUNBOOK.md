@@ -935,7 +935,6 @@ sequenceDiagram
 
 **When to Use Transforms:**
 
-✅ **Use transforms when:**
 - Adapting between different API formats (SageMaker ↔ your framework)
 - Extracting data from headers, path params, or query params
 - Building reusable request/response patterns
@@ -1226,19 +1225,531 @@ When using passthrough mode (`request_shape=None`):
 
 ### 5.1 LoRA Overview
 
-[Content to be added in subsequent tasks]
+**What are LoRA Adapters?**
+
+LoRA (Low-Rank Adaptation) is a technique for efficiently fine-tuning large language models by training small adapter modules instead of modifying the entire base model. These adapters are lightweight (typically a few MB compared to multi-GB base models) and can be dynamically loaded and unloaded at runtime.
+
+**Key LoRA Concepts:**
+
+- **Base Model**: The original, pre-trained model (e.g., Llama-2-7B, Mistral-7B)
+- **LoRA Adapter**: A small set of trainable parameters that modify the base model's behavior for specific tasks or domains
+- **Adapter Loading**: Dynamically loading an adapter into memory to use with the base model
+- **Adapter Specification**: Specifying which adapter to use for a particular inference request
+
+**Why SageMaker Needs Adapter Management**
+
+SageMaker's multi-adapter hosting capabilities allow you to:
+
+1. **Serve Multiple Adapters**: Host dozens of task-specific adapters with a single base model, reducing memory footprint and deployment costs
+2. **Dynamic Loading**: Load and unload adapters on-demand
+3. **Request-Level Selection**: Route each inference request to a specific adapter using HTTP headers]
+
+**MHCS's LoRA Capabilities**
+
+MHCS provides three key features for LoRA integration:
+
+1. **Automatic Adapter ID Injection** (`@inject_adapter_id`)
+   - Extracts adapter identifiers from SageMaker headers
+   - Injects them into your framework's request format
+   - Supports both replace and append modes for flexible adapter specification
+
+2. **Adapter Lifecycle Management** (`@register_load_adapter_handler`, `@register_unload_adapter_handler`)
+   - Standardized endpoints for loading adapters: `POST /adapters`
+   - Standardized endpoints for unloading adapters: `DELETE /adapters/{adapter_name}`
+   - Automatic request/response transformation between SageMaker and framework formats
+
+3. **Transform-Based Architecture**
+   - Built on MHCS's transform decorator system (see [Section 4: Transform Decorators](#4-transform-decorators))
+   - Uses JMESPath expressions to map between API formats
+
+**Integration Pattern:**
+
+```python
+# 1. Decorate your invocation handler to inject adapter IDs
+@inject_adapter_id("model")
+async def invocations(request: Request):
+    body = await request.json()
+    adapter_id = body.get("model")  # Automatically injected from header
+    # Your inference logic with adapter_id
+    
+# 2. Implement adapter loading
+@register_load_adapter_handler(
+    request_shape={"adapter_name": "body.name", "adapter_path": "body.src"}
+)
+async def load_adapter(data, request):
+    # Your framework's adapter loading logic
+    
+# 3. Implement adapter unloading
+@register_unload_adapter_handler(
+    request_shape={"adapter_name": "path_params.adapter_name"}
+)
+async def unload_adapter(data, request):
+    # Your framework's adapter unloading logic
+```
+
+**Additional Resources:**
+
+For deeper technical details on MHCS's LoRA implementation:
+- **LoRA Module README**: `python/model_hosting_container_standards/sagemaker/lora/README.md`
+- **LoRA Factory Usage Guide**: `python/model_hosting_container_standards/sagemaker/lora/FACTORY_USAGE.md`
+- **Transform Decorator Guide**: See [Section 4: Transform Decorators](#4-transform-decorators) in this runbook
 
 ---
 
 ### 5.2 Adapter ID Injection with @inject_adapter_id
 
-[Content to be added in subsequent tasks]
+The `@inject_adapter_id` decorator automatically extracts adapter identifiers from SageMaker headers and injects them into your request body. This eliminates boilerplate code and ensures consistent adapter handling across your framework.
+
+**Why This Matters:**
+
+SageMaker sends adapter identifiers in the `X-Amzn-SageMaker-Adapter-Identifier` header, but most ML frameworks expect adapter IDs in the request body (e.g., `{"model": "adapter-name"}`). Without this decorator, you'd need to manually extract headers and modify the request body in every handler.
+
+#### How @inject_adapter_id Works Under the Hood
+
+The `@inject_adapter_id` decorator is built on MHCS's transform system (see [Section 4: Transform Decorators](#4-transform-decorators)). It uses the `InjectToBodyApiTransform` class which:
+
+1. **Extracts** the adapter ID from the `X-Amzn-SageMaker-Adapter-Identifier` header using JMESPath
+2. **Injects** the adapter ID into the specified path in the request body
+3. **Supports** two modes: replace (default) or append
+
+**Transform Implementation:**
+
+```python
+# Conceptual view of what @inject_adapter_id does internally
+request_shape = {
+    "model": 'headers."X-Amzn-SageMaker-Adapter-Identifier"'  # JMESPath expression
+}
+
+# The decorator creates an InjectToBodyApiTransform with this request_shape
+# which extracts from headers and injects into body["model"]
+```
+
+#### The X-Amzn-SageMaker-Adapter-Identifier Header
+
+SageMaker uses a standardized header for adapter identification:
+
+| Header Name | Value | Description |
+|------------|-------|-------------|
+| `X-Amzn-SageMaker-Adapter-Identifier` | String (adapter name/ID) | Specifies which LoRA adapter to use for the request |
+
+**Example Request:**
+
+```bash
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -H "X-Amzn-SageMaker-Adapter-Identifier: my-adapter-123" \
+  -d '{"prompt": "Hello world"}'
+```
+
+#### Basic Usage: Replace Mode (Default)
+
+Replace mode overwrites the value at the specified path with the adapter ID from the header.
+
+**Decorator Signature:**
+
+```python
+@inject_adapter_id(adapter_path: str, append: bool = False, separator: Optional[str] = None)
+```
+
+**Parameters:**
+
+- `adapter_path` (str, required): The JSON path where the adapter ID should be injected in the request body. Supports dot notation for nested paths (e.g., `"model"`, `"body.model"`, `"config.lora_name"`).
+- `append` (bool, optional): If `True`, appends the adapter ID to existing value. If `False` (default), replaces the value.
+- `separator` (str, optional): Required when `append=True`. The separator string to use when appending (e.g., `":"`, `"-"`, `"_"`).
+
+**Example 1: Simple Field Injection**
+
+```python
+from fastapi import Request
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.inject_adapter_id("model")  # Inject into "model" field
+async def invocations(request: Request) -> dict:
+    body = await request.json()
+    adapter_id = body.get("model")  # Adapter ID is now in body["model"]
+    
+    # Your framework's inference logic
+    result = f"Using adapter: {adapter_id}"
+    return {"predictions": [result]}
+```
+
+**Request Transformation:**
+
+```python
+# Incoming request body:
+{"prompt": "Hello world"}
+
+# After @inject_adapter_id("model") with header X-Amzn-SageMaker-Adapter-Identifier: my-adapter
+# Transformed request body:
+{"prompt": "Hello world", "model": "my-adapter"}
+```
+
+**JMESPath Expression Used (Replace Mode):**
+
+```python
+# The decorator internally creates this request_shape:
+request_shape = {
+    "model": 'headers."X-Amzn-SageMaker-Adapter-Identifier"'
+}
+
+# This JMESPath expression:
+# 1. Extracts value from headers["X-Amzn-SageMaker-Adapter-Identifier"]
+# 2. Injects it into body["model"] (replacing any existing value)
+```
+
+#### Advanced Usage: Append Mode
+
+Append mode concatenates the adapter ID to an existing value using a separator. This is useful when your framework expects composite identifiers.
+
+**Example 2: Appending with Colon Separator**
+
+```python
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.inject_adapter_id("model", append=True, separator=":")
+async def invocations(request: Request) -> dict:
+    body = await request.json()
+    model_with_adapter = body.get("model")  # "base-model:my-adapter"
+    
+    # Parse the composite identifier
+    base_model, adapter_id = model_with_adapter.split(":", 1)
+    
+    return {"predictions": [f"Base: {base_model}, Adapter: {adapter_id}"]}
+```
+
+**Request Transformation:**
+
+```python
+# Incoming request body:
+{"prompt": "Hello", "model": "base-model"}
+
+# After @inject_adapter_id("model", append=True, separator=":") 
+# with header X-Amzn-SageMaker-Adapter-Identifier: my-adapter
+# Transformed request body:
+{"prompt": "Hello", "model": "base-model:my-adapter"}
+```
+
+**AppendOperation Under the Hood:**
+
+When `append=True`, the decorator creates an `AppendOperation` object:
+
+```python
+# Conceptual view of append mode implementation
+from model_hosting_container_standards.sagemaker.lora.models import AppendOperation
+
+request_shape = {
+    "model": AppendOperation(
+        separator=":",
+        expression='headers."X-Amzn-SageMaker-Adapter-Identifier"'
+    )
+}
+
+# The AppendOperation:
+# 1. Compiles the JMESPath expression
+# 2. Extracts adapter ID from header
+# 3. Appends to existing value with separator: existing_value + separator + adapter_id
+```
+
+#### Replace vs Append Mode Comparison
+
+| Aspect | Replace Mode (default) | Append Mode |
+|--------|----------------------|-------------|
+| **Usage** | `@inject_adapter_id("model")` | `@inject_adapter_id("model", append=True, separator=":")` |
+| **Behavior** | Overwrites existing value | Concatenates to existing value |
+| **Existing Value** | `"base-model"` | `"base-model"` |
+| **Header Value** | `"my-adapter"` | `"my-adapter"` |
+| **Result** | `"my-adapter"` | `"base-model:my-adapter"` |
+| **Use Case** | Framework expects only adapter ID | Framework expects composite identifier |
+| **No Existing Value** | Sets to adapter ID | Sets to adapter ID (no separator) |
+
+**Concrete Example Comparison:**
+
+```python
+# Setup: Request body has {"model": "base-model"}
+# Header: X-Amzn-SageMaker-Adapter-Identifier: adapter-123
+
+# Replace Mode
+@inject_adapter_id("model")
+# Result: {"model": "adapter-123"}  # Replaced
+
+# Append Mode
+@inject_adapter_id("model", append=True, separator=":")
+# Result: {"model": "base-model:adapter-123"}  # Appended
+```
+
+
+#### Error Handling and Validation
+
+The decorator validates parameters at decoration time:
+
+**Validation Rules:**
+
+```python
+# ✅ Valid usage
+@inject_adapter_id("model")
+@inject_adapter_id("config.lora.name")
+@inject_adapter_id("model", append=True, separator=":")
+
+# ❌ Invalid usage - raises ValueError
+@inject_adapter_id("")  # Empty adapter_path
+@inject_adapter_id(123)  # adapter_path must be string
+@inject_adapter_id("model", append=True)  # Missing separator when append=True
+@inject_adapter_id("model", separator=":")  # separator without append=True
+```
+
+**Runtime Behavior:**
+
+- **No header present**: If `X-Amzn-SageMaker-Adapter-Identifier` header is missing, the decorator does nothing (request body unchanged)
+- **Empty header value**: If header is present but empty, the decorator injects an empty string
+- **No existing value (append mode)**: If the target path doesn't exist and append mode is used, the adapter ID is set without a separator
+
+#### When to Use Each Mode
+
+**Use Replace Mode When:**
+- Your framework expects only the adapter ID in a field
+- You want to override any default model specification
+- The adapter ID is the primary identifier
+
+**Use Append Mode When:**
+- Your framework uses composite identifiers (e.g., `base-model:adapter`)
+- You need to preserve the base model information
+- Your framework parses identifiers with separators
+- You want to support both base model and adapter in a single field
+
+#### Integration with Transform System
+
+The `@inject_adapter_id` decorator is a specialized transform decorator. For deeper understanding of how it works:
+
+- **Transform Architecture**: See [Section 4.1: Transform System Overview](#41-transform-system-overview)
+- **JMESPath Expressions**: See [Section 4.3: JMESPath Basics](#43-jmespath-basics)
+- **Custom Transforms**: See [Section 4.4: Creating Custom Transforms](#44-creating-custom-transforms)
+
+**Key Points:**
+
+- `@inject_adapter_id` uses `InjectToBodyApiTransform` internally
+- It's a request-only transform (no response transformation)
+- The transform happens before your handler executes
+- JMESPath expressions are compiled once at decoration time for performance
+
+#### Next Steps
+
+- **Load/Unload Adapters**: See [Section 5.3: Load/Unload Adapter Handlers](#53-loadunload-adapter-handlers) to implement adapter lifecycle management
+- **Complete LoRA Integration**: See [Section 5.4: Complete LoRA Example](#54-complete-lora-example) for a full working example
+- **Testing**: See [Section 11.2: LoRA Adapter Testing](#112-lora-adapter-testing) for testing strategies
 
 ---
 
 ### 5.3 Load/Unload Adapter Handlers
 
-[Content to be added in subsequent tasks]
+Beyond injecting adapter IDs into requests, MHCS provides decorators for implementing complete adapter lifecycle management. These decorators enable your framework to expose SageMaker-standard `/adapters` routes while transforming requests to match your framework's native adapter API.
+
+#### Overview
+
+The load/unload adapter handlers enable:
+
+- **Adapter Registration**: Load adapters into your framework via `POST /adapters`
+- **Adapter Removal**: Unload adapters from your framework via `DELETE /adapters/{adapter_name}`
+- **Request Transformation**: Automatically transform SageMaker request schemas to your framework's format
+- **Response Transformation**: Transform your framework's responses back to SageMaker format if needed
+
+**Key Concept**: These decorators work like `@inject_adapter_id` - they use the transform system to map between SageMaker's API and your framework's API without requiring you to write transformation code.
+
+#### The Two Decorators
+
+MHCS provides two decorator functions for adapter lifecycle management:
+
+1. **`@register_load_adapter_handler`** - For loading/registering adapters
+2. **`@register_unload_adapter_handler`** - For unloading/unregistering adapters
+
+Both decorators:
+- Accept `request_shape` and optional `response_shape` dictionaries (JMESPath expressions)
+- Transform incoming SageMaker requests to your framework's format
+- Register handlers that bootstrap() automatically mounts to `/adapters` routes
+- Are framework defaults (can be overridden by customers)
+
+#### SageMaker Adapter Routes
+
+When you call `bootstrap(app)`, MHCS automatically creates these routes if you've registered handlers:
+
+| Route | Method | Purpose | Handler Type |
+|-------|--------|---------|--------------|
+| `/adapters` | POST | Register/load a new adapter | `register_adapter` |
+| `/adapters/{adapter_name}` | DELETE | Unregister/unload an adapter | `unregister_adapter` |
+
+**Important**: You don't create these routes yourself. The decorators register handlers, and `bootstrap()` mounts them to the standard SageMaker paths.
+
+---
+
+#### @register_load_adapter_handler
+
+This decorator transforms SageMaker's adapter registration requests to your framework's format.
+
+**Signature:**
+
+```python
+@register_load_adapter_handler(
+    request_shape: dict,
+    response_shape: Optional[dict] = None
+)
+```
+
+**Parameters:**
+
+- `request_shape` (dict, required): JMESPath expressions mapping SageMaker request fields to your framework's format
+- `response_shape` (dict, optional): JMESPath expressions mapping your framework's response to SageMaker format
+
+**SageMaker Request Schema (POST /adapters):**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | Yes | Adapter identifier/alias |
+| `src` | string | Yes | Adapter source location (S3 path, local path, etc.) |
+| `preload` | boolean | No | Whether to preload adapter (default: true) |
+| `pin` | boolean | No | Whether to pin adapter in memory (default: false) |
+
+**Note:** `preload` and `pin` may not be fully supported depending on the engine you use.
+
+**Example Request Body:**
+
+```json
+{
+  "name": "my-adapter",
+  "src": "s3://my-bucket/adapters/my-adapter",
+  "preload": true,
+  "pin": false
+}
+```
+
+---
+
+#### @register_unload_adapter_handler
+
+This decorator transforms SageMaker's adapter unregistration requests to your framework's format.
+
+**Signature:**
+
+```python
+@register_unload_adapter_handler(
+    request_shape: dict,
+    response_shape: Optional[dict] = None
+)
+```
+
+**Parameters:**
+
+- `request_shape` (dict, required): JMESPath expressions mapping SageMaker request fields to your framework's format
+- `response_shape` (dict, optional): JMESPath expressions mapping your framework's response to SageMaker format
+
+**SageMaker Request Schema (DELETE /adapters/{adapter_name}):**
+
+| Field | Type | Source | Description |
+|-------|------|--------|-------------|
+| `adapter_name` | string | Path parameter | Adapter identifier to unload |
+
+**Example Request:**
+
+```
+DELETE /adapters/my-adapter
+```
+
+---
+
+#### Request/Response Schema Tables
+
+**Load Adapter Request Transformation:**
+
+| SageMaker Field | Type | Example Framework Field | JMESPath Expression |
+|----------------|------|---------------------|---------------------|
+| `name` | string | `lora_name` | `body.name` |
+| `src` | string | `lora_path` | `body.src` |
+| `preload` | boolean | `preload` (optional) | `body.preload` |
+| `pin` | boolean | `pin` (optional) | `body.pin` |
+
+**Unload Adapter Request Transformation:**
+
+| SageMaker Field | Type | Example Framework Field | JMESPath Expression |
+|----------------|------|---------------------|---------------------|
+| `{adapter_name}` (path) | string | `lora_name` | `path_params.adapter_name` |
+
+---
+
+#### Integration with Your Framework's Adapter System
+
+The decorators act as a bridge between SageMaker's API and your framework's native adapter management:
+
+**Your Framework's Adapter API:**
+
+```python
+# Your framework might have methods like:
+class MyFramework:
+    def load_adapter(self, name: str, path: str, **kwargs):
+        """Load adapter from path with given name."""
+        pass
+    
+    def unload_adapter(self, name: str):
+        """Unload adapter by name."""
+        pass
+    
+    def has_adapter(self, name: str) -> bool:
+        """Check if adapter is loaded."""
+        pass
+```
+
+**MHCS Integration:**
+
+```python
+# Create a global framework instance
+framework = MyFramework()
+
+# Load handler - bridges SageMaker API to your framework
+@sagemaker_standards.register_load_adapter_handler(
+    request_shape={"lora_name": "body.name", "lora_path": "body.src"}
+)
+@router.post("/v1/load_lora_adapter")
+async def load_adapter(request: EngineLoadAdapterRequest, raw_request: Request):
+    # Call your framework's native method
+    framework.load_adapter(
+        name=request.lora_name,
+        path=request.lora_path
+    )
+    return Response(status_code=200, content=f"Adapter {request.lora_name} registered")
+
+# Unload handler - bridges SageMaker API to your framework
+@sagemaker_standards.register_unload_adapter_handler(
+    request_shape={"lora_name": "path_params.adapter_name"}
+)
+@router.post("/v1/unload_lora_adapter")
+async def unload_adapter(request: EngineUnloadAdapterRequest, raw_request: Request):
+    if framework.has_adapter(request.lora_name):
+        framework.unload_adapter(request.lora_name)
+        return Response(status_code=200, content=f"Adapter {request.lora_name} unregistered")
+    return Response(status_code=404, content="Adapter not found")
+```
+
+**Key Integration Points:**
+
+1. **Request Models**: Define Pydantic models matching your framework's expected fields
+2. **Transform Mapping**: Use `request_shape` to map SageMaker fields to your models
+3. **Handler Logic**: Call your framework's native adapter methods
+4. **Error Handling**: Return appropriate HTTP status codes for success/failure cases
+
+---
+
+#### Key Takeaways
+
+1. **Automatic Route Creation**: `bootstrap()` creates `/adapters` routes when you register handlers
+2. **Transform-Based**: Like `@inject_adapter_id`, these decorators use JMESPath transformations
+3. **Framework Bridge**: They bridge SageMaker's API to your framework's native adapter methods
+4. **Path Parameters**: Use `path_params.adapter_name` to extract from URL paths
+5. **Optional Responses**: Response transformation is optional - simple strings work fine
+6. **Integration Pattern**: Define request models → map with request_shape → call framework methods
+
+#### Next Steps
+
+- **Complete Example**: See [Section 5.4: Complete LoRA Example](#54-complete-lora-example) for a full working integration
+- **Testing**: See [Section 11.2: LoRA Adapter Testing](#112-lora-adapter-testing) for testing strategies
+- **Transform Details**: See [Section 4: Transform Decorators](#4-transform-decorators) for deeper understanding of the transform system
+- **API Reference**: See [Section 13.2: LoRA Decorators](#132-lora-decorators) for complete API documentation
 
 ---
 
@@ -1247,6 +1758,81 @@ When using passthrough mode (`request_shape=None`):
 [Content to be added in subsequent tasks]
 
 ## 6. Session Management
+
+### 6.1 Session Overview
+
+MHCS provides stateful session management to work with SageMaker's platform support of the feature.
+
+**What are Sessions?**
+
+Sessions enable your ML framework to maintain persistent state for individual clients across multiple requests. Each session has:
+
+- **Unique ID**: UUID-based identifier automatically generated by MHCS
+- **File-based key-value storage**: Each session stores data as JSON files in its own directory
+- **Automatic expiration**: Configurable TTL (default: 20 minutes) with automatic cleanup
+- **Thread-safe access**: Concurrent request handling with internal locking
+
+**Storage Architecture:**
+
+MHCS uses a file-based storage system optimized for performance:
+
+```
+/dev/shm/sagemaker_sessions/          # Memory-backed filesystem (preferred)
+├── <session-uuid-1>/
+│   ├── .expiration_ts                # Session expiration timestamp
+│   ├── conversation_history          # Example: stored conversation data
+│   └── user_preferences              # Example: user-specific settings
+├── <session-uuid-2>/
+│   └── ...
+└── <session-uuid-3>/
+    └── ...
+```
+
+**Storage Location Priority:**
+
+1. **Preferred**: `/dev/shm/sagemaker_sessions` - Memory-backed tmpfs for fast access
+2. **Fallback**: `{tempdir}/sagemaker_sessions` - Disk-backed temporary directory
+
+The memory-backed filesystem (`/dev/shm`) provides significantly faster I/O operations compared to disk storage, making it ideal for session data that requires frequent reads and writes.
+
+**Automatic Expiration and Cleanup:**
+
+MHCS automatically manages session lifecycle to prevent memory leaks:
+
+- **Expiration Check**: Sessions are validated on every retrieval
+- **Lazy Cleanup**: Expired sessions are removed when accessed or during new session creation
+- **Automatic Deletion**: Session directories and all data files are deleted on expiration or explicit closure
+- **Configurable TTL**: Default 1200 seconds (20 minutes), customizable via environment variable
+
+**Session Lifecycle:**
+
+```mermaid
+graph LR
+    A[Client] -->|NEW_SESSION| B[Create Session]
+    B -->|Returns Session ID| A
+    A -->|Request + Session ID| C[Use Session]
+    C -->|Access/Update Data| D[Session Storage]
+    D -->|Response| A
+    A -->|CLOSE + Session ID| E[Close Session]
+    E -->|Delete Data| F[Session Removed]
+    
+    C -->|TTL Expired| G[Auto Cleanup]
+    G -->|Delete Data| F
+```
+
+**Key Features:**
+
+- **Opt-in by default**: Sessions are disabled unless explicitly enabled via `SAGEMAKER_ENABLE_STATEFUL_SESSIONS=true`
+- **Validation**: Requests with session headers when sessions are disabled return 400 BAD_REQUEST
+- **Thread-safe**: Internal locking ensures safe concurrent access to session data
+- **Persistence**: Sessions persist across requests but not across server restarts (in-memory storage)
+
+**Additional Details:**
+
+For deeper technical details on session implementation, architecture, and advanced usage patterns, see:
+- [`python/model_hosting_container_standards/sagemaker/sessions/README.md`](../python/model_hosting_container_standards/sagemaker/sessions/README.md) - Complete session module documentation
+- [Section 6.2: Session Environment Variables](#62-session-environment-variables) - Configuration options
+- [Section 6.4: Using @stateful_session_manager](#64-using-stateful_session_manager) - Implementation guide
 
 [Content to be added in subsequent tasks]
 
