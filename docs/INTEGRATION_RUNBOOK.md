@@ -1834,6 +1834,614 @@ For deeper technical details on session implementation, architecture, and advanc
 - [Section 6.2: Session Environment Variables](#62-session-environment-variables) - Configuration options
 - [Section 6.4: Using @stateful_session_manager](#64-using-stateful_session_manager) - Implementation guide
 
+---
+
+### 6.2 Session Environment Variables
+
+Sessions are **disabled by default** and must be explicitly enabled through environment variables. This opt-in design ensures that frameworks without session support don't inadvertently accept session requests.
+
+**Configuration Variables:**
+
+| Environment Variable | Type | Default | Description |
+|---------------------|------|---------|-------------|
+| `SAGEMAKER_ENABLE_STATEFUL_SESSIONS` | boolean | `false` | Master switch to enable/disable session management. Must be set to `true` to activate sessions. |
+| `SAGEMAKER_SESSIONS_EXPIRATION` | integer | `1200` | Session lifetime in seconds (default: 20 minutes). Sessions automatically expire and are cleaned up after this duration. |
+| `SAGEMAKER_SESSIONS_PATH` | string | `/dev/shm/sagemaker_sessions` or `{tempdir}/sagemaker_sessions` | Directory path for session storage. Defaults to memory-backed filesystem (`/dev/shm`) if available, otherwise falls back to system temp directory. |
+
+**Enabling Sessions:**
+
+```bash
+# Minimal configuration - enable with defaults
+export SAGEMAKER_ENABLE_STATEFUL_SESSIONS=true
+
+# Custom configuration - enable with custom TTL and path
+export SAGEMAKER_ENABLE_STATEFUL_SESSIONS=true
+export SAGEMAKER_SESSIONS_EXPIRATION=1800  # 30 minutes
+export SAGEMAKER_SESSIONS_PATH=/custom/session/path
+```
+
+**How Session Manager is Initialized:**
+
+The global `SessionManager` instance is created when the sessions module is imported:
+
+```python
+# From python/model_hosting_container_standards/sagemaker/sessions/manager.py
+session_manager = SessionManager({})
+```
+
+By default, it initializes with an empty configuration dictionary, which means:
+- `sessions_expiration` defaults to `1200` seconds (20 minutes)
+- `sessions_path` defaults to `/dev/shm/sagemaker_sessions` (or temp directory fallback)
+
+**Configuration Properties:**
+
+The `SessionManager` constructor accepts a properties dictionary:
+
+```python
+SessionManager(properties: dict)
+```
+
+**Properties Dictionary Keys:**
+- `"sessions_expiration"`: String or integer representing session TTL in seconds
+- `"sessions_path"`: String path to session storage directory
+
+**Example Initialization:**
+
+```python
+from model_hosting_container_standards.sagemaker.sessions.manager import SessionManager
+
+# Custom configuration
+session_manager = SessionManager({
+    "sessions_expiration": "1800",  # 30 minutes
+    "sessions_path": "/custom/path/sessions"
+})
+```
+
+**Important Notes:**
+
+1. **Environment Variables vs Direct Configuration**: Currently, MHCS initializes the global `session_manager` with default values. The environment variables listed above are documented for future configuration support and to align with SageMaker's session management conventions. Framework developers should be aware of these variables as they represent the intended configuration interface.
+
+2. **Storage Path Selection**: The `SessionManager` automatically selects the optimal storage location:
+   ```python
+   # Prefers memory-backed filesystem for performance
+   if os.path.exists("/dev/shm"):
+       session_dir = "/dev/shm/sagemaker_sessions"
+   else:
+       session_dir = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
+   ```
+
+3. **Directory Creation**: The session storage directory is created automatically if it doesn't exist:
+   ```python
+   if not os.path.exists(self.sessions_path):
+       os.makedirs(self.sessions_path, exist_ok=True)
+   ```
+
+4. **Session Persistence**: Sessions are stored in the filesystem but are **not persistent across server restarts**. When the server restarts:
+   - Existing session directories may remain on disk
+   - The `SessionManager` will load session IDs from disk on initialization
+   - However, expired sessions will be cleaned up on first access
+
+---
+
+### 6.3 Session Request Types and Headers
+
+MHCS uses a combination of request body fields and HTTP headers to manage session lifecycle. Understanding these request types and headers is essential for implementing session-aware clients.
+
+#### Session Request Types
+
+Session management operations are triggered by including a `requestType` field in the request body sent to the `/invocations` endpoint.
+
+**Request Type Enum:**
+
+```python
+class SessionRequestType(str, Enum):
+    """Types of session management requests."""
+    NEW_SESSION = "NEW_SESSION"  # Create a new stateful session
+    CLOSE = "CLOSE"              # Close an existing session
+```
+
+**Request Type Table:**
+
+| Request Type | Purpose | Required Headers | Request Body | Response Headers |
+|-------------|---------|------------------|--------------|------------------|
+| `NEW_SESSION` | Create new session | None | `{"requestType": "NEW_SESSION"}` | `X-Amzn-SageMaker-New-Session-Id` |
+| `CLOSE` | Close existing session | `X-Amzn-SageMaker-Session-Id` | `{"requestType": "CLOSE"}` | `X-Amzn-SageMaker-Closed-Session-Id` |
+| Regular request | Inference with session | `X-Amzn-SageMaker-Session-Id` (optional) | `{"prompt": "..."}` | None |
+
+#### Session Headers
+
+MHCS uses three SageMaker-specific headers for session management:
+
+**Header Constants:**
+
+```python
+class SageMakerSessionHeader:
+    """SageMaker API header constants for stateful session management."""
+    SESSION_ID = "X-Amzn-SageMaker-Session-Id"           # Client → Server
+    NEW_SESSION_ID = "X-Amzn-SageMaker-New-Session-Id"   # Server → Client
+    CLOSED_SESSION_ID = "X-Amzn-SageMaker-Closed-Session-Id"  # Server → Client
+```
+
+**Header Reference Table:**
+
+| Header Name | Direction | When Used | Format | Description |
+|------------|-----------|-----------|--------|-------------|
+| `X-Amzn-SageMaker-Session-Id` | Client → Server | Regular requests, CLOSE requests | `<uuid>` | Pass existing session ID to server for session-aware inference |
+| `X-Amzn-SageMaker-New-Session-Id` | Server → Client | NEW_SESSION response | `<uuid>; Expires=<ISO8601>` | Returned when creating new session, includes session ID and expiration timestamp |
+| `X-Amzn-SageMaker-Closed-Session-Id` | Server → Client | CLOSE response | `<uuid>` | Returned when closing session, confirms session ID was closed |
+
+#### Request Type Details
+
+##### 1. NEW_SESSION - Create New Session
+
+**Purpose:** Create a new stateful session with unique ID and expiration timestamp.
+
+**Request:**
+
+```http
+POST /invocations HTTP/1.1
+Content-Type: application/json
+
+{
+  "requestType": "NEW_SESSION"
+}
+```
+
+**Response:**
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/plain
+X-Amzn-SageMaker-New-Session-Id: 550e8400-e29b-41d4-a716-446655440000; Expires=2025-11-24T12:54:56Z
+
+Session 550e8400-e29b-41d4-a716-446655440000 created
+```
+
+**Response Header Format:**
+
+```
+X-Amzn-SageMaker-New-Session-Id: <session-uuid>; Expires=<ISO8601-timestamp>
+```
+
+**Example Values:**
+- Session ID: `550e8400-e29b-41d4-a716-446655440000` (UUID v4)
+- Expiration: `2025-11-24T12:54:56Z` (ISO 8601 UTC timestamp)
+
+**Client Behavior:**
+1. Parse the `X-Amzn-SageMaker-New-Session-Id` header
+2. Extract session ID (before the semicolon)
+3. Extract expiration timestamp (after `Expires=`)
+4. Store session ID for subsequent requests
+5. Track expiration to avoid using expired sessions
+
+**curl Example:**
+
+```bash
+# Create new session
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -d '{"requestType": "NEW_SESSION"}' \
+  -i  # Include headers in output
+
+# Response headers:
+# X-Amzn-SageMaker-New-Session-Id: 550e8400-e29b-41d4-a716-446655440000; Expires=2025-11-24T12:54:56Z
+```
+
+##### 2. CLOSE - Close Existing Session
+
+**Purpose:** Explicitly close a session and clean up its resources before expiration.
+
+**Request:**
+
+```http
+POST /invocations HTTP/1.1
+Content-Type: application/json
+X-Amzn-SageMaker-Session-Id: 550e8400-e29b-41d4-a716-446655440000
+
+{
+  "requestType": "CLOSE"
+}
+```
+
+**Response:**
+
+```http
+HTTP/1.1 200 OK
+Content-Type: text/plain
+X-Amzn-SageMaker-Closed-Session-Id: 550e8400-e29b-41d4-a716-446655440000
+
+Session 550e8400-e29b-41d4-a716-446655440000 closed
+```
+
+**Required Headers:**
+- `X-Amzn-SageMaker-Session-Id`: The session ID to close
+
+**Response Header:**
+- `X-Amzn-SageMaker-Closed-Session-Id`: Confirms which session was closed
+
+**Client Behavior:**
+1. Include session ID in `X-Amzn-SageMaker-Session-Id` header
+2. Send `{"requestType": "CLOSE"}` in request body
+3. Verify closed session ID in response header matches request
+4. Remove session ID from local storage
+
+**curl Example:**
+
+```bash
+# Close session (replace with actual session ID)
+curl -X POST http://localhost:8000/invocations \
+  -H "Content-Type: application/json" \
+  -H "X-Amzn-SageMaker-Session-Id: 550e8400-e29b-41d4-a716-446655440000" \
+  -d '{"requestType": "CLOSE"}' \
+  -i
+
+# Response headers:
+# X-Amzn-SageMaker-Closed-Session-Id: 550e8400-e29b-41d4-a716-446655440000
+```
+
+**Error Cases:**
+
+| Error | HTTP Status | Response | Cause |
+|-------|-------------|----------|-------|
+| Session not found | `400 BAD_REQUEST` | `{"detail": "Bad request: session not found: <id>"}` | Session ID doesn't exist or already closed |
+| Empty session ID | `424 FAILED_DEPENDENCY` | `{"detail": "Failed to close session: invalid session_id: "}` | No session ID provided in header |
+| Close failed | `424 FAILED_DEPENDENCY` | `{"detail": "Failed to close session: <error>"}` | Internal error during session cleanup |
+
+##### 3. Regular Request - Inference with Session
+
+**Purpose:** Send inference request using existing session context.
+
+**Request:**
+
+```http
+POST /invocations HTTP/1.1
+Content-Type: application/json
+X-Amzn-SageMaker-Session-Id: 550e8400-e29b-41d4-a716-446655440000
+
+{
+  "prompt": "What is machine learning?"
+}
+```
+
+**Response:**
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  "predictions": ["Machine learning is..."]
+}
+```
+
+**Optional Header:**
+- `X-Amzn-SageMaker-Session-Id`: Include to use session context (optional)
+
+**No Special Response Headers:** Regular inference responses don't include session headers.
+
+**Client Behavior:**
+1. Include session ID in `X-Amzn-SageMaker-Session-Id` header (if using session)
+2. Send regular inference request body (no `requestType` field)
+3. Process inference response normally
+4. Handle session validation errors (400 BAD_REQUEST if session invalid)
+
+---
+
+### 6.4 Using @stateful_session_manager
+
+The `@stateful_session_manager()` decorator enables session management for your invocation handlers. It intercepts session-related requests (NEW_SESSION, CLOSE) and routes them to appropriate handlers, while passing through regular inference requests.
+
+**Decorator Signature:**
+
+```python
+def stateful_session_manager() -> Callable
+```
+
+**Parameters:** None (uses empty request/response shapes internally)
+
+**Returns:** A decorator function that can be applied to FastAPI route handlers
+
+**How to Apply:**
+
+Apply the decorator to your invocation handler **after** the `@register_invocation_handler` decorator:
+
+```python
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+from fastapi import Request
+
+@sagemaker_standards.register_invocation_handler
+@sagemaker_standards.stateful_session_manager()
+async def invocations(request: Request) -> dict:
+    """Inference handler with session support."""
+    body = await request.json()
+    prompt = body.get("prompt", "")
+    
+    # Access session ID if present
+    session_id = request.headers.get("X-Amzn-SageMaker-Session-Id")
+    
+    # Your inference logic here
+    result = f"Processed: {prompt}"
+    
+    return {"predictions": [result]}
+```
+
+**Decorator Order Matters:**
+
+```python
+# ✅ CORRECT - session decorator applied after register decorator
+@register_invocation_handler
+@stateful_session_manager()
+async def invocations(request: Request):
+    pass
+
+# ❌ INCORRECT - session decorator applied before register decorator
+@stateful_session_manager()
+@register_invocation_handler
+async def invocations(request: Request):
+    pass
+```
+
+The decorator order follows Python's decorator application rules: decorators are applied bottom-to-top, so `@stateful_session_manager()` wraps the handler first, then `@register_invocation_handler` registers the wrapped handler.
+
+**What the Decorator Does:**
+
+1. **Intercepts Session Requests**: Detects `requestType` field in request body
+2. **Routes to Default Session Handlers**: 
+   - `NEW_SESSION` → `create_session()` handler
+   - `CLOSE` → `close_session()` handler
+3. **Validates Session IDs**: Checks session existence and expiration
+4. **Passes Through Regular Requests**: Non-session requests proceed to your handler normally
+
+**Request Flow with Decorator:**
+
+```mermaid
+graph TD
+    A[Client Request] --> B{Has requestType?}
+    B -->|Yes: NEW_SESSION| C[create_session handler]
+    B -->|Yes: CLOSE| D[close_session handler]
+    B -->|No| E[Validate Session ID if present]
+    E --> F[Your Invocation Handler]
+    C --> G[Return Session ID]
+    D --> H[Return Closed Session ID]
+    F --> I[Return Inference Result]
+```
+
+**Session Creation:**
+
+When a client sends `{"requestType": "NEW_SESSION"}`:
+
+```python
+# Client request
+POST /invocations
+Content-Type: application/json
+
+{"requestType": "NEW_SESSION"}
+
+# Decorator intercepts and routes to create_session()
+# Your invocations handler is NOT called
+
+# Response
+HTTP/1.1 200 OK
+X-Amzn-SageMaker-New-Session-Id: abc-123-def; Expires=2025-11-24T12:34:56Z
+
+Session abc-123-def created
+```
+
+**Session Usage:**
+
+When a client sends a request with session ID:
+
+```python
+# Client request
+POST /invocations
+Content-Type: application/json
+X-Amzn-SageMaker-Session-Id: abc-123-def
+
+{"prompt": "Hello"}
+
+# Decorator validates session ID, then passes to your handler
+# Your invocations handler processes the request normally
+
+# Response
+HTTP/1.1 200 OK
+
+{"predictions": ["Processed: Hello"]}
+```
+
+**Session Closing:**
+
+When a client sends `{"requestType": "CLOSE"}` with session ID:
+
+```python
+# Client request
+POST /invocations
+Content-Type: application/json
+X-Amzn-SageMaker-Session-Id: abc-123-def
+
+{"requestType": "CLOSE"}
+
+# Decorator intercepts and routes to close_session()
+# Your invocations handler is NOT called
+
+# Response
+HTTP/1.1 200 OK
+X-Amzn-SageMaker-Closed-Session-Id: abc-123-def
+
+Session abc-123-def closed
+```
+
+**Session Storage Operations:**
+
+The `Session` object provides key-value storage:
+
+```python
+# Store data (must be JSON-serializable)
+session.put("key", value)
+
+# Retrieve data with default
+value = session.get("key", default_value)
+
+# Example: Store conversation history
+session.put("conversation_history", ["Hello", "How are you?"])
+
+# Example: Store user preferences
+session.put("user_preferences", {
+    "temperature": 0.7,
+    "max_tokens": 100
+})
+
+# Example: Store model state
+session.put("model_state", {
+    "last_prompt": "Hello",
+    "token_count": 42
+})
+```
+
+**Decorator Behavior When Sessions Disabled:**
+
+The decorator itself doesn't check if sessions are enabled. However, the session validation logic will fail if:
+- Session headers are present but session doesn't exist
+- Session management requests are sent but session manager is not properly initialized
+
+---
+
+### 6.5 Session Validation Behavior
+
+MHCS validates session requests to ensure data integrity and prevent invalid session operations. Understanding validation behavior helps you handle errors gracefully and provide clear feedback to clients.
+
+**Validation Scenarios:**
+
+#### 1. Session ID Present in Headers
+
+When a request includes the `X-Amzn-SageMaker-Session-Id` header, MHCS validates the session:
+
+**Validation Steps:**
+1. Extract session ID from request headers
+2. Check if session exists in the session manager registry
+3. Verify session has not expired
+4. Return session object if valid
+
+**Error Conditions:**
+
+| Condition | HTTP Status | Error Message | Description |
+|-----------|-------------|---------------|-------------|
+| Session not found | `400 BAD_REQUEST` | `"Bad request: session not found: {session_id}"` | Session ID doesn't exist in registry |
+| Session expired | `400 BAD_REQUEST` | Session cleaned up, returns `None` | Session TTL exceeded, automatically removed |
+| Invalid session ID format | `400 BAD_REQUEST` | `"Bad request: {error_details}"` | Malformed session ID |
+
+**Code Example:**
+
+```python
+# From transform.py - validation logic
+def _validate_session_if_present(raw_request: Request, session_manager: SessionManager):
+    """Validate that the session ID in the request exists and is not expired."""
+    session_id = get_session_id_from_request(raw_request)
+    if session_id:
+        try:
+            get_session(session_manager, raw_request)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=f"Bad request: {str(e)}",
+            )
+```
+
+**Client Behavior:**
+
+When receiving a `400 BAD_REQUEST` for session validation:
+- **Session not found**: Client should create a new session with `{"requestType": "NEW_SESSION"}`
+- **Session expired**: Client should create a new session (expired sessions are automatically cleaned up)
+
+#### 2. Malformed Session Request
+
+When a request includes `requestType` field but fails validation:
+
+**Example Malformed Request:**
+
+```json
+{
+  "requestType": "INVALID_TYPE"
+}
+```
+
+**Response:**
+
+```
+HTTP/1.1 400 Bad Request
+Content-Type: application/json
+
+{
+  "detail": [
+    {
+      "type": "enum",
+      "loc": ["requestType"],
+      "msg": "Input should be 'NEW_SESSION' or 'CLOSE'",
+      "input": "INVALID_TYPE"
+    }
+  ]
+}
+```
+
+#### 3. Session Expiration Handling
+
+Sessions are validated on every access. When a session expires:
+
+**Automatic Cleanup Process:**
+
+1. **On Session Retrieval**: When `get_session()` is called, MHCS checks expiration timestamp
+2. **If Expired**: Session is immediately closed and removed from registry
+3. **Return Value**: `None` is returned (not an error)
+4. **Cleanup**: Session directory and all data files are deleted
+
+**Code Example:**
+
+```python
+# From manager.py - expiration check
+def get_session(self, session_id: str) -> Optional[Session]:
+    """Retrieve a session by ID, checking for expiration."""
+    with self._lock:
+        if session_id not in self.sessions:
+            raise ValueError(f"session not found: {session_id}")
+        
+        session = self.sessions[session_id]
+        
+        # Check expiration
+        if session.expiration_ts is not None and time.time() > session.expiration_ts:
+            logging.info(f"Session expired: {session_id}")
+            self.close_session(session_id)  # Automatic cleanup
+            return None
+        
+        return session
+```
+
+**Client Handling:**
+
+When a session expires:
+- Client receives `400 BAD_REQUEST` with "session not found" message
+- Client should create a new session
+- Previous session data is permanently deleted
+
+#### 4. Preventing Invalid Session Requests
+
+MHCS prevents several types of invalid session operations:
+
+**Invalid Operations:**
+
+| Operation | Prevention | Error |
+|-----------|-----------|-------|
+| Close non-existent session | Validation in `close_session()` | `ValueError: "session not found: {session_id}"` |
+| Close with empty session ID | Validation in `close_session()` | `ValueError: "invalid session_id: {session_id}"` |
+| Access expired session | Automatic cleanup in `get_session()` | Returns `None`, session removed |
+| Path traversal in session keys | Validation in `Session._path()` | `ValueError: "Invalid key: '..' not allowed"` |
+
+**Summary:**
+
+- **Session validation is automatic** - MHCS handles validation in the transform layer
+- **400 BAD_REQUEST** is returned for all validation failures
+- **Expired sessions are cleaned up automatically** - no manual intervention needed
+- **Security is built-in** - path traversal and other attacks are prevented
+- **Clear error messages** help clients recover from validation failures
+
 [Content to be added in subsequent tasks]
 
 ## 7. Supervisor Process Management
