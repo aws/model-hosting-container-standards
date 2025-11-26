@@ -29,8 +29,7 @@
 4. [Transform Decorators](#4-transform-decorators)
    - 4.1 [Transform System Overview](#41-transform-system-overview)
    - 4.2 [Transform System Components](#42-transform-system-components)
-   - 4.3 [JMESPath Basics](#43-jmespath-basics)
-   - 4.4 [Creating Custom Transforms](#44-creating-custom-transforms)
+   - 4.3 [Creating Custom Transforms](#43-creating-custom-transforms)
 
 5. [LoRA Adapter Support](#5-lora-adapter-support)
    - 5.1 [LoRA Overview](#51-lora-overview)
@@ -707,7 +706,809 @@ curl http://localhost:8000/ping
 
 ## 3. Core Integration
 
-[Content to be added in subsequent tasks]
+This section provides comprehensive step-by-step guidance for integrating MHCS with your ML framework. You'll learn how the bootstrap function works, how to register handlers, and how the handler priority system enables customer customization.
+
+### 3.1 Understanding the Bootstrap Function
+
+The `bootstrap(app)` function is the central integration point that connects your FastAPI application with MHCS. It must be called after all your routes and handlers are defined.
+
+**Function Signature:**
+
+```python
+def bootstrap(app: FastAPI) -> FastAPI:
+    """Configure a FastAPI application with SageMaker functionality.
+    
+    Args:
+        app: The FastAPI application instance to configure
+    
+    Returns:
+        The configured FastAPI app
+    """
+```
+
+**What bootstrap() Does Internally:**
+
+The bootstrap function performs four critical setup steps in this order:
+
+1. **Loads Container Standards Middlewares**
+   - Configures custom middlewares from environment variables or decorators
+   - Sets up logging, error handling, and request/response processing
+   - Uses `SageMakerFunctionLoader` to discover customer-provided middleware
+
+2. **Registers Customer Overrides**
+   - Calls `register_sagemaker_overrides()` to resolve handler priority
+   - Scans for customer-provided handlers via:
+     - Environment variables (`CUSTOM_FASTAPI_PING_HANDLER`, etc.)
+     - Custom decorators (`@custom_ping_handler`, `@custom_invocation_handler`)
+     - Customer script functions (`custom_sagemaker_ping_handler`, etc.)
+   - Stores the highest-priority handler for each handler type in the registry
+
+3. **Creates SageMaker Router**
+   - Calls `create_sagemaker_router()` to build a FastAPI router
+   - Mounts all registered handlers to their configured routes
+   - Uses `get_sagemaker_route_config()` to map handler types to routes
+
+4. **Includes Router in App**
+   - Calls `safe_include_router(app, sagemaker_router)` to add routes to your app
+   - Automatically detects and resolves route conflicts
+   - Replaces any existing conflicting routes with MHCS routes
+
+**Routes Created Automatically:**
+
+The bootstrap function creates these routes based on registered handlers:
+
+| Route | Method | Handler Type | Description |
+|-------|--------|--------------|-------------|
+| `/ping` | GET | `ping` | Health check endpoint for SageMaker |
+| `/invocations` | POST | `invoke` | Model inference endpoint for SageMaker |
+| `/adapters` | POST | `register_adapter` | Load LoRA adapter (if handler registered) |
+| `/adapters/{adapter_name}` | DELETE | `unregister_adapter` | Unload LoRA adapter (if handler registered) |
+
+**Note:** LoRA routes (`/adapters`) are only created if you've registered load/unload adapter handlers using `@register_load_adapter_handler` and `@register_unload_adapter_handler`.
+
+**Why bootstrap() Must Be Called After Route Definitions:**
+
+The bootstrap function needs to see all registered handlers before it can wire them up. If you call `bootstrap(app)` before defining your handlers, those handlers won't be registered yet and won't be included in the SageMaker router.
+
+**Correct Order:**
+
+```python
+from fastapi import FastAPI, Request, Response
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+app = FastAPI(title="My ML Framework")
+
+# 1. Define your handlers first
+@sagemaker_standards.register_ping_handler
+async def ping(request: Request) -> Response:
+    return Response(status_code=200, content="Healthy")
+
+@sagemaker_standards.register_invocation_handler
+async def invocations(request: Request) -> dict:
+    body = await request.json()
+    return {"predictions": ["result"]}
+
+# 2. Call bootstrap() last
+sagemaker_standards.bootstrap(app)
+
+# 3. Start your server
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+```
+
+**Incorrect Order (Don't Do This):**
+
+```python
+app = FastAPI(title="My ML Framework")
+
+# ❌ WRONG: bootstrap() called before handlers are defined
+sagemaker_standards.bootstrap(app)
+
+# These handlers won't be registered!
+@sagemaker_standards.register_ping_handler
+async def ping(request: Request) -> Response:
+    return Response(status_code=200, content="Healthy")
+```
+
+**Request Flow After Bootstrap:**
+
+Once bootstrap completes, requests flow through your application like this:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FastAPI App
+    participant Middleware
+    participant SageMaker Router
+    participant Handler Registry
+    participant Your Handler
+    
+    Client->>FastAPI App: GET /ping
+    FastAPI App->>Middleware: Process request
+    Middleware->>SageMaker Router: Route to /ping
+    SageMaker Router->>Handler Registry: Get ping handler
+    Handler Registry->>Your Handler: Call resolved handler
+    Your Handler->>Handler Registry: Return response
+    Handler Registry->>SageMaker Router: Response
+    SageMaker Router->>Middleware: Response
+    Middleware->>FastAPI App: Response
+    FastAPI App->>Client: 200 OK
+```
+
+**Key Points:**
+
+- **Call Once**: Only call `bootstrap(app)` once per application
+- **Call Last**: Always call after defining all handlers and routes
+- **Automatic Routing**: Routes are created automatically based on registered handlers
+- **Conflict Resolution**: Existing routes with the same path/method are automatically replaced
+- **Handler Priority**: Customer overrides are resolved before routes are created
+
+**Common Pitfalls:**
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| bootstrap() called too early | Handlers not found, 404 errors | Move bootstrap() call after all handler definitions |
+| bootstrap() called multiple times | Duplicate routes, unexpected behavior | Call bootstrap() only once |
+| Handlers defined after bootstrap() | New handlers not accessible | Move handler definitions before bootstrap() |
+| Missing handler registration | Route exists but returns 500 error | Ensure handlers are decorated with `@register_*` or `@custom_*` |
+
+**Next Steps:**
+
+- [Section 3.2: Handler Registration Pattern](#32-handler-registration-pattern) - Learn how to register handlers
+- [Section 3.3: Handler Priority System](#33-handler-priority-system) - Understand handler resolution
+- [Section 3.4: Integration Checklist](#34-integration-checklist) - Step-by-step integration guide
+
+---
+
+### 3.2 Handler Registration Pattern
+
+MHCS uses decorators to register handler functions for SageMaker endpoints. This section explains the two main registration decorators and their proper usage.
+
+**The Two Registration Decorators:**
+
+| Decorator | Purpose | Who Uses It | Priority |
+|-----------|---------|-------------|----------|
+| `@register_ping_handler` | Register framework default ping handler | Framework developers | Lowest (can be overridden) |
+| `@register_invocation_handler` | Register framework default invocation handler | Framework developers | Lowest (can be overridden) |
+
+**Handler Function Signatures:**
+
+Both decorators expect async functions with specific signatures:
+
+**Ping Handler Signature:**
+
+```python
+from fastapi import Request, Response
+
+@sagemaker_standards.register_ping_handler
+async def ping(request: Request) -> Response:
+    """Health check handler for SageMaker.
+    
+    Args:
+        request: FastAPI Request object containing headers, body, etc.
+    
+    Returns:
+        Response: FastAPI Response object with status code and content
+    """
+    return Response(status_code=200, content="Healthy")
+```
+
+**Invocation Handler Signature:**
+
+```python
+from fastapi import Request
+from typing import Dict, Any
+
+@sagemaker_standards.register_invocation_handler
+async def invocations(request: Request) -> Dict[str, Any]:
+    """Model inference handler for SageMaker.
+    
+    Args:
+        request: FastAPI Request object containing the inference request
+    
+    Returns:
+        Dict: JSON-serializable dictionary with predictions
+    """
+    body = await request.json()
+    prompt = body.get("prompt", "")
+    
+    # Your framework's inference logic
+    result = your_model.generate(prompt)
+    
+    return {"predictions": [result]}
+```
+
+**Key Points About Handler Signatures:**
+
+1. **Must be async**: Both handlers must be async functions (`async def`)
+2. **Request parameter**: Both accept a `Request` object as the first parameter
+3. **Return types**:
+   - Ping handler: Returns `Response` object with status code and content
+   - Invocation handler: Returns dict (automatically serialized to JSON by FastAPI)
+4. **Type annotations**: While optional, type annotations improve code clarity and IDE support
+
+**Request/Response Flow:**
+
+Here's how requests flow through the handler registration system:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant FastAPI
+    participant MHCS Router
+    participant Handler Registry
+    participant Your Handler
+    
+    Note over Client,Your Handler: Registration Phase (at startup)
+    Your Handler->>Handler Registry: @register_ping_handler decorator
+    Handler Registry->>Handler Registry: Store handler as "ping" type
+    
+    Note over Client,Your Handler: Request Phase (at runtime)
+    Client->>FastAPI: GET /ping
+    FastAPI->>MHCS Router: Route to /ping endpoint
+    MHCS Router->>Handler Registry: Get handler for "ping" type
+    Handler Registry->>Your Handler: Call registered ping function
+    Your Handler->>Handler Registry: Return Response(200, "Healthy")
+    Handler Registry->>MHCS Router: Response
+    MHCS Router->>FastAPI: Response
+    FastAPI->>Client: 200 OK "Healthy"
+```
+
+**Decorator Stacking:**
+
+You can stack multiple decorators on a handler. They are applied from bottom to top:
+
+```python
+@sagemaker_standards.register_invocation_handler  # Applied second (registers handler)
+@sagemaker_standards.inject_adapter_id("model")   # Applied first (transforms request)
+async def invocations(request: Request) -> dict:
+    # Request is transformed before reaching this function
+    body = await request.json()
+    # body["model"] now contains the adapter ID from the header
+    return {"predictions": ["result"]}
+```
+
+**What Happens When You Apply a Decorator:**
+
+1. **Decorator is called**: When Python encounters `@register_ping_handler`, it calls the decorator function
+2. **Handler is registered**: The decorator stores your function in the handler registry with type "ping"
+3. **Original function returned**: The decorator returns your original function unchanged
+4. **Bootstrap wires it up**: When `bootstrap(app)` is called, it retrieves the handler from the registry and creates the `/ping` route
+
+**Important Notes:**
+
+- **Framework developers use `@register_*`**: These decorators register framework defaults that customers can override
+- **Customers use `@custom_*`**: See [Section 3.3: Handler Priority System](#33-handler-priority-system) for customer override decorators
+- **One handler per type**: Only one handler can be registered per type (ping, invoke). The last one registered wins.
+- **No route creation**: These decorators only register handlers. Routes are created by `bootstrap(app)`.
+
+**Next Steps:**
+
+- [Section 3.3: Handler Priority System](#33-handler-priority-system) - Learn how customer overrides work
+- [Section 5: LoRA Adapter Support](#5-lora-adapter-support) - Add LoRA adapter handlers
+- [Section 6: Session Management](#6-session-management) - Add session management
+
+---
+
+### 3.3 Handler Priority System
+
+MHCS implements a four-level priority system that allows customers to override framework-provided handlers without modifying framework code. This is a core design principle: **framework handlers are defaults, not final implementations**.
+
+**Handler Resolution Priority Order:**
+
+When `bootstrap(app)` is called, MHCS resolves handlers in this priority order (highest to lowest):
+
+1. **Environment Variable** - Handler specified via environment variable (e.g., `CUSTOM_FASTAPI_PING_HANDLER`)
+2. **Custom Decorator** - Handler decorated with `@custom_ping_handler` or `@custom_invocation_handler`
+3. **Customer Script Function** - Function in customer's `model.py` script (e.g., `custom_sagemaker_ping_handler`)
+4. **Register Decorator** - Handler decorated with `@register_ping_handler` or `@register_invocation_handler` (framework default)
+
+**The first handler found in this order is used. Lower priority handlers are ignored.**
+
+**Priority Resolution Decision Tree:**
+
+```mermaid
+graph TD
+    A[Handler Resolution Starts] --> B{Env Var Set?}
+    B -->|Yes| C[Use Env Var Handler]
+    B -->|No| D{Custom Decorator?}
+    D -->|Yes| E[Use Custom Decorator Handler]
+    D -->|No| F{Customer Script Function?}
+    F -->|Yes| G[Use Customer Script Handler]
+    F -->|No| H{Register Decorator?}
+    H -->|Yes| I[Use Framework Default Handler]
+    H -->|No| J[No Handler Found]
+    
+    C --> K[Handler Resolved]
+    E --> K
+    G --> K
+    I --> K
+    J --> L[Skip Route Creation]
+    
+    style C fill:#ff6b6b
+    style E fill:#ffa500
+    style G fill:#ffd93d
+    style I fill:#6bcf7f
+    style J fill:#d3d3d3
+```
+
+**Priority Level Details:**
+
+**Level 1: Environment Variable (Highest Priority)**
+
+Customers specify a handler via environment variable pointing to a function in their custom script.
+
+**Environment Variables:**
+
+| Variable | Handler Type | Example Value |
+|----------|--------------|---------------|
+| `CUSTOM_FASTAPI_PING_HANDLER` | Ping handler | `model.py:my_ping_handler` |
+| `CUSTOM_FASTAPI_INVOCATION_HANDLER` | Invocation handler | `model.py:my_invocation_handler` |
+
+**Required Environment Variables:**
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SAGEMAKER_MODEL_PATH` | Directory containing customer scripts | `/opt/ml/model/` |
+| `CUSTOM_SCRIPT_FILENAME` | Name of customer script file | `model.py` |
+
+**Example:**
+
+```bash
+# Set environment variables
+export SAGEMAKER_MODEL_PATH=/opt/ml/model/
+export CUSTOM_SCRIPT_FILENAME=model.py
+export CUSTOM_FASTAPI_PING_HANDLER=model.py:my_custom_ping
+export CUSTOM_FASTAPI_INVOCATION_HANDLER=model.py:my_custom_invocations
+```
+
+```python
+# /opt/ml/model/model.py (customer's script)
+from fastapi import Request, Response
+
+async def my_custom_ping(request: Request) -> Response:
+    """Customer's custom ping handler via environment variable."""
+    return Response(status_code=200, content="Customer ping via env var")
+
+async def my_custom_invocations(request: Request) -> dict:
+    """Customer's custom invocation handler via environment variable."""
+    body = await request.json()
+    return {
+        "predictions": ["Customer response via env var"],
+        "source": "environment_variable"
+    }
+```
+
+**When to use:** Production deployments where customers need maximum flexibility without code changes.
+
+---
+
+**Level 2: Custom Decorator**
+
+Customers use `@custom_ping_handler` or `@custom_invocation_handler` decorators in their own code.
+
+**Available Decorators:**
+
+| Decorator | Purpose |
+|-----------|---------|
+| `@custom_ping_handler` | Override ping handler |
+| `@custom_invocation_handler` | Override invocation handler |
+
+**Example:**
+
+```python
+# customer_overrides.py (customer's code)
+from fastapi import Request, Response
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+@sagemaker_standards.custom_ping_handler
+async def my_ping(request: Request) -> Response:
+    """Customer's custom ping handler via decorator."""
+    return Response(status_code=200, content="Customer ping via decorator")
+
+@sagemaker_standards.custom_invocation_handler
+async def my_invocations(request: Request) -> dict:
+    """Customer's custom invocation handler via decorator."""
+    body = await request.json()
+    return {
+        "predictions": ["Customer response via decorator"],
+        "source": "custom_decorator"
+    }
+```
+
+**When to use:** When customers have Python code access and want explicit override declarations.
+
+---
+
+**Level 3: Customer Script Function**
+
+Customers define functions with specific names in their `model.py` script. MHCS automatically discovers these functions.
+
+**Function Names:**
+
+| Function Name | Handler Type |
+|---------------|--------------|
+| `custom_sagemaker_ping_handler` | Ping handler |
+| `custom_sagemaker_invocation_handler` | Invocation handler |
+
+**Example:**
+
+```python
+# /opt/ml/model/model.py (customer's script)
+from fastapi import Request, Response
+
+async def custom_sagemaker_ping_handler(request: Request) -> Response:
+    """Customer's ping handler via script function."""
+    return Response(status_code=200, content="Customer ping via script")
+
+async def custom_sagemaker_invocation_handler(request: Request) -> dict:
+    """Customer's invocation handler via script function."""
+    body = await request.json()
+    return {
+        "predictions": ["Customer response via script"],
+        "source": "customer_script"
+    }
+```
+
+**When to use:** When customers want convention-based overrides without explicit decorators or environment variables.
+
+---
+
+**Level 4: Register Decorator (Lowest Priority - Framework Default)**
+
+Framework developers use `@register_ping_handler` or `@register_invocation_handler` to provide default implementations.
+
+**Example:**
+
+```python
+# framework_handlers.py (framework developer's code)
+from fastapi import Request, Response
+import model_hosting_container_standards.sagemaker as sagemaker_standards
+
+@sagemaker_standards.register_ping_handler
+async def framework_ping(request: Request) -> Response:
+    """Framework's default ping handler."""
+    return Response(status_code=200, content="Framework default ping")
+
+@sagemaker_standards.register_invocation_handler
+async def framework_invocations(request: Request) -> dict:
+    """Framework's default invocation handler."""
+    body = await request.json()
+    # Framework's inference logic
+    result = framework_model.generate(body.get("prompt", ""))
+    return {
+        "predictions": [result],
+        "source": "framework_default"
+    }
+```
+
+**When to use:** Framework developers providing default implementations that customers can override.
+
+---
+
+### 3.4 Integration Checklist
+
+This step-by-step checklist guides you through a complete MHCS integration. Follow each step in order, checking off items as you complete them.
+
+**Prerequisites Checklist:**
+
+- [ ] Python >= 3.10 installed
+- [ ] FastAPI >= 0.117.1 installed
+- [ ] MHCS library installed (`pip install model_hosting_container_standards-*.whl`)
+- [ ] Existing FastAPI application with inference logic
+
+---
+
+**Step 1: Import MHCS**
+
+- [ ] Add MHCS import to your main application file:
+  ```python
+  import model_hosting_container_standards.sagemaker as sagemaker_standards
+  ```
+
+**Common Pitfalls:**
+- ❌ Importing from wrong module path
+- ✅ Use the full import path: `model_hosting_container_standards.sagemaker`
+
+**Related Sections:** [Section 1.2: Prerequisites](#12-prerequisites)
+
+---
+
+**Step 2: Decorate Ping Handler**
+
+- [ ] Add `@register_ping_handler` decorator to your health check function:
+  ```python
+  @sagemaker_standards.register_ping_handler
+  async def ping(request: Request) -> Response:
+      return Response(status_code=200, content="Healthy")
+  ```
+
+**Common Pitfalls:**
+- ❌ Using synchronous function (`def` instead of `async def`)
+- ❌ Wrong return type (must return `Response` object)
+- ❌ Forgetting to import `Request` and `Response` from `fastapi`
+- ✅ Handler must be async and return `Response` object
+
+**Related Sections:** [Section 3.2: Handler Registration Pattern](#32-handler-registration-pattern)
+
+---
+
+**Step 3: Decorate Invocation Handler**
+
+- [ ] Add `@register_invocation_handler` decorator to your inference function:
+  ```python
+  @sagemaker_standards.register_invocation_handler
+  async def invocations(request: Request) -> dict:
+      # Your inference logic here
+      ...
+  ```
+
+**Common Pitfalls:**
+- ❌ Using synchronous function (`def` instead of `async def`)
+- ❌ Not awaiting `request.json()` (missing `await`)
+- ❌ Returning non-JSON-serializable objects
+- ✅ Handler must be async and return dict or JSON-serializable object
+
+**Related Sections:** [Section 3.2: Handler Registration Pattern](#32-handler-registration-pattern)
+
+---
+
+**Step 4: Call bootstrap() After All Handlers**
+
+- [ ] Add `bootstrap(app)` call after all handler definitions:
+  ```python
+  # Define all handlers first
+  @sagemaker_standards.register_ping_handler
+  async def ping(request: Request) -> Response:
+      return Response(status_code=200, content="Healthy")
+  
+  @sagemaker_standards.register_invocation_handler
+  async def invocations(request: Request) -> dict:
+      # Your inference logic here
+      ...
+  
+  # Call bootstrap() last
+  sagemaker_standards.bootstrap(app)
+  ```
+
+**Common Pitfalls:**
+- ❌ Calling `bootstrap(app)` before defining handlers (handlers won't be registered)
+- ❌ Calling `bootstrap(app)` multiple times (creates duplicate routes)
+- ❌ Forgetting to call `bootstrap(app)` entirely (routes won't be created)
+- ✅ Call `bootstrap(app)` exactly once, after all handler definitions
+
+**Related Sections:** [Section 3.1: Understanding the Bootstrap Function](#31-understanding-the-bootstrap-function)
+
+---
+
+**Step 5: Test Basic Integration**
+
+- [ ] Start your server:
+  ```bash
+  python your_server.py
+  ```
+
+- [ ] Test the ping endpoint:
+  ```bash
+  curl http://localhost:8000/ping
+  ```
+  **Expected:** `200 OK` with "Healthy" response
+
+- [ ] Test the invocations endpoint:
+  ```bash
+  curl -X POST http://localhost:8000/invocations \
+    -H "Content-Type: application/json" \
+    -d '{"prompt": "test"}'
+  ```
+  **Expected:** `200 OK` with JSON response containing predictions
+
+**Common Pitfalls:**
+- ❌ Server not starting (check for import errors or syntax errors)
+- ❌ 404 errors (bootstrap not called or called too early)
+- ❌ 500 errors (handler exceptions not caught)
+- ✅ Both endpoints should return 200 OK
+
+**Related Sections:** [Section 11.1: Local Testing Guide](#111-local-testing-guide), [Section 12.1: Common Issues](#121-common-issues)
+
+---
+
+**Step 6: Add LoRA Support (Optional)**
+
+If your framework supports LoRA adapters, add these handlers:
+
+- [ ] Add `@inject_adapter_id` decorator to invocation handler:
+  ```python
+  @sagemaker_standards.register_invocation_handler
+  @sagemaker_standards.inject_adapter_id("model")  # or some other target field
+  async def invocations(request: Request) -> dict:
+      # Your inference logic here
+      ...
+  ```
+
+- [ ] Add load adapter handler:
+  ```python
+  @sagemaker_standards.register_load_adapter_handler(
+      request_shape={"adapter_name": "body.name", "adapter_path": "body.src"},
+      response_shape={}
+  )
+  async def load_adapter(request: Request) -> dict:
+      body = await request.json()
+      # Your adapter loading logic
+      return {"status": "success"}
+  ```
+
+- [ ] Add unload adapter handler:
+  ```python
+  @sagemaker_standards.register_unload_adapter_handler(
+      request_shape={"adapter_name": "path_params.adapter_name"},
+      response_shape={}
+  )
+  async def unload_adapter(request: Request) -> dict:
+      # Your adapter unloading logic
+      return {"status": "success"}
+  ```
+
+- [ ] Test LoRA endpoints:
+  ```bash
+  # Load adapter
+  curl -X POST http://localhost:8000/adapters \
+    -H "Content-Type: application/json" \
+    -d '{"name": "my-adapter", "src": "/path/to/adapter"}'
+  
+  # Use adapter
+  curl -X POST http://localhost:8000/invocations \
+    -H "Content-Type: application/json" \
+    -H "X-Amzn-SageMaker-Adapter-Identifier: my-adapter" \
+    -d '{"prompt": "test"}'
+  
+  # Unload adapter
+  curl -X DELETE http://localhost:8000/adapters/my-adapter
+  ```
+
+**Common Pitfalls:**
+- ❌ Wrong decorator order (put `@inject_adapter_id` below `@register_invocation_handler`)
+- ❌ Incorrect `request_shape` paths (must match your request structure)
+- ✅ Decorators are applied bottom-to-top
+
+**Related Sections:** [Section 5: LoRA Adapter Support](#5-lora-adapter-support), [Section 11.2: LoRA Adapter Testing](#112-lora-adapter-testing)
+
+---
+
+**Step 7: Add Session Management (Optional)**
+
+If your framework needs stateful sessions:
+
+- [ ] Set environment variables:
+  ```bash
+  export SAGEMAKER_ENABLE_STATEFUL_SESSIONS=true
+  export SAGEMAKER_SESSIONS_EXPIRATION=1800  # 30 minutes
+  ```
+
+- [ ] Add `@stateful_session_manager` decorator to invocation handler:
+  ```python
+  @sagemaker_standards.register_invocation_handler
+  @sagemaker_standards.stateful_session_manager()
+  async def invocations(request: Request) -> dict:
+      body = await request.json()
+      session_id = request.headers.get("X-Amzn-SageMaker-Session-Id")
+      # Use session_id in your logic
+      return {"predictions": ["result"]}
+  ```
+
+- [ ] Test session endpoints:
+  ```bash
+  # Create session
+  curl -X POST http://localhost:8000/invocations \
+    -H "Content-Type: application/json" \
+    -d '{"requestType": "NEW_SESSION"}'
+  
+  # Use session (replace <session-id> with actual ID)
+  curl -X POST http://localhost:8000/invocations \
+    -H "Content-Type: application/json" \
+    -H "X-Amzn-SageMaker-Session-Id: <session-id>" \
+    -d '{"prompt": "test"}'
+  
+  # Close session
+  curl -X POST http://localhost:8000/invocations \
+    -H "Content-Type: application/json" \
+    -H "X-Amzn-SageMaker-Session-Id: <session-id>" \
+    -d '{"requestType": "CLOSE"}'
+  ```
+
+**Common Pitfalls:**
+- ❌ Forgetting to set `SAGEMAKER_ENABLE_STATEFUL_SESSIONS=true` (sessions won't work)
+- ❌ Not handling session headers when sessions are disabled (will get 400 error)
+- ❌ Wrong decorator order (put `@stateful_session_manager` below `@register_invocation_handler`)
+- ✅ Sessions are disabled by default, must be explicitly enabled
+
+**Related Sections:** [Section 6: Session Management](#6-session-management)
+
+---
+
+**Step 8: Design for Customer Customization**
+
+Ensure your integration allows customers to override your handlers:
+
+- [ ] Use `@register_*` decorators (not `@custom_*`) for framework defaults
+- [ ] Document how customers can override handlers via:
+  - Environment variables (`CUSTOM_FASTAPI_PING_HANDLER`, `CUSTOM_FASTAPI_INVOCATION_HANDLER`)
+  - Custom decorators (`@custom_ping_handler`, `@custom_invocation_handler`)
+  - Script functions (`custom_sagemaker_ping_handler`, `custom_sagemaker_invocation_handler`)
+
+- [ ] Test customer override paths:
+  ```bash
+  # Test with environment variable override
+  export CUSTOM_FASTAPI_PING_HANDLER=model.py:my_custom_ping
+  python your_server.py
+  curl http://localhost:8000/ping
+  ```
+
+**Common Pitfalls:**
+- ❌ Using `@custom_*` decorators in framework code (these are for customers only)
+- ❌ Hardcoding logic that customers can't override
+- ❌ Not documenting override mechanisms for customers
+- ✅ Framework handlers should always be overridable
+
+**Related Sections:** [Section 3.3: Handler Priority System](#33-handler-priority-system), [Section 8: Customer Customization Patterns](#8-customer-customization-patterns)
+
+---
+
+**Step 9: Add Production Features (Optional)**
+
+For production deployments:
+
+- [ ] Configure logging:
+  ```bash
+  export SAGEMAKER_CONTAINER_LOG_LEVEL=INFO
+  ```
+
+- [ ] Add supervisor for crash recovery:
+  ```bash
+  standard-supervisor --command "python your_server.py" --max-retries 3
+  ```
+
+- [ ] Add error handling in handlers:
+  ```python
+  @sagemaker_standards.register_invocation_handler
+  async def invocations(request: Request) -> dict:
+      try:
+          body = await request.json()
+          # Your inference logic
+          return {"predictions": ["result"]}
+      except Exception as e:
+          logger.error(f"Inference error: {e}")
+          raise HTTPException(status_code=500, detail=str(e))
+  ```
+
+**Common Pitfalls:**
+- ❌ Not handling exceptions in handlers (causes 500 errors)
+- ❌ Not configuring logging (hard to debug issues)
+- ❌ Not using supervisor in production (no crash recovery)
+- ✅ Production deployments should have error handling, logging, and supervision
+
+**Related Sections:** [Section 7: Supervisor Process Management](#7-supervisor-process-management), [Section 12.2: Debug Logging](#122-debug-logging), [Section 12.3: Patterns and Anti-Patterns](#123-patterns-and-anti-patterns)
+
+---
+
+**Step 10: Final Validation**
+
+- [ ] All endpoints return expected responses
+- [ ] Error cases are handled gracefully
+- [ ] Logging is configured appropriately
+- [ ] Customer override paths are tested
+- [ ] Documentation is updated for your framework users
+
+**Integration Complete! 🎉**
+
+Your framework is now integrated with MHCS. For advanced features and troubleshooting, continue to the following sections:
+
+- [Section 4: Transform Decorators](#4-transform-decorators) - Deep dive into transforms
+- [Section 9: SGLang Integration Example](#9-sglang-integration-example) - Real-world example
+- [Section 12: Troubleshooting](#12-troubleshooting) - Common issues and solutions
+- [Section 15: Appendix](#15-appendix-complete-example-templates) - Complete templates
+
+---
 
 ## 4. Transform Decorators
 
@@ -910,7 +1711,7 @@ sequenceDiagram
 
 **Key Concepts:**
 
-1. **JMESPath Expressions**: Query language for extracting data from JSON structures (covered in [Section 4.3](#43-jmespath-basics))
+1. **JMESPath Expressions**: Query language for extracting data from JSON structures (see [JMESPath documentation](https://jmespath.org/))
 
 2. **Request Shape**: Dictionary defining what data to extract and where to put it
    ```python
@@ -944,9 +1745,8 @@ sequenceDiagram
 For a complete understanding of the transform system:
 
 - **Next section**: [Section 4.2: Transform System Components](#42-transform-system-components) - Detailed component breakdown
-- **JMESPath guide**: [Section 4.3: JMESPath Basics](#43-jmespath-basics) - Learn the query language
-- **Practical example**: [Section 4.4: Deconstructing @inject_adapter_id](#44-deconstructing-inject_adapter_id) - See how a real decorator works
-- **Custom transforms**: [Section 4.5: Creating Custom Transforms](#45-creating-custom-transforms) - Build your own
+- **JMESPath guide**: [JMESPath documentation](https://jmespath.org/) - Learn the query language
+- **Custom transforms**: [Section 4.3: Creating Custom Transforms](#43-creating-custom-transforms) - Build your own
 - **LoRA factory details**: `python/model_hosting_container_standards/sagemaker/lora/FACTORY_USAGE.md` - Deep dive into LoRA-specific usage
 
 **Summary:**
@@ -960,17 +1760,263 @@ The transform system is a three-layer architecture that automatically adapts bet
 
 ### 4.2 Transform System Components
 
-[Content to be added in subsequent tasks]
+This section explains the core components of the transform system and how they work together to enable automatic request/response transformations.
+
+#### BaseApiTransform Abstract Class
+
+`BaseApiTransform` is the foundation of the transform system. It defines the contract that all transform implementations must follow.
+
+**Core Responsibilities:**
+
+1. **JMESPath Compilation**: Accepts `request_shape` and `response_shape` dictionaries containing JMESPath expressions and compiles them for efficient execution
+2. **Data Transformation**: Provides `_transform()` method that applies compiled JMESPath expressions to source data
+3. **Request Processing**: Defines `transform_request()` abstract method that subclasses implement for specific request handling
+4. **Response Processing**: Defines `transform_response()` abstract method that subclasses implement for specific response handling
+
+**Key Pattern - Shape Dictionaries:**
+
+The transform system uses "shape" dictionaries to define data extraction and transformation:
+
+```python
+# Example request_shape - extracts data from various sources
+request_shape = {
+    "adapter_name": "body.name",           # Extract from request body
+    "adapter_id": "headers.\"X-Amzn-SageMaker-Adapter-Identifier\"",  # Extract from headers
+    "user_id": "path_params.user_id",      # Extract from URL path
+    "limit": "query_params.limit"          # Extract from query string
+}
+
+# Example response_shape - transforms response data
+response_shape = {
+    "status": "result.status",
+    "data": "result.payload"
+}
+```
+
+**How Shape Dictionaries Work:**
+
+- **Keys**: Define the structure of the transformed output
+- **Values**: JMESPath expressions that extract data from the source
+- **Sources**: Four available sources for request transformations:
+  - `body.*` - Request body (JSON)
+  - `headers.*` - HTTP headers
+  - `path_params.*` - URL path parameters
+  - `query_params.*` - Query string parameters
+
+**The Transformation Flow:**
+
+```mermaid
+graph LR
+    A[Raw Request] --> B[serialize_request]
+    B --> C[Source Data Dict]
+    C --> D[_transform with request_shape]
+    D --> E[Transformed Request]
+    E --> F[Your Handler]
+    F --> G[Response]
+    G --> H[_transform with response_shape]
+    H --> I[Final Response]
+```
+
+**Subclass Implementation Pattern:**
+
+Transform subclasses extend `BaseApiTransform` and implement two abstract methods:
+
+1. **`async def transform_request(self, raw_request: Request)`**
+   - Parses and validates the incoming request
+   - Applies `_transform()` with `request_shape` to extract structured data
+   - Returns `BaseTransformRequestOutput` containing transformed data
+
+2. **`def transform_response(self, response: Response, transform_request_output)`**
+   - Receives the handler's response and request transformation output
+   - Returns the final response to send to the client
+
+**Example Transform Subclasses in MHCS:**
+
+- **`InjectToBodyApiTransform`**: Extracts adapter ID from headers and injects into request body
+- **`RegisterLoRAApiTransform`**: Transforms SageMaker's adapter registration format to framework format
+- **`UnregisterLoRAApiTransform`**: Transforms SageMaker's adapter unregistration format to framework format
+- **`SessionApiTransform`**: Manages session headers and request type handling
+
+#### request_shape and response_shape Dictionaries
+
+These dictionaries are the declarative interface for defining transformations. They use JMESPath expressions to specify what data to extract and where to place it.
+
+**request_shape Structure:**
+
+```python
+request_shape = {
+    "target_field": "source.path.to.data",
+}
+```
+
+**Supported Source Prefixes:**
+
+| Prefix | Source | Example | Description |
+|--------|--------|---------|-------------|
+| `body.` | Request body (JSON) | `body.prompt` | Extracts from parsed JSON body |
+| `headers.` | HTTP headers | `headers.Content-Type` | Extracts from request headers |
+| `path_params.` | URL path parameters | `path_params.adapter_name` | Extracts from route path variables |
+| `query_params.` | Query string | `query_params.limit` | Extracts from URL query parameters |
+
+**response_shape Structure:**
+
+Similar to `request_shape`, but operates on the handler's response:
+
+```python
+response_shape = {
+    "status": "result.status",
+    "message": "result.message",
+    "data": "result.payload"
+}
+```
+
+**Empty Shapes:**
+
+- `request_shape = {}`: Transform infrastructure enabled, but no JMESPath transformations applied
+- `request_shape = None` and `response_shape = None`: No transform infrastructure (passthrough mode)
+
+#### JMESPath Expressions
+
+JMESPath is a query language for JSON that enables powerful data extraction and transformation with simple expressions.
+
+**Real MHCS Examples:**
+
+```python
+# Example 1: Adapter ID injection
+request_shape = {
+    "adapter_id": "headers.\"X-Amzn-SageMaker-Adapter-Identifier\""
+}
+# Extracts: {"adapter_id": "my-adapter"}
+
+# Example 2: LoRA adapter registration
+request_shape = {
+    "adapter_name": "body.name",
+    "adapter_path": "body.src"
+}
+# Extracts: {"adapter_name": "adapter1", "adapter_path": "/path/to/adapter"}
+
+# Example 3: Adapter unregistration from URL path
+request_shape = {
+    "adapter_name": "path_params.adapter_name"
+}
+# For DELETE /adapters/my-adapter
+# Extracts: {"adapter_name": "my-adapter"}
+```
+
+See [JMESPath documentation](https://jmespath.org/) for complete syntax reference.
+
+#### create_transform_decorator Factory Function
+
+The `create_transform_decorator` factory function is the bridge between transform classes and the decorators you use in your code. It creates decorator functions dynamically based on a handler type and transform resolver.
+
+**Purpose:**
+
+Instead of manually writing decorator code for each transform type, the factory generates decorators that:
+1. Accept `request_shape` and `response_shape` parameters
+2. Instantiate the appropriate transform class
+3. Wrap your handler function with transformation logic
+4. Register the wrapped handler in the handler registry
+
+**Function Signature:**
+
+```python
+def create_transform_decorator(
+    handler_type: str,
+    transform_resolver: Callable[..., Any]
+) -> Callable:
+    """
+    Args:
+        handler_type: Identifier for the handler (e.g., 'register_adapter')
+        transform_resolver: Function that maps handler_type to transform class
+    
+    Returns:
+        Decorator factory that accepts request_shape and response_shape
+    """
+```
+
+**How It Works:**
+
+The factory creates a three-level decorator structure:
+
+```python
+# Level 1: Factory function (created by create_transform_decorator)
+@decorator_factory(request_shape={...}, response_shape={...})
+
+# Level 2: Decorator (created when you call the factory with shapes)
+def decorator(func):
+    # Level 3: Wrapped function (created when decorator is applied)
+    async def wrapped_func(raw_request: Request):
+        # 1. Transform request
+        transform_output = await transformer.transform_request(raw_request)
+        
+        # 2. Call your handler
+        response = await transformer.intercept(func, transform_output)
+        
+        # 3. Transform response
+        final_response = transformer.transform_response(response, transform_output)
+        
+        return final_response
+    
+    return wrapped_func
+```
+
+**Passthrough Mode:**
+
+If both `request_shape` and `response_shape` are `None`, the factory registers the handler without transformation infrastructure:
+
+```python
+@decorator_factory(request_shape=None, response_shape=None)
+async def my_handler(request: Request):
+    # No transformation applied - direct passthrough
+    pass
+```
+
+**Handler Registry Integration:**
+
+The factory automatically registers wrapped handlers in the handler registry with the specified `handler_type`. This enables the handler priority system (see [Section 3.3](#33-handler-priority-system)) to resolve the correct handler at runtime.
+
+When a decorator is applied, the wrapped handler is stored in the registry and can be retrieved by `handler_type` during the bootstrap process to wire up the appropriate routes.
+
+**Route Configuration Requirement:**
+
+For handler types that need HTTP endpoints (not just transform-only handlers), you must update `get_sagemaker_route_config()` in `sagemaker_router.py` to map the handler type to its route configuration:
+
+```python
+def get_sagemaker_route_config(handler_type: str) -> Optional[RouteConfig]:
+    # Core SageMaker routes
+    if handler_type == "ping":
+        return RouteConfig(path="/ping", method="GET", ...)
+    elif handler_type == "invoke":
+        return RouteConfig(path="/invocations", method="POST", ...)
+    
+    # Delegate to LoRA routes for adapter handlers
+    return get_lora_route_config(handler_type)
+```
+
+**When to Update Route Configuration:**
+
+- **Add new endpoint**: If your handler type needs its own HTTP route (e.g., `/my-endpoint`), add it to `get_sagemaker_route_config()`
+- **Transform-only handlers**: If your handler only transforms existing requests (like `inject_adapter_id`), no route configuration needed
+- **Extend LoRA routes**: For LoRA-specific handlers, update `LORA_ROUTE_REGISTRY` in `lora/routes.py` instead
+
+Without proper route configuration, the handler will be registered but won't be accessible via HTTP.
 
 ---
 
-### 4.3 JMESPath Basics
+**Summary:**
 
-[Content to be added in subsequent tasks]
+The transform system components work together to provide declarative request/response transformations:
+
+1. **BaseApiTransform**: Abstract base class defining the transformation contract
+2. **Shape Dictionaries**: Declarative JMESPath-based data extraction specifications
+3. **JMESPath Expressions**: Query language for extracting data from various sources
+4. **create_transform_decorator**: Factory that generates decorators from transform classes
+
+This architecture enables powerful features like LoRA adapter injection and session management with minimal boilerplate code.
 
 ---
 
-### 4.4 Creating Custom Transforms
+### 4.3 Creating Custom Transforms
 
 This section provides a step-by-step guide for extending `BaseApiTransform` to create custom request/response transformations for your specific use cases.
 
@@ -988,7 +2034,7 @@ You should create a custom transform when you need to:
 Before creating custom transforms, you should understand:
 - Python async/await syntax
 - FastAPI Request and Response objects
-- JMESPath expressions (see [Section 4.3](#43-jmespath-basics))
+- JMESPath expressions (see [JMESPath documentation](https://jmespath.org/))
 - The transform system architecture (see [Section 4.1](#41-transform-system-overview))
 
 #### Step 1: Extend BaseApiTransform
@@ -1218,6 +2264,98 @@ When using transforms with `request_shape`:
 
 When using passthrough mode (`request_shape=None`):
 - **Only argument**: `raw_request` - The original FastAPI Request object
+
+#### Step 6: Configure HTTP Routes (If Needed)
+
+If your custom transform needs its own HTTP endpoint (not just transforming existing requests), you must configure the route mapping.
+
+**When Route Configuration is Required:**
+
+- **New HTTP endpoint**: Your handler needs a dedicated route (e.g., `POST /my-endpoint`)
+- **Standalone operation**: The handler is called directly via HTTP, not as a transform on existing routes
+
+**When Route Configuration is NOT Required:**
+
+- **Transform-only handlers**: Your decorator only transforms existing requests (like `@inject_adapter_id` on `/invocations`)
+- **Middleware-style transforms**: Your transform wraps existing handlers without creating new routes
+
+**Route Configuration Steps:**
+
+1. **For SageMaker-level routes**, update `get_sagemaker_route_config()` in `sagemaker_router.py`:
+
+```python
+def get_sagemaker_route_config(handler_type: str) -> Optional[RouteConfig]:
+    """Map handler types to their route configurations."""
+    
+    # Core SageMaker routes
+    if handler_type == "ping":
+        return RouteConfig(path="/ping", method="GET", ...)
+    elif handler_type == "invoke":
+        return RouteConfig(path="/invocations", method="POST", ...)
+    
+    # Your custom route
+    elif handler_type == "my_custom_operation":
+        return RouteConfig(
+            path="/my-endpoint",
+            method="POST",
+            response_model=None,
+            status_code=200
+        )
+    
+    # Delegate to LoRA routes for adapter handlers
+    return get_lora_route_config(handler_type)
+```
+
+2. **For LoRA-specific routes**, update `LORA_ROUTE_REGISTRY` in `lora/routes.py`:
+
+```python
+LORA_ROUTE_REGISTRY = {
+    LoRAHandlerType.REGISTER_ADAPTER: RouteConfig(
+        path="/adapters",
+        method="POST",
+        ...
+    ),
+    LoRAHandlerType.UNREGISTER_ADAPTER: RouteConfig(
+        path="/adapters/{adapter_name}",
+        method="DELETE",
+        ...
+    ),
+    # Add your custom LoRA route here
+}
+```
+
+**What Happens Without Route Configuration:**
+
+- The handler will be registered in the handler registry
+- The decorator will work for transforming requests
+- **But the handler won't be accessible via HTTP** - no route will be created during bootstrap
+
+**Route Configuration Parameters:**
+
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `path` | URL path for the endpoint | `"/my-endpoint"` |
+| `method` | HTTP method | `"GET"`, `"POST"`, `"DELETE"` |
+| `response_model` | Pydantic model for response validation | `MyResponseModel` or `None` |
+| `status_code` | Default HTTP status code | `200`, `201`, `204` |
+
+**Complete Example:**
+
+Here's a full example showing when route configuration is needed vs not needed:
+
+```python
+# Example 1: Transform-only (NO route configuration needed)
+@inject_adapter_id("model")  # Transforms existing /invocations route
+async def invocations(request: Request):
+    # This decorates an existing route - no new route needed
+    pass
+
+# Example 2: New endpoint (route configuration REQUIRED)
+@my_custom_decorator(request_shape={...}, response_shape={})
+async def my_custom_handler(request: Request):
+    # This needs a new route - must update get_sagemaker_route_config()
+    pass
+```
 
 ---
 
@@ -1521,8 +2659,8 @@ The decorator validates parameters at decoration time:
 The `@inject_adapter_id` decorator is a specialized transform decorator. For deeper understanding of how it works:
 
 - **Transform Architecture**: See [Section 4.1: Transform System Overview](#41-transform-system-overview)
-- **JMESPath Expressions**: See [Section 4.3: JMESPath Basics](#43-jmespath-basics)
-- **Custom Transforms**: See [Section 4.4: Creating Custom Transforms](#44-creating-custom-transforms)
+- **JMESPath Expressions**: See [JMESPath documentation](https://jmespath.org/)
+- **Custom Transforms**: See [Section 4.3: Creating Custom Transforms](#43-creating-custom-transforms)
 
 **Key Points:**
 
@@ -2446,7 +3584,106 @@ MHCS prevents several types of invalid session operations:
 
 ## 7. Supervisor Process Management
 
-[Content to be added in subsequent tasks]
+### 7.1 Supervisor Overview
+
+MHCS includes `standard-supervisor`, a production-ready process management CLI that wraps your ML framework with supervisord to provide automatic crash recovery and container-friendly failure signaling.
+
+**Why Use Supervisor?**
+
+ML frameworks can crash due to OOM errors, CUDA failures, or unexpected exceptions. In production, you need:
+- **Automatic Recovery**: Restart failed processes without manual intervention
+- **Retry Limits**: Prevent infinite restart loops when failures are persistent
+- **Container Integration**: Signal orchestrators (Docker, Kubernetes, SageMaker) when recovery fails
+
+**Key Features:**
+
+- **Automatic Process Monitoring**: Detects when your service crashes or exits unexpectedly
+- **Auto-Recovery**: Automatically restarts failed processes with configurable retry limits (disabled by default)
+- **Container-Friendly**: Exits with code 1 after max retries so orchestrators can detect failures
+- **Zero Configuration**: Works out-of-the-box by prepending `standard-supervisor` to your existing command
+- **Production Ready**: Structured logging, configurable behavior, and battle-tested supervisord underneath
+
+**Basic Usage:**
+
+Simply prepend `standard-supervisor` to your existing framework command:
+
+```dockerfile
+# Without supervisor
+CMD ["vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
+
+# With supervisor - just add standard-supervisor
+CMD ["standard-supervisor", "vllm", "serve", "model", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+**How It Works:**
+
+```mermaid
+graph TD
+    A[Container Starts] --> B[standard-supervisor launches]
+    B --> C[supervisord starts your ML framework]
+    C --> D{Framework Running?}
+    D -->|Yes| E[Monitor process]
+    E --> F{Process exits?}
+    F -->|No| E
+    F -->|Yes| G{Auto-recovery enabled?}
+    G -->|No| H[Exit with code 1]
+    G -->|Yes| I{Retries < Max?}
+    I -->|Yes| C
+    I -->|No| H
+    H --> J[Orchestrator detects failure]
+```
+
+**Default Behavior:**
+
+- **Auto-recovery**: Disabled by default (enable with `PROCESS_AUTO_RECOVERY=true`)
+- **Max retries**: 3 attempts (when auto-recovery is enabled)
+- **Log level**: info
+- **Config file**: `/tmp/supervisord.conf` (generated automatically)
+
+**Expected Service Behavior:**
+
+LLM services should run indefinitely. Any exit is treated as an error. If your service exits for any reason (crash, OOM, etc.):
+1. With auto-recovery disabled (default): Container exits immediately with code 1
+2. With auto-recovery enabled: Service is automatically restarted up to `PROCESS_MAX_START_RETRIES` times
+3. If restart limit is exceeded: Container exits with code 1, signaling failure to orchestrators
+
+**Configuration:**
+
+Configure supervisor behavior using environment variables:
+
+```bash
+# Enable auto-recovery for production
+export PROCESS_AUTO_RECOVERY=true
+
+# Set max restart attempts (default: 3, only applies when auto-recovery is enabled)
+export PROCESS_MAX_START_RETRIES=5
+
+# Set log level (default: info)
+export LOG_LEVEL=debug
+```
+
+**Complete Example:**
+
+```dockerfile
+FROM vllm/vllm-openai:latest
+
+# Install model hosting container standards (includes supervisor)
+RUN pip install model-hosting-container-standards
+
+# Configure supervisor for production
+ENV PROCESS_AUTO_RECOVERY=true
+ENV PROCESS_MAX_START_RETRIES=3
+ENV LOG_LEVEL=info
+
+# Use standard-supervisor with your vLLM command
+CMD ["standard-supervisor", "vllm", "serve", "TinyLlama/TinyLlama-1.1B-Chat-v1.0", \
+     "--host", "0.0.0.0", "--port", "8080", "--dtype", "auto"]
+```
+
+**Additional Resources:**
+
+For complete configuration options, advanced usage, and framework-specific examples, see:
+- [Supervisor README](../python/model_hosting_container_standards/supervisor/README.md)
 
 ## 8. Customer Customization Patterns
 
@@ -2458,13 +3695,342 @@ MHCS prevents several types of invalid session operations:
 
 ## 10. Configuration Reference
 
-[Content to be added in subsequent tasks]
+This section provides a comprehensive reference for all MHCS configuration options, including environment variables and handler priority resolution.
+
+### 10.1 Environment Variables Tables
+
+MHCS uses environment variables for configuration across different functional areas. All variables are optional with sensible defaults.
+
+#### Handler Override Configuration
+
+These environment variables allow customers to override framework-provided handlers at runtime without modifying code.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CUSTOM_FASTAPI_PING_HANDLER` | Custom ping handler specification. Format: `filename.py:function_name` or `module.name:function_name` | `None` |
+| `CUSTOM_FASTAPI_INVOCATION_HANDLER` | Custom invocation handler specification. Format: `filename.py:function_name` or `module.name:function_name` | `None` |
+| `CUSTOM_SCRIPT_FILENAME` | Custom script filename to load from model path | `model.py` |
+| `SAGEMAKER_MODEL_PATH` | Directory path where custom scripts are located | `/opt/ml/model/` |
+
+**Example Usage:**
+
+```bash
+# Override ping handler with custom function
+export SAGEMAKER_MODEL_PATH=/opt/ml/model/
+export CUSTOM_SCRIPT_FILENAME=model.py
+export CUSTOM_FASTAPI_PING_HANDLER=model.py:custom_ping_handler
+
+# Override invocation handler
+export CUSTOM_FASTAPI_INVOCATION_HANDLER=model.py:custom_invocation_handler
+```
+
+#### Session Management Configuration
+
+These environment variables control stateful session behavior for conversational AI applications.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SAGEMAKER_ENABLE_STATEFUL_SESSIONS` | Master switch to enable/disable session management. Must be set to `true` to activate sessions. | `false` |
+| `SAGEMAKER_SESSIONS_EXPIRATION` | Session lifetime in seconds. Sessions automatically expire and are cleaned up after this duration. | `1200` (20 minutes) |
+| `SAGEMAKER_SESSIONS_PATH` | Directory path for session storage. Defaults to memory-backed filesystem (`/dev/shm`) if available, otherwise falls back to system temp directory. | `/dev/shm/sagemaker_sessions` or `{tempdir}/sagemaker_sessions` |
+
+**Example Usage:**
+
+```bash
+# Enable sessions with default 20-minute expiration
+export SAGEMAKER_ENABLE_STATEFUL_SESSIONS=true
+
+# Enable sessions with custom 30-minute expiration and custom path
+export SAGEMAKER_ENABLE_STATEFUL_SESSIONS=true
+export SAGEMAKER_SESSIONS_EXPIRATION=1800
+export SAGEMAKER_SESSIONS_PATH=/custom/session/path
+```
+
+**Important Notes:**
+
+- Sessions are **disabled by default** for security and resource management
+- When sessions are disabled, requests with session headers return `400 BAD_REQUEST`
+- Session data is stored as JSON files in the configured directory
+- Expired sessions are automatically cleaned up on next access
+- Use memory-backed filesystem (`/dev/shm`) for best performance
+
+#### Middleware Configuration
+
+These environment variables allow customers to inject custom middleware for request/response processing.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CUSTOM_PRE_PROCESS` | Custom pre-process middleware specification. Runs before request reaches handler. Format: `filename.py:function` or `module.name:function` or `module.name:Class.method` | `None` |
+| `CUSTOM_POST_PROCESS` | Custom post-process middleware specification. Runs after handler returns response. Format: `filename.py:function` or `module.name:function` or `module.name:Class.method` | `None` |
+| `CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE` | Custom throttle middleware specification. Controls request rate limiting. Format: `filename.py:function` or `module.name:function` or `module.name:Class.method` | `None` |
+| `CUSTOM_FASTAPI_MIDDLEWARE_PRE_POST_PROCESS` | Custom combined pre/post process middleware specification. Format: `filename.py:function` or `module.name:function` or `module.name:Class.method` | `None` |
+
+**Example Usage:**
+
+```bash
+# Add custom pre-processing middleware
+export CUSTOM_PRE_PROCESS=middleware.py:preprocess_request
+
+# Add custom post-processing middleware
+export CUSTOM_POST_PROCESS=middleware.py:postprocess_response
+
+# Add custom throttling middleware
+export CUSTOM_FASTAPI_MIDDLEWARE_THROTTLE=middleware.py:throttle_requests
+```
+
+#### Logging Configuration
+
+These environment variables control MHCS logging behavior.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SAGEMAKER_CONTAINER_LOG_LEVEL` | Log level for MHCS package. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `ERROR` |
+| `LOG_LEVEL` | Fallback log level if `SAGEMAKER_CONTAINER_LOG_LEVEL` is not set. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` | `ERROR` |
+
+**Example Usage:**
+
+```bash
+# Enable debug logging for troubleshooting
+export SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG
+
+# Set info level logging for production
+export SAGEMAKER_CONTAINER_LOG_LEVEL=INFO
+```
+
+**Important Notes:**
+
+- Default log level is `ERROR` to minimize noise in production
+- Use `DEBUG` level when troubleshooting integration issues
+- Logs are written to stdout with structured format: `[LEVEL] name - file:line: message`
+
+#### Supervisor Process Management Configuration
+
+These environment variables control the `standard-supervisor` process management behavior.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PROCESS_AUTO_RECOVERY` | Enable automatic process restart on failure. Set to `true` to enable. | `false` |
+| `PROCESS_MAX_START_RETRIES` | Maximum number of restart attempts when auto-recovery is enabled. Valid range: 0-100. | `3` |
+| `LOG_LEVEL` | Log level for supervisor. Valid values: `debug`, `info`, `warn`, `error`, `critical` | `info` |
+
+**Example Usage:**
+
+```bash
+# Enable auto-recovery with default 3 retry attempts
+export PROCESS_AUTO_RECOVERY=true
+
+# Enable auto-recovery with 5 retry attempts
+export PROCESS_AUTO_RECOVERY=true
+export PROCESS_MAX_START_RETRIES=5
+
+# Enable debug logging for supervisor
+export LOG_LEVEL=debug
+```
+
+**Important Notes:**
+
+- Auto-recovery is **disabled by default** - container exits immediately on process failure
+- When auto-recovery is enabled, supervisor attempts to restart the process up to `PROCESS_MAX_START_RETRIES` times
+- After max retries are exhausted, container exits with code 1 to signal failure to orchestrators
+- See [Section 7: Supervisor Process Management](#7-supervisor-process-management) for complete details
+
+### 10.2 Handler Priority Resolution
+
+MHCS uses a priority-based system to resolve which handler function should be used for each endpoint. This allows customers to override framework-provided defaults without modifying framework code.
+
+**Priority Order (Highest to Lowest):**
+
+1. **Environment Variable Handler** (Highest Priority)
+   - Specified via `CUSTOM_FASTAPI_PING_HANDLER` or `CUSTOM_FASTAPI_INVOCATION_HANDLER`
+   - Format: `filename.py:function_name` or `module.name:function_name`
+   - Use case: Customer wants to completely replace handler without touching code
+   - Example: `export CUSTOM_FASTAPI_PING_HANDLER=model.py:my_custom_ping`
+
+2. **Custom Decorator Handler**
+   - Registered using `@custom_ping_handler` or `@custom_invocation_handler` decorators
+   - Use case: Customer wants to override handler in their own Python code
+   - Example:
+     ```python
+     @sagemaker_standards.custom_ping_handler
+     async def my_ping(request: Request):
+         return {"status": "custom"}
+     ```
+
+3. **Script Function Handler**
+   - Function defined in customer script (default: `model.py` in `/opt/ml/model/`)
+   - Function must have specific name: `ping_handler` or `invocation_handler`
+   - Use case: Customer provides handler in their model script
+   - Example: Define `async def ping_handler(request: Request)` in `model.py`
+
+4. **Register Decorator Handler** (Lowest Priority - Framework Default)
+   - Registered using `@register_ping_handler` or `@register_invocation_handler` decorators
+   - Use case: Framework developers provide default implementations
+   - Example:
+     ```python
+     @sagemaker_standards.register_ping_handler
+     async def framework_ping(request: Request):
+         return Response(status_code=200, content="OK")
+     ```
+
+**Resolution Process:**
+
+When `bootstrap(app)` is called, MHCS resolves handlers in this order:
+
+```mermaid
+graph TD
+    A[bootstrap called] --> B{Env var set?}
+    B -->|Yes| C[Use env var handler]
+    B -->|No| D{Custom decorator?}
+    D -->|Yes| E[Use custom decorator handler]
+    D -->|No| F{Script function exists?}
+    F -->|Yes| G[Use script function handler]
+    F -->|No| H{Register decorator?}
+    H -->|Yes| I[Use register decorator handler]
+    H -->|No| J[Error: No handler found]
+    
+    C --> K[Create route with handler]
+    E --> K
+    G --> K
+    I --> K
+```
+
+**Why This Matters:**
+
+- **Framework Developers**: Use `@register_*` decorators for your default implementations. These are the lowest priority, so customers can always override them.
+- **Customers**: Use environment variables, `@custom_*` decorators, or script functions to override framework defaults without modifying framework code.
+- **Flexibility**: The priority system ensures that customer customizations always take precedence over framework defaults.
+
+**Best Practices:**
+
+- **Framework Developers**: Always use `@register_*` decorators for your defaults
+- **Never use `@custom_*` decorators in framework code** - these are reserved for customers
+- **Document your default handlers** so customers know what they're overriding
+- **Test customer override paths** to ensure your framework supports customization
+
+**See Also:**
+
+- [Section 3.3: Handler Priority System](#33-handler-priority-system) - Detailed explanation with diagrams
+- [Section 8: Customer Customization Patterns](#8-customer-customization-patterns) - Complete customization guide
+- [Section 2.4: Use Case 4: Runtime Custom Code Injection](#24-use-case-4-runtime-custom-code-injection) - Quick start example
 
 ## 11. Testing & Validation
 
 [Content to be added in subsequent tasks]
 
 ## 12. Troubleshooting
+
+### 12.1 Common Issues
+
+[Content to be added in subsequent tasks]
+
+### 12.2 Debug Logging
+
+MHCS includes comprehensive logging to help troubleshoot integration issues. By default, logging is set to `ERROR` level to minimize noise in production. You can enable more verbose logging for development and debugging.
+
+#### Enabling Debug Logging
+
+Set the `SAGEMAKER_CONTAINER_LOG_LEVEL` environment variable to control MHCS logging verbosity:
+
+```bash
+# Enable DEBUG level for maximum verbosity
+export SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG
+
+# Enable INFO level for general operational messages
+export SAGEMAKER_CONTAINER_LOG_LEVEL=INFO
+
+# Enable WARNING level for warnings only
+export SAGEMAKER_CONTAINER_LOG_LEVEL=WARNING
+
+# Enable ERROR level (default) for errors only
+export SAGEMAKER_CONTAINER_LOG_LEVEL=ERROR
+```
+
+**Alternative**: If `SAGEMAKER_CONTAINER_LOG_LEVEL` is not set, MHCS falls back to the `LOG_LEVEL` environment variable:
+
+```bash
+export LOG_LEVEL=DEBUG
+```
+
+**Note**: `SAGEMAKER_CONTAINER_LOG_LEVEL` takes priority over `LOG_LEVEL` if both are set.
+
+#### Starting Your Server with Debug Logging
+
+```bash
+# Option 1: Set environment variable before starting
+export SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG
+python my_server.py
+
+# Option 2: Set inline with the command
+SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG python my_server.py
+
+# Option 3: With uvicorn directly
+SAGEMAKER_CONTAINER_LOG_LEVEL=DEBUG uvicorn my_server:app --host 0.0.0.0 --port 8000
+```
+
+#### What to Look for in Logs
+
+MHCS logs follow this format:
+
+```
+[LEVEL] logger_name - filename.py:line_number: message
+```
+
+#### Common Debugging Scenarios
+
+**Scenario 1: Handler Not Being Called**
+
+Enable `DEBUG` logging and look for:
+- `Mounted handler: POST /invocations -> <handler_name>` - Confirms handler was registered
+- `No customer script <function_name> function found` - Customer override attempted but not found
+- `Skipping <handler_name> - no default route configured` - Handler registered but has no route
+
+**Scenario 2: Customer Override Not Working**
+
+Enable `DEBUG` logging and look for:
+- `No customer script <function_name> function found` - Script file or function doesn't exist
+- `Customer script <function_name> function failed to load` - Script has syntax or import errors
+- `[REGISTRY] Registered <middleware_name> middleware from env` - Shows which source was used
+
+**Scenario 3: Route Conflicts**
+
+Enable `INFO` or `DEBUG` logging and look for:
+- `Route conflicts detected. The following existing routes will be replaced` - Shows which routes conflict
+- `Removing conflicting route: POST /invocations` - Shows which routes are being removed
+- `No route conflicts detected` - Confirms no conflicts
+
+**Scenario 4: Session Issues**
+
+Enable `INFO` logging and look for:
+- `Session <session_id> created` - Confirms session creation
+- `Session <session_id> closed` - Confirms session closure
+- `Invalid payload. stateful sessions not enabled` - Sessions disabled but headers present
+
+#### Tips for Effective Debugging
+
+1. **Start with INFO level**: Provides operational messages without overwhelming detail
+2. **Use DEBUG for deep troubleshooting**: Shows every step of handler resolution and registration
+3. **Check bootstrap messages first**: Confirms MHCS initialized correctly
+4. **Look for ERROR messages**: Indicates actual problems that need fixing
+5. **Watch for WARNING messages**: Indicates potential issues or misconfigurations
+6. **Disable debug logging in production**: Use `ERROR` level to minimize log volume
+
+#### Log Level Reference
+
+| Level | When to Use | What You'll See |
+|-------|-------------|-----------------|
+| `DEBUG` | Development, troubleshooting | All messages including internal operations |
+| `INFO` | Development, staging | Operational messages (bootstrap, handler registration, sessions) |
+| `WARNING` | Production (if needed) | Warnings about potential issues (route conflicts, deprecated features) |
+| `ERROR` | Production (default) | Only errors that need attention |
+| `CRITICAL` | Production | Only critical failures |
+
+**See Also:**
+
+- [Section 12.1: Common Issues](#121-common-issues) - Specific problems and solutions
+- [Section 10: Configuration Reference](#10-configuration-reference) - All environment variables
+- [Section 11: Testing & Validation](#11-testing--validation) - Testing your integration
+
+### 12.3 Patterns and Anti-Patterns
 
 [Content to be added in subsequent tasks]
 
