@@ -2,6 +2,8 @@
 
 This guide explains how to customize the `/ping` and `/invocations` endpoints for your vLLM models on Amazon SageMaker.
 
+> 📓 **Working Example**: See the [Handler Override Notebook](../../examples/vllm/notebooks/handler_customization_methods.ipynb) for a complete working example.
+
 ## Overview
 
 The vLLM container comes with default handlers for health checks and inference. You can override these defaults using custom Python code in your model artifacts.

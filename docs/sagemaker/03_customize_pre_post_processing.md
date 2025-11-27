@@ -2,6 +2,8 @@
 
 This guide explains how to add custom pre-processing and post-processing logic to your model endpoints using middleware.
 
+> 📓 **Working Example**: See the [Pre/Post Processing Notebook](../../examples/vllm/notebooks/preprocessing_postprocessing_methods.ipynb) for a complete working example.
+
 ## Overview
 
 Pre/post processing middleware allows you to transform requests and responses without modifying your core handler logic. Common use cases include:
@@ -331,143 +333,6 @@ async def log_and_measure(request: Request, call_next):
     logger.info(f"Request {request_id} completed in {duration:.3f}s")
 
     return response
-```
-
-## Complete Example
-
-Here's a comprehensive example combining multiple preprocessing and postprocessing features:
-
-```python
-# middleware.py
-from model_hosting_container_standards.common.fastapi.middleware import custom_middleware
-from model_hosting_container_standards.logging_config import logger
-from fastapi import Request, Response, HTTPException
-import json
-import time
-import uuid
-
-@custom_middleware("pre_post_process")
-async def comprehensive_middleware(request: Request, call_next):
-    """
-    Comprehensive middleware with:
-    - Request ID generation
-    - Input validation
-    - Logging
-    - Timing
-    - Error handling
-    - Response formatting
-    """
-    # Generate request ID
-    request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
-    start_time = time.time()
-
-    try:
-        # Pre-processing
-        logger.info(f"[{request_id}] Processing {request.method} {request.url.path}")
-
-        if request.url.path == "/invocations":
-            # Parse and validate request
-            try:
-                body = await request.json()
-            except json.JSONDecodeError:
-                raise HTTPException(status_code=400, detail="Invalid JSON")
-
-            # Validate required fields
-            if "prompt" not in body:
-                raise HTTPException(status_code=400, detail="Missing 'prompt' field")
-
-            # Set defaults
-            body.setdefault("max_tokens", 100)
-            body.setdefault("temperature", 0.7)
-
-            # Validate ranges
-            if body["max_tokens"] < 1 or body["max_tokens"] > 2048:
-                raise HTTPException(
-                    status_code=400,
-                    detail="max_tokens must be between 1 and 2048"
-                )
-
-            if body["temperature"] < 0 or body["temperature"] > 2:
-                raise HTTPException(
-                    status_code=400,
-                    detail="temperature must be between 0 and 2"
-                )
-
-            # Log request details
-            logger.info(
-                f"[{request_id}] Prompt length: {len(body['prompt'])}, "
-                f"max_tokens: {body['max_tokens']}, "
-                f"temperature: {body['temperature']}"
-            )
-
-            # Store modified body
-            request._body = json.dumps(body).encode()
-
-        # Call handler
-        response = await call_next(request)
-
-        # Post-processing
-        duration = time.time() - start_time
-
-        # Add headers
-        response.headers["X-Request-Id"] = request_id
-        response.headers["X-Processing-Time"] = f"{duration:.3f}"
-        response.headers["X-API-Version"] = "1.0.0"
-
-        # Enhance response body
-        if response.status_code == 200 and request.url.path == "/invocations":
-            try:
-                body = json.loads(response.body)
-
-                # Add metadata
-                body["metadata"] = {
-                    "request_id": request_id,
-                    "processing_time": round(duration, 3),
-                    "timestamp": time.time()
-                }
-
-                response.body = json.dumps(body).encode()
-            except (json.JSONDecodeError, AttributeError):
-                pass
-
-        logger.info(
-            f"[{request_id}] Completed: "
-            f"status={response.status_code}, duration={duration:.3f}s"
-        )
-
-        return response
-
-    except HTTPException:
-        # Re-raise HTTP exceptions
-        raise
-    except Exception as e:
-        # Handle unexpected errors
-        logger.error(f"[{request_id}] Unexpected error: {e}", exc_info=True)
-
-        error_response = {
-            "error": "Internal server error",
-            "request_id": request_id,
-            "detail": str(e)
-        }
-
-        return Response(
-            content=json.dumps(error_response),
-            media_type="application/json",
-            status_code=500,
-            headers={
-                "X-Request-Id": request_id,
-                "X-Processing-Time": f"{time.time() - start_time:.3f}"
-            }
-        )
-```
-
-**Deploy with:**
-```python
-environment = {
-    'SM_VLLM_MODEL': 'meta-llama/Meta-Llama-3-8B-Instruct',
-    'CUSTOM_FASTAPI_MIDDLEWARE_PRE_POST_PROCESS': 'middleware.py:comprehensive_middleware',
-    'SAGEMAKER_CONTAINER_LOG_LEVEL': 'INFO',
-}
 ```
 
 ## Middleware Execution Order
