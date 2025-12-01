@@ -1,12 +1,9 @@
 import json
-from logging import getLogger
 from typing import Any, Dict, Optional, Union
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-
-logger = getLogger(__name__)
 
 
 def serialize_request(
@@ -60,7 +57,6 @@ def serialize_response(response: Union[Response, JSONResponse]):
         logger.warning(f"Response body is not JSON, keeping as string: {e}")
         # body remains as string - no action needed
 
-    logger.info(body)
     return {
         "body": body,
         "headers": response.headers,

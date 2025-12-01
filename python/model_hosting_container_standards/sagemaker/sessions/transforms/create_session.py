@@ -1,15 +1,13 @@
 from http import HTTPStatus
-from logging import getLogger
 from typing import Any, Dict
 
 from fastapi import Response
 from fastapi.exceptions import HTTPException
 
+from ....logging_config import logger
 from ..models import SageMakerSessionHeader
 from .base_engine_session_api_transform import BaseEngineSessionApiTransform
 from .constants import RESPONSE_CONTENT_KEY
-
-logger = getLogger(__name__)
 
 
 class CreateSessionApiTransform(BaseEngineSessionApiTransform):

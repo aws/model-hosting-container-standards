@@ -1,15 +1,13 @@
 import abc
 import json
 from http import HTTPStatus
-from logging import getLogger
 
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
 from ....common import BaseApiTransform, BaseTransformRequestOutput
-
-logger = getLogger(__name__)
+from ....logging_config import logger
 
 
 class BaseEngineSessionApiTransform(BaseApiTransform):
