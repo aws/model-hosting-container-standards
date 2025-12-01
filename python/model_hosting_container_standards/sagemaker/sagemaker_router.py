@@ -1,15 +1,13 @@
-import logging
 from typing import Optional
 
 from fastapi import APIRouter
 
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig, create_router
+from ..logging_config import logger
 
 # Import LoRA-specific route configuration
 from .lora.routes import get_lora_route_config
-
-logger = logging.getLogger(__name__)
 
 
 def get_sagemaker_route_config(handler_type: str) -> Optional[RouteConfig]:

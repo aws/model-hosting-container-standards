@@ -1,14 +1,12 @@
-import logging
 from http import HTTPStatus
 from typing import Optional
 
 from fastapi import Request
 from fastapi.exceptions import HTTPException
 
+from ...logging_config import logger
 from .manager import SessionManager
 from .models import SageMakerSessionHeader
-
-logger = logging.getLogger(__name__)
 
 
 def get_session_id_from_request(raw_request: Request):

@@ -1,5 +1,4 @@
 import json
-import logging
 from http import HTTPStatus
 from typing import Optional
 
@@ -9,6 +8,7 @@ from pydantic import ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
 from ...common.handler import handler_registry
+from ...logging_config import logger
 from .handlers import get_handler_for_request_type
 from .manager import SessionManager, get_session_manager
 from .models import (
@@ -18,8 +18,6 @@ from .models import (
     SessionRequestType,
 )
 from .utils import get_session, get_session_id_from_request
-
-logger = logging.getLogger(__name__)
 
 
 def _parse_session_request(request_data: dict) -> Optional[SessionRequest]:

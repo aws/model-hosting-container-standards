@@ -27,7 +27,6 @@ Key Features:
 """
 
 import importlib.util
-import logging
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -36,8 +35,7 @@ from model_hosting_container_standards.exceptions import (
     HandlerNotFoundError,
     ModuleLoadError,
 )
-
-logger = logging.getLogger(__name__)
+from model_hosting_container_standards.logging_config import logger
 
 
 class FileLoader:

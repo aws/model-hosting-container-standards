@@ -1,4 +1,3 @@
-import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from model_hosting_container_standards.exceptions import (
@@ -6,12 +5,11 @@ from model_hosting_container_standards.exceptions import (
     HandlerNotCallableError,
     HandlerNotFoundError,
 )
+from model_hosting_container_standards.logging_config import logger
 
 from ..handler.spec import HandlerSpec
 from .file_loader import FileLoader
 from .module_loader import ModuleLoader
-
-logger = logging.getLogger(__name__)
 
 
 class FunctionLoader:

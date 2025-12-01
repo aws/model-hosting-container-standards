@@ -24,15 +24,13 @@ handler resolver framework.
 - Missing handlers return None (graceful degradation)
 """
 
-import logging
 from typing import Any, Callable, Optional, Union
 
 from ..common.handler.registry import handler_registry
 from ..common.handler.resolver import GenericHandlerResolver, HandlerConfig
 from ..exceptions import HandlerFileNotFoundError, HandlerNotFoundError
+from ..logging_config import logger
 from .sagemaker_loader import SageMakerFunctionLoader
-
-logger = logging.getLogger(__name__)
 
 
 class SageMakerHandlerConfig(HandlerConfig):

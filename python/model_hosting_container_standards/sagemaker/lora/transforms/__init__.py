@@ -1,12 +1,10 @@
-import logging
 from typing import List
 
+from ....logging_config import logger
 from ..constants import LoRAHandlerType
 from .inject_to_body import InjectToBodyApiTransform
 from .register import RegisterLoRAApiTransform
 from .unregister import UnregisterLoRAApiTransform
-
-logger = logging.getLogger(__name__)
 
 
 def resolve_lora_transform(handler_type: str) -> type:
