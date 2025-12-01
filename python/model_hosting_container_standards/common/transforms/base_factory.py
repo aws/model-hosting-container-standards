@@ -1,12 +1,10 @@
-import logging
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import Request
 
 from model_hosting_container_standards.common import BaseApiTransform
 from model_hosting_container_standards.common.handler import handler_registry
-
-logger = logging.getLogger(__name__)
+from model_hosting_container_standards.logging_config import logger
 
 
 def _resolve_transforms(

@@ -11,15 +11,13 @@ Examples:
 """
 
 import importlib
-import logging
 from typing import Any, Optional
 
 from model_hosting_container_standards.exceptions import (
     HandlerNotFoundError,
     ModuleLoadError,
 )
-
-logger = logging.getLogger(__name__)
+from model_hosting_container_standards.logging_config import logger
 
 
 class ModuleLoader:

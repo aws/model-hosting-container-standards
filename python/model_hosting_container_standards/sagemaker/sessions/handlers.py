@@ -1,10 +1,10 @@
-import logging
 from datetime import datetime, timezone
 from http import HTTPStatus
 
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 
+from ...logging_config import logger
 from .manager import get_session_manager
 from .models import (
     SESSION_DISABLED_ERROR_DETAIL,
@@ -13,8 +13,6 @@ from .models import (
     SessionRequestType,
 )
 from .utils import get_session_id_from_request
-
-logger = logging.getLogger(__name__)
 
 
 def get_handler_for_request_type(request_type: SessionRequestType):

@@ -34,7 +34,6 @@ invoke_handler = resolver.resolve_handler("invoke")
 ```
 """
 
-import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Optional, Union
 
@@ -44,10 +43,9 @@ from model_hosting_container_standards.exceptions import (
     HandlerResolutionError,
     InvalidHandlerSpecError,
 )
+from model_hosting_container_standards.logging_config import logger
 
 from .registry import handler_registry
-
-logger = logging.getLogger(__name__)
 
 
 class HandlerConfig(ABC):
