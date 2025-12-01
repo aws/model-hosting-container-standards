@@ -7,6 +7,7 @@ from fastapi.exceptions import HTTPException
 from pydantic import ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
+from ...logging_config import logger
 from .handlers import get_handler_for_request_type
 from .manager import SessionManager, get_session_manager
 from .models import (
