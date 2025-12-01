@@ -96,7 +96,16 @@
 
 ### 1.1 What is MHCS?
 
-Model Hosting Container Standards (MHCS) is a Python library that standardizes how ML frameworks integrate with Amazon SageMaker. It provides a unified approach to implementing the required SageMaker endpoints (`/ping` and `/invocations`) while adding powerful features like LoRA adapter management, stateful sessions, and customer customization.
+Model Hosting Container Standards (MHCS) is a Python library that acts as a bridge between Amazon SageMaker's platform requirements and ML inference engines with rapidly evolving APIs. It standardizes how ML frameworks integrate with SageMaker while maintaining backwards compatibility and adapting to changing engine interfaces.
+
+**Why MHCS Exists:**
+
+SageMaker has strict, difficult-to-change platform requirements (like specific endpoint contracts and management APIs), while ML engines like vLLM, SGLang, and TensorRT-LLM frequently update their APIs and capabilities. MHCS sits between these two worlds, providing:
+
+- **Stable Platform Interface**: Implements SageMaker's required endpoints (`/ping`, `/invocations`) and management APIs consistently
+- **Engine Flexibility**: Adapts to different ML engine APIs without requiring SageMaker platform changes
+- **Backwards Compatibility**: Ensures existing integrations continue working as both SageMaker and engines evolve
+- **Focus on Management**: Prioritizes platform management APIs (health checks, adapter loading, session management) that SageMaker needs most
 
 **Key Benefits:**
 
