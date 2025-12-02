@@ -52,10 +52,10 @@ def serialize_response(response: Union[Response, JSONResponse]):
     body = response.body.decode(response.charset)
     try:
         body = json.loads(body)
-    except json.JSONDecodeError as e:
+    except json.JSONDecodeError:
         # If body is not JSON, keep it as a string
-        logger.warning(f"Response body is not JSON, keeping as string: {e}")
-        # body remains as string - no action needed
+        # logger.warning(f"Response body is not JSON, keeping as string: {e}")
+        pass
 
     return {
         "body": body,

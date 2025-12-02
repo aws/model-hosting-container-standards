@@ -7,7 +7,6 @@ from fastapi.exceptions import HTTPException
 from pydantic import BaseModel
 
 from ....common import BaseApiTransform, BaseTransformRequestOutput
-from ....logging_config import logger
 
 
 class BaseEngineSessionApiTransform(BaseApiTransform):
