@@ -2,6 +2,17 @@
 
 This module provides stateful session management for SageMaker model hosting containers, enabling multi-turn conversations and persistent state across requests.
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [Session Storage](#session-storage)
+- [Expiration and Cleanup](#expiration-and-cleanup)
+- [Advanced Usage](#advanced-usage)
+  - [Custom Session Handlers](./CUSTOM_HANDLERS.md)
+
 ## Overview
 
 Stateful sessions allow clients to maintain context across multiple inference requests without passing all state in every request. Each session has:
@@ -9,6 +20,23 @@ Stateful sessions allow clients to maintain context across multiple inference re
 - **File-based storage**: Key-value data stored in-memory (not persistent across restarts)
 - **Automatic expiration**: Configurable TTL (default: 20 minutes)
 - **Thread-safe access**: Concurrent request handling
+
+### Session Management Modes
+
+The framework supports two modes of session management:
+
+1. **SageMaker-Managed Sessions** (Default)
+   - Sessions managed by the built-in `SessionManager`
+   - File-based key-value storage in `/dev/shm`
+   - Automatic expiration and cleanup
+   - Best for general-purpose session state
+
+2. **Engine-Managed Sessions** (Custom Handlers)
+   - Sessions delegated to your inference engine's native API
+   - Leverages engine-specific session features
+   - Requires custom handler registration
+   - Best when engine has built-in session support (e.g., vLLM, TGI)
+   - See [CUSTOM_HANDLERS.md](./CUSTOM_HANDLERS.md) for details
 
 ## Architecture
 
@@ -31,7 +59,7 @@ SessionApiTransform  (transform.py)
 - **Session Handlers** (`handlers.py`): Functions to create and close sessions
 - **Utilities** (`utils.py`): Helper functions for session ID extraction and retrieval
 
-## Usage
+## Quick Start
 
 ### Enabling Sessions in Your Handler
 
@@ -102,12 +130,23 @@ session_manager = SessionManager({
 ### Storage Location
 
 Sessions are stored in memory-backed filesystem when available:
-- **Preferred**: `/dev/shm/sagemaker_sessions` (tmpfs - fast)
+- **Preferred**: `/dev/shm/sagemaker_sessions` (tmpfs - fast, in-memory)
 - **Fallback**: `{tempdir}/sagemaker_sessions` (disk-backed)
+
+**Note**: Session data is not persistent across container restarts.
 
 ## Session Storage
 
-Each session maintains its own directory with JSON files for key-value pairs.
+Each session maintains its own directory with JSON files for key-value pairs:
+
+```
+/dev/shm/sagemaker_sessions/
+├── <session-id-1>/
+│   ├── key1.json
+│   └── key2.json
+└── <session-id-2>/
+    └── key1.json
+```
 
 ## Expiration and Cleanup
 
@@ -119,16 +158,8 @@ Each session maintains its own directory with JSON files for key-value pairs.
 
 ## Advanced Usage
 
-For more control, use `create_session_transform_decorator()` directly:
+### Custom Session Handlers
 
-```python
-from model_hosting_container_standards.sagemaker.sessions import create_session_transform_decorator
+If your inference engine has its own session management API, you can register custom handlers to delegate session creation and closure to the engine instead of using SageMaker's built-in session management.
 
-session_transform = create_session_transform_decorator()
-
-@session_transform(request_shape={}, response_shape={})
-def my_handler(request, context):
-    pass
-```
-
-**Note**: `SessionApiTransform` ignores the `request_shape` and `response_shape` parameters. These are passed to the parent `BaseApiTransform` class for interface compatibility, but session requests use their own validation via `SessionRequest` model instead of JMESPath transformations.
+See [CUSTOM_HANDLERS.md](./CUSTOM_HANDLERS.md) for detailed documentation on implementing custom create/close session handlers.
