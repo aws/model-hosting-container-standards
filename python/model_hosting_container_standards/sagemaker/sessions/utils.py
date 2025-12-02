@@ -1,4 +1,5 @@
 from http import HTTPStatus
+from typing import Optional
 
 from fastapi import Request
 from fastapi.exceptions import HTTPException
@@ -22,7 +23,7 @@ def get_session_id_from_request(raw_request: Request):
     return raw_request.headers.get(SageMakerSessionHeader.SESSION_ID)
 
 
-def get_session(session_manager: SessionManager, raw_request: Request):
+def get_session(session_manager: Optional[SessionManager], raw_request: Request):
     """Retrieve the session associated with the request.
 
     Args:

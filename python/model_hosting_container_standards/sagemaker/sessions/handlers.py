@@ -5,8 +5,13 @@ from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 
 from ...logging_config import logger
-from .manager import SessionManager
-from .models import SageMakerSessionHeader, SessionRequestType
+from .manager import get_session_manager
+from .models import (
+    SESSION_DISABLED_ERROR_DETAIL,
+    SESSION_DISABLED_LOG_MESSAGE,
+    SageMakerSessionHeader,
+    SessionRequestType,
+)
 from .utils import get_session_id_from_request
 
 
@@ -27,11 +32,10 @@ def get_handler_for_request_type(request_type: SessionRequestType):
         return None
 
 
-async def close_session(session_manager: SessionManager, raw_request: Request):
+async def close_session(raw_request: Request):
     """Close an existing session and clean up its resources.
 
     Args:
-        session_manager: SessionManager instance to manage the session lifecycle
         raw_request: FastAPI Request object containing session ID in headers
 
     Returns:
@@ -41,6 +45,13 @@ async def close_session(session_manager: SessionManager, raw_request: Request):
         HTTPException: If session closure fails with 424 FAILED_DEPENDENCY status
     """
     session_id = get_session_id_from_request(raw_request)
+    session_manager = get_session_manager()
+    if session_manager is None:
+        logger.error(SESSION_DISABLED_LOG_MESSAGE)
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST.value,
+            detail=SESSION_DISABLED_ERROR_DETAIL,
+        )
     try:
         session_manager.close_session(session_id)
         logger.info(f"Session {session_id} closed")
@@ -57,11 +68,10 @@ async def close_session(session_manager: SessionManager, raw_request: Request):
         )
 
 
-async def create_session(session_manager: SessionManager, raw_request: Request):
+async def create_session(raw_request: Request):
     """Create a new stateful session with expiration tracking.
 
     Args:
-        session_manager: SessionManager instance to manage the session lifecycle
         raw_request: FastAPI Request object (unused but part of handler signature)
 
     Returns:
@@ -70,6 +80,13 @@ async def create_session(session_manager: SessionManager, raw_request: Request):
     Raises:
         HTTPException: If session creation fails with 424 FAILED_DEPENDENCY status
     """
+    session_manager = get_session_manager()
+    if session_manager is None:
+        logger.error(SESSION_DISABLED_LOG_MESSAGE)
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST.value,
+            detail=SESSION_DISABLED_ERROR_DETAIL,
+        )
     try:
         session = session_manager.create_session()
         # expiration_ts is guaranteed to be set for newly created sessions
