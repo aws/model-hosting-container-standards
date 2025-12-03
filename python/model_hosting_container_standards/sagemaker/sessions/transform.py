@@ -86,61 +86,12 @@ def _validate_session_if_present(
     if session_id:
         try:
             get_session(session_manager, raw_request)
+            return session_id
         except ValueError as e:
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST.value,
                 detail=f"Bad request: {str(e)}",
             )
-
-
-def process_session_request(
-    request_data: dict, raw_request: Request, session_manager: Optional[SessionManager]
-):
-    """Process a potential session management request.
-
-    Determines if the request is a session management operation (NEW_SESSION or CLOSE)
-    and routes it to the appropriate handler, or passes through for normal processing.
-
-    Args:
-        request_data: Parsed JSON request body
-        raw_request: FastAPI Request object
-        session_manager: SessionManager instance
-
-    Returns:
-        BaseTransformRequestOutput with either:
-        - intercept_func set if this is a session management request
-        - None/passthrough if this is a regular request
-
-    Raises:
-        HTTPException: If request is malformed or session validation fails
-    """
-    session_request = _parse_session_request(request_data)
-    should_validate = _should_validate_session(session_request)
-    if should_validate:
-        # Validate session if session ID is present in headers
-        # and raise error if session ID is invalid
-        _validate_session_if_present(raw_request, session_manager)
-
-    # Not a session request - pass through for normal processing
-    if session_request is None:
-        return BaseTransformRequestOutput(
-            raw_request=raw_request,
-            intercept_func=None,
-        )
-
-    if should_validate and session_manager is None:
-        logger.error(SESSION_DISABLED_LOG_MESSAGE)
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST.value,
-            detail=SESSION_DISABLED_ERROR_DETAIL,
-        )
-
-    # Route to appropriate session management handler
-    intercept_func = get_handler_for_request_type(session_request.requestType)
-
-    return BaseTransformRequestOutput(
-        raw_request=raw_request, intercept_func=intercept_func
-    )
 
 
 class SessionApiTransform(BaseApiTransform):
@@ -155,8 +106,8 @@ class SessionApiTransform(BaseApiTransform):
         """Initialize the SessionApiTransform.
 
         Args:
-            request_shape: Passed to parent BaseApiTransform (unused in session logic)
-            response_shape: Passed to parent BaseApiTransform (unused in session logic)
+            request_shape: Passed to parent BaseApiTransform
+            response_shape: Passed to parent BaseApiTransform
 
         Note:
             The request/response shapes are passed to the parent class but not used
@@ -183,7 +134,7 @@ class SessionApiTransform(BaseApiTransform):
         """
         try:
             request_data = await raw_request.json()
-            return process_session_request(
+            return self._process_session_request(
                 request_data, raw_request, self._session_manager
             )
         except json.JSONDecodeError as e:
@@ -203,3 +154,62 @@ class SessionApiTransform(BaseApiTransform):
             The unmodified response object
         """
         return response
+
+    
+    def _process_invocations_request(
+        self, session_id: Optional[str], request_data: dict, raw_request: Request
+    ):
+        # if session_id:
+        # TODO: move session id to location based on request shape
+        return BaseTransformRequestOutput(
+            raw_request=raw_request,
+            intercept_func=None,
+        )
+
+
+    def _process_session_request(
+        self, request_data: dict, raw_request: Request, session_manager: Optional[SessionManager]
+    ):
+        """Process a potential session management request.
+
+        Determines if the request is a session management operation (NEW_SESSION or CLOSE)
+        and routes it to the appropriate handler, or passes through for normal processing.
+
+        Args:
+            request_data: Parsed JSON request body
+            raw_request: FastAPI Request object
+            session_manager: SessionManager instance
+
+        Returns:
+            BaseTransformRequestOutput with either:
+            - intercept_func set if this is a session management request
+            - None/passthrough if this is a regular request
+
+        Raises:
+            HTTPException: If request is malformed or session validation fails
+        """
+        session_request = _parse_session_request(request_data)
+        should_validate = _should_validate_session(session_request)
+        session_id = None
+        if should_validate:
+            # Validate session if session ID is present in headers
+            # and raise error if session ID is invalid
+            session_id = _validate_session_if_present(raw_request, session_manager)
+
+        # Not a session request - pass through for normal processing
+        if session_request is None:
+            self._process_invocations_request(request_data, raw_request)
+
+        if should_validate and session_manager is None:
+            logger.error(SESSION_DISABLED_LOG_MESSAGE)
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST.value,
+                detail=SESSION_DISABLED_ERROR_DETAIL,
+            )
+
+        # Route to appropriate session management handler
+        intercept_func = get_handler_for_request_type(session_request.requestType)
+
+        return BaseTransformRequestOutput(
+            raw_request=raw_request, intercept_func=intercept_func
+        )
