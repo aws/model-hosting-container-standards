@@ -77,7 +77,7 @@ def _validate_session_if_present(
 
     Args:
         raw_request: FastAPI Request object
-        session_manager: SessionManager instance
+        session_manager: Optional SessionManager instance
 
     Raises:
         HTTPException: If session validation fails
