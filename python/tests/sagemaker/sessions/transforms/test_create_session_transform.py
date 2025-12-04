@@ -169,7 +169,7 @@ class TestCreateSessionTransformResponse:
 
 
 class TestCreateSessionNormalizeResponse:
-    """ normalization."""
+    """normalization."""
 
     @pytest.fixture
     def transform(self):
@@ -224,3 +224,116 @@ class TestCreateSessionNormalizeResponse:
         normalized = transform._normalize_response(response)
 
         assert normalized is response
+
+    def test_normalizes_none_response(self, transform):
+        """Test normalization of None response."""
+        normalized = transform._normalize_response(None)
+
+        assert isinstance(normalized, Response)
+        assert normalized.status_code == HTTPStatus.OK.value
+        assert normalized.body == b"null"
+
+    def test_normalizes_list_response(self, transform):
+        """Test normalization of list response."""
+        response_list = [{"id": "sess-1"}, {"id": "sess-2"}]
+
+        normalized = transform._normalize_response(response_list)
+
+        assert isinstance(normalized, Response)
+        assert normalized.status_code == HTTPStatus.OK.value
+        body = json.loads(normalized.body)
+        assert len(body) == 2
+        assert body[0]["id"] == "sess-1"
+
+
+class TestCreateSessionEdgeCases:
+    """Test edge cases for CreateSessionApiTransform."""
+
+    @pytest.fixture
+    def transform(self):
+        """Create transform."""
+        return CreateSessionApiTransform(
+            request_shape={},
+            response_shape={
+                SageMakerSessionHeader.NEW_SESSION_ID: "body.session_id",
+                RESPONSE_CONTENT_KEY: "body.message",
+            },
+        )
+
+    def test_fails_when_session_id_is_none(self, transform):
+        """Test that None session ID raises HTTPException."""
+        response = Response(
+            status_code=HTTPStatus.OK.value,
+            content=json.dumps({"session_id": None, "message": "created"}),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            transform.transform_response(response, Mock())
+
+        assert exc_info.value.status_code == HTTPStatus.BAD_GATEWAY.value
+
+    def test_handles_none_content(self, transform):
+        """Test that None content is handled gracefully."""
+        response = Response(
+            status_code=HTTPStatus.OK.value,
+            content=json.dumps({"session_id": "sess-123", "message": None}),
+        )
+
+        result = transform.transform_response(response, Mock())
+
+        assert result.status_code == HTTPStatus.OK.value
+        assert result.headers[SageMakerSessionHeader.NEW_SESSION_ID] == "sess-123"
+
+    def test_handles_empty_string_content(self, transform):
+        """Test that empty string content is handled gracefully."""
+        response = Response(
+            status_code=HTTPStatus.OK.value,
+            content=json.dumps({"session_id": "sess-123", "message": ""}),
+        )
+
+        result = transform.transform_response(response, Mock())
+
+        assert result.status_code == HTTPStatus.OK.value
+        assert result.headers[SageMakerSessionHeader.NEW_SESSION_ID] == "sess-123"
+
+    def test_extracts_session_id_from_nested_path(self, transform):
+        """Test extraction of session ID from nested response structure."""
+        transform_nested = CreateSessionApiTransform(
+            request_shape={},
+            response_shape={
+                SageMakerSessionHeader.NEW_SESSION_ID: "body.data.session.id",
+                RESPONSE_CONTENT_KEY: "body.data.message",
+            },
+        )
+
+        response = Response(
+            status_code=HTTPStatus.OK.value,
+            content=json.dumps(
+                {"data": {"session": {"id": "sess-nested-123"}, "message": "created"}}
+            ),
+        )
+
+        result = transform_nested.transform_response(response, Mock())
+
+        assert result.status_code == HTTPStatus.OK.value
+        assert (
+            result.headers[SageMakerSessionHeader.NEW_SESSION_ID] == "sess-nested-123"
+        )
+
+    def test_handles_malformed_json_in_response(self, transform):
+        """Test that malformed JSON in response is handled gracefully.
+
+        The serialize_response function catches JSONDecodeError and keeps the body as a string,
+        but since we can't extract a session_id from a string, this should fail validation.
+        """
+        response = Response(
+            status_code=HTTPStatus.OK.value,
+            content=b"not valid json {{{",
+        )
+
+        # Should fail because session_id cannot be extracted from malformed JSON
+        with pytest.raises(HTTPException) as exc_info:
+            transform.transform_response(response, Mock())
+
+        assert exc_info.value.status_code == HTTPStatus.BAD_GATEWAY.value
+        assert "session ID" in exc_info.value.detail

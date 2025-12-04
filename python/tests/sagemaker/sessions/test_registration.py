@@ -5,12 +5,6 @@ import pytest
 from model_hosting_container_standards.sagemaker.sessions import (
     register_engine_session_handler,
 )
-from model_hosting_container_standards.sagemaker.sessions.models import (
-    SageMakerSessionHeader,
-)
-from model_hosting_container_standards.sagemaker.sessions.transforms.constants import (
-    RESPONSE_CONTENT_KEY,
-)
 
 
 class TestRegisterEngineSessionHandler:
