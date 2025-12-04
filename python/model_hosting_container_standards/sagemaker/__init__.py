@@ -25,6 +25,7 @@ from .sessions import (
     create_session_transform_decorator,
     register_engine_session_handler,
 )
+from .sessions.models import SageMakerSessionHeader
 
 # SageMaker decorator instances - created using utility functions
 
@@ -121,7 +122,7 @@ def inject_adapter_id(
     )
 
 
-def stateful_session_manager():
+def stateful_session_manager(session_id_path: Optional[str] = None):
     """Create a decorator for session-based sticky routing.
 
     This decorator enables stateful session management without JMESPath transformations.
@@ -131,7 +132,14 @@ def stateful_session_manager():
     Returns:
         A decorator that can be applied to route handlers to enable session management
     """
-    return create_session_transform_decorator()(request_shape={}, response_shape={})
+    request_shape = {}
+    if session_id_path:
+        request_shape[session_id_path] = (
+            f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+        )
+    return create_session_transform_decorator()(
+        request_shape=request_shape, response_shape={}
+    )
 
 
 def register_create_session_handler(

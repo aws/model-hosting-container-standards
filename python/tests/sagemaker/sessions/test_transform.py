@@ -16,13 +16,12 @@ from model_hosting_container_standards.sagemaker.sessions.handlers import (
 from model_hosting_container_standards.sagemaker.sessions.manager import SessionManager
 from model_hosting_container_standards.sagemaker.sessions.models import (
     SageMakerSessionHeader,
+    SessionRequest,
     SessionRequestType,
 )
 from model_hosting_container_standards.sagemaker.sessions.transform import (
     SessionApiTransform,
     _parse_session_request,
-    _validate_session_if_present,
-    process_session_request,
 )
 
 
@@ -82,165 +81,154 @@ class TestParseSessionRequest:
         assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
 
-class TestValidateSessionIfPresent:
-    """Test _validate_session_if_present function."""
+class TestValidateSessionId:
+    """Test _validate_session_id method."""
 
-    def test_does_not_raise_when_no_session_id_present(
-        self, mock_request, mock_session_manager
-    ):
-        """Test does not raise exception when no session ID in request."""
-        # Should not raise any exception
-        _validate_session_if_present(mock_request, mock_session_manager)
-
-    def test_does_not_raise_when_session_id_valid(self, mock_session_manager):
+    def test_does_not_raise_when_session_id_valid(self, enable_sessions_env):
         """Test does not raise exception when session ID is valid."""
+        transform = SessionApiTransform(request_shape={}, response_shape={})
         mock_request = Mock(spec=Request)
         mock_request.headers = {SageMakerSessionHeader.SESSION_ID: "valid-session"}
 
         with patch(
-            "model_hosting_container_standards.sagemaker.sessions.transform.get_session_id_from_request"
-        ) as mock_get_id:
-            mock_get_id.return_value = "valid-session"
+            "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
+        ) as mock_get_session:
+            mock_session = Mock()
+            mock_get_session.return_value = mock_session
 
-            with patch(
-                "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
-            ) as mock_get_session:
-                mock_session = Mock()
-                mock_get_session.return_value = mock_session
+            # Should not raise any exception
+            result = transform._validate_session_id("valid-session", mock_request)
+            assert result == "valid-session"
 
-                # Should not raise any exception
-                _validate_session_if_present(mock_request, mock_session_manager)
-
-    def test_raises_http_exception_when_session_not_found(self, mock_session_manager):
+    def test_raises_http_exception_when_session_not_found(self, enable_sessions_env):
         """Test raises HTTPException when session ID not found."""
+        transform = SessionApiTransform(request_shape={}, response_shape={})
         mock_request = Mock(spec=Request)
         mock_request.headers = {
             SageMakerSessionHeader.SESSION_ID: "nonexistent-session"
         }
 
         with patch(
-            "model_hosting_container_standards.sagemaker.sessions.transform.get_session_id_from_request"
-        ) as mock_get_id:
-            mock_get_id.return_value = "nonexistent-session"
+            "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
+        ) as mock_get_session:
+            mock_get_session.side_effect = ValueError("session not found")
 
-            with patch(
-                "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
-            ) as mock_get_session:
-                mock_get_session.side_effect = ValueError("session not found")
+            with pytest.raises(HTTPException) as exc_info:
+                transform._validate_session_id("nonexistent-session", mock_request)
 
-                with pytest.raises(HTTPException) as exc_info:
-                    _validate_session_if_present(mock_request, mock_session_manager)
+            assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
 
-                assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
-
-    def test_error_message_includes_original_error(self, mock_session_manager):
+    def test_error_message_includes_original_error(self, enable_sessions_env):
         """Test error message includes the original error message."""
+        transform = SessionApiTransform(request_shape={}, response_shape={})
         mock_request = Mock(spec=Request)
         mock_request.headers = {SageMakerSessionHeader.SESSION_ID: "bad-session"}
 
         with patch(
-            "model_hosting_container_standards.sagemaker.sessions.transform.get_session_id_from_request"
-        ) as mock_get_id:
-            mock_get_id.return_value = "bad-session"
+            "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
+        ) as mock_get_session:
+            mock_get_session.side_effect = ValueError("custom error message")
 
-            with patch(
-                "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
-            ) as mock_get_session:
-                mock_get_session.side_effect = ValueError("custom error message")
+            with pytest.raises(HTTPException) as exc_info:
+                transform._validate_session_id("bad-session", mock_request)
 
-                with pytest.raises(HTTPException) as exc_info:
-                    _validate_session_if_present(mock_request, mock_session_manager)
-
-                assert "custom error message" in exc_info.value.detail
+            assert "custom error message" in exc_info.value.detail
 
 
 class TestProcessSessionRequest:
-    """Test process_session_request function."""
+    """Test _process_session_request method."""
 
-    def test_returns_passthrough_for_non_session_request(
-        self, mock_request, mock_session_manager
-    ):
-        """Test returns passthrough output for non-session request."""
-        request_data = {"data": "regular_data"}
-
-        result = process_session_request(
-            request_data, mock_request, mock_session_manager
-        )
-
-        assert isinstance(result, BaseTransformRequestOutput)
-        assert result.request is None
-        assert result.raw_request == mock_request
-        assert result.intercept_func is None
+    @pytest.fixture
+    def transform(self, enable_sessions_env):
+        """Create SessionApiTransform instance."""
+        return SessionApiTransform(request_shape={}, response_shape={})
 
     def test_returns_create_handler_for_new_session_request(
-        self, mock_request, mock_session_manager
+        self, transform, mock_request
     ):
         """Test returns create_session handler for NEW_SESSION request."""
-        request_data = {"requestType": "NEW_SESSION"}
+        session_request = SessionRequest(requestType=SessionRequestType.NEW_SESSION)
 
-        result = process_session_request(
-            request_data, mock_request, mock_session_manager
-        )
+        result = transform._process_session_request(session_request, None, mock_request)
 
         assert isinstance(result, BaseTransformRequestOutput)
-        assert result.request is None
         assert result.raw_request == mock_request
         assert result.intercept_func == create_session
 
-    def test_returns_close_handler_for_close_request(
-        self, mock_request, mock_session_manager
-    ):
+    def test_returns_close_handler_for_close_request(self, transform, mock_request):
         """Test returns close_session handler for CLOSE request."""
-        request_data = {"requestType": "CLOSE"}
+        session_request = SessionRequest(requestType=SessionRequestType.CLOSE)
+        mock_request.headers = {SageMakerSessionHeader.SESSION_ID: "test-session"}
 
-        result = process_session_request(
-            request_data, mock_request, mock_session_manager
-        )
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
+        ) as mock_get_session:
+            mock_session = Mock()
+            mock_get_session.return_value = mock_session
 
-        assert isinstance(result, BaseTransformRequestOutput)
-        assert result.request is None
-        assert result.raw_request == mock_request
-        assert result.intercept_func == close_session
+            result = transform._process_session_request(
+                session_request, "test-session", mock_request
+            )
 
-    def test_validates_session_if_session_id_present(self, mock_session_manager):
+            assert isinstance(result, BaseTransformRequestOutput)
+            assert result.raw_request == mock_request
+            assert result.intercept_func == close_session
+
+    def test_validates_session_if_session_id_present(self, transform):
         """Test validates session when session ID is present in headers."""
-        request_data = {"data": "regular_data"}
         mock_request = Mock(spec=Request)
         mock_request.headers = {SageMakerSessionHeader.SESSION_ID: "test-session"}
 
         with patch(
-            "model_hosting_container_standards.sagemaker.sessions.transform._validate_session_if_present"
-        ) as mock_validate:
-            process_session_request(request_data, mock_request, mock_session_manager)
+            "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
+        ) as mock_get_session:
+            mock_session = Mock()
+            mock_get_session.return_value = mock_session
 
-            mock_validate.assert_called_once_with(mock_request, mock_session_manager)
+            transform._process_session_request(
+                SessionRequest(requestType=SessionRequestType.CLOSE),
+                "test-session",
+                mock_request,
+            )
 
-    def test_raises_exception_for_invalid_session_request(
-        self, mock_request, mock_session_manager
+            # Should validate the session
+            mock_get_session.assert_called_once()
+
+    def test_raises_exception_when_sessions_disabled(
+        self, mock_request, monkeypatch, temp_session_storage
     ):
-        """Test raises HTTPException for invalid session request."""
-        request_data = {"requestType": "INVALID_TYPE"}
+        """Test raises HTTPException when sessions are disabled."""
+        # Disable sessions
+        monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
+        from model_hosting_container_standards.sagemaker.sessions.manager import (
+            init_session_manager_from_env,
+        )
 
-        with pytest.raises(HTTPException):
-            process_session_request(request_data, mock_request, mock_session_manager)
+        init_session_manager_from_env()
 
-    def test_propagates_validation_errors(self, mock_session_manager):
-        """Test propagates validation errors from _validate_session_if_present."""
-        request_data = {"data": "regular_data"}
+        transform = SessionApiTransform(request_shape={}, response_shape={})
+        session_request = SessionRequest(requestType=SessionRequestType.NEW_SESSION)
+
+        with pytest.raises(HTTPException) as exc_info:
+            transform._process_session_request(session_request, None, mock_request)
+
+        assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
+
+    def test_propagates_validation_errors(self, transform):
+        """Test propagates validation errors from session validation."""
         mock_request = Mock(spec=Request)
         mock_request.headers = {SageMakerSessionHeader.SESSION_ID: "invalid-session"}
 
         with patch(
-            "model_hosting_container_standards.sagemaker.sessions.transform._validate_session_if_present"
-        ) as mock_validate:
-            mock_validate.side_effect = HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST.value,
-                detail="Session validation failed",
-            )
+            "model_hosting_container_standards.sagemaker.sessions.transform.get_session"
+        ) as mock_get_session:
+            mock_get_session.side_effect = ValueError("Session not found")
 
             with pytest.raises(HTTPException) as exc_info:
-                process_session_request(
-                    request_data, mock_request, mock_session_manager
+                transform._process_session_request(
+                    SessionRequest(requestType=SessionRequestType.CLOSE),
+                    "invalid-session",
+                    mock_request,
                 )
 
             assert exc_info.value.status_code == HTTPStatus.BAD_REQUEST.value
