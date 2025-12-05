@@ -117,7 +117,7 @@ class TestCustomHandlerRegistration:
         self.mock_engine = MockEngineAPI()
         self.setup_handlers()
         self.app.include_router(self.router)
-        sagemaker_standards.bootstrap(self.app)
+        # bootstrap() not needed - tests define their own routes
         self.client = TestClient(self.app)
 
     def setup_handlers(self):
@@ -243,7 +243,7 @@ class TestCustomHandlerErrorHandling:
         self.mock_engine = MockEngineAPI()
         self.setup_handlers()
         self.app.include_router(self.router)
-        sagemaker_standards.bootstrap(self.app)
+        # bootstrap() not needed - tests define their own routes
         self.client = TestClient(self.app)
 
     def setup_handlers(self):
@@ -329,7 +329,7 @@ class TestCustomHandlerWithSessionIdPath:
         self.captured_requests = []
         self.setup_handlers_with_session_id_path()
         self.app.include_router(self.router)
-        sagemaker_standards.bootstrap(self.app)
+        # bootstrap() not needed - tests define their own routes
         self.client = TestClient(self.app)
 
     def setup_handlers_with_session_id_path(self):
@@ -414,7 +414,7 @@ class TestCustomHandlerConcurrency:
         self.mock_engine = MockEngineAPI()
         self.setup_custom_handlers()
         self.app.include_router(self.router)
-        sagemaker_standards.bootstrap(self.app)
+        # bootstrap() not needed - tests define their own routes
         self.client = TestClient(self.app)
 
     def setup_custom_handlers(self):
@@ -525,7 +525,7 @@ class TestCustomHandlerComplexTransformations:
         self.mock_engine = MockEngineAPI()
         self.setup_complex_handlers()
         self.app.include_router(self.router)
-        sagemaker_standards.bootstrap(self.app)
+        # bootstrap() not needed - tests define their own routes
         self.client = TestClient(self.app)
 
     def setup_complex_handlers(self):
@@ -611,7 +611,7 @@ class TestCustomHandlerEndToEnd:
         self.mock_engine = MockEngineAPI()
         self.setup_realistic_handlers()
         self.app.include_router(self.router)
-        sagemaker_standards.bootstrap(self.app)
+        # bootstrap() not needed - tests define their own routes
         self.client = TestClient(self.app)
 
     def setup_realistic_handlers(self):
