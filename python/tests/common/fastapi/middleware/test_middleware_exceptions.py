@@ -20,11 +20,11 @@ class TestMiddlewareExceptions:
 
     def setup_method(self):
         """Clear global state before each test."""
-        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
-            decorator_loader,
-        )
         from model_hosting_container_standards.common.fastapi.middleware.registry import (
             middleware_registry,
+        )
+        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+            decorator_loader,
         )
 
         # Clear decorator loader state
@@ -34,11 +34,11 @@ class TestMiddlewareExceptions:
 
     def teardown_method(self):
         """Clear global state after each test."""
-        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
-            decorator_loader,
-        )
         from model_hosting_container_standards.common.fastapi.middleware.registry import (
             middleware_registry,
+        )
+        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+            decorator_loader,
         )
 
         # Clear decorator loader state
@@ -140,6 +140,7 @@ class TestMiddlewareExceptions:
 
     def test_exception_chaining(self):
         """Test that exceptions are properly chained with 'from' clause."""
+
         # First register a middleware using decorator
         @custom_middleware("pre_post_process")
         def first_middleware():
