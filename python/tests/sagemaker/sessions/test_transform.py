@@ -183,7 +183,7 @@ class TestProcessSessionRequest:
         )
 
         assert isinstance(result, BaseTransformRequestOutput)
-        assert result.request == mock_session_manager
+        assert result.request is None
         assert result.raw_request == mock_request
         assert result.intercept_func == create_session
 
@@ -198,7 +198,7 @@ class TestProcessSessionRequest:
         )
 
         assert isinstance(result, BaseTransformRequestOutput)
-        assert result.request == mock_session_manager
+        assert result.request is None
         assert result.raw_request == mock_request
         assert result.intercept_func == close_session
 
@@ -250,18 +250,20 @@ class TestSessionApiTransform:
     """Test SessionApiTransform class."""
 
     @pytest.fixture
-    def transform(self):
+    def transform(self, enable_sessions_env):
         """Create SessionApiTransform instance."""
         return SessionApiTransform(request_shape={}, response_shape={})
 
-    def test_initialization_creates_session_manager(self):
+    def test_initialization_creates_session_manager(self, enable_sessions_env):
         """Test initialization creates internal session manager."""
         transform = SessionApiTransform(request_shape={}, response_shape={})
 
         assert hasattr(transform, "_session_manager")
         assert isinstance(transform._session_manager, SessionManager)
 
-    def test_initialization_accepts_request_and_response_shapes(self):
+    def test_initialization_accepts_request_and_response_shapes(
+        self, enable_sessions_env
+    ):
         """Test initialization accepts request and response shapes."""
         request_shape = {"field": "value"}
         response_shape = {"output": "format"}
@@ -333,10 +335,10 @@ class TestSessionApiTransform:
 
         # Verify we get an intercept function
         assert result.intercept_func == create_session
-        assert result.request == transform._session_manager
+        assert result.request is None
 
         # Verify we can call the handler
-        response = await result.intercept_func(result.request, mock_request)
+        response = await result.intercept_func(mock_request)
         assert response.status_code == HTTPStatus.OK.value
         assert SageMakerSessionHeader.NEW_SESSION_ID in response.headers
 
