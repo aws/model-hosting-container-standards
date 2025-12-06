@@ -35,7 +35,7 @@ The framework supports two modes of session management:
    - Sessions delegated to your inference engine's native API
    - Leverages engine-specific session features
    - Requires custom handler registration
-   - Best when engine has built-in session support (e.g., vLLM, TGI)
+   - Best when engine has built-in session support
    - See [CUSTOM_HANDLERS.md](./CUSTOM_HANDLERS.md) for details
 
 ## Architecture

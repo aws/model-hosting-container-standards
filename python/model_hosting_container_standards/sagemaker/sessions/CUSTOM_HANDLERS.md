@@ -4,7 +4,7 @@ This guide explains how to implement custom create and close session handlers wh
 
 ## Overview
 
-By default, SageMaker's session management uses the built-in `SessionManager` to handle session lifecycle. However, if your inference engine (like vLLM, TGI, or a custom engine) provides its own session API, you can register custom handlers to delegate session operations to the engine.
+By default, SageMaker's session management uses the built-in `SessionManager` to handle session lifecycle. However, if your inference engine provides its own session API, you can register custom handlers to delegate session operations to the engine.
 
 ### When to Use Custom Handlers
 

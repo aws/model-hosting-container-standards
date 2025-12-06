@@ -1,35 +1,57 @@
-"""Integration tests for custom session handlers.
+"""Integration tests for custom session handlers functionality.
 
-Tests the integration of custom engine-specific session handlers with the
-SageMaker session management system. These tests verify that:
-- Custom handlers can be registered and invoked
-- Custom handlers take precedence over default handlers
-- Request/response transformations work end-to-end
-- Error handling propagates correctly from custom handlers
+Tests the integration of custom session handlers with engine-specific session APIs using
+the proper decorator-based registration pattern:
+- @register_create_session_handler decorator
+- @register_close_session_handler decorator
+- Mixed scenarios (custom + default handlers)
+- Transform request/response shape mapping via decorators
+- Error handling in custom handlers
+- Handler registration and resolution
+
+Key Testing Pattern:
+    These tests simulate real-world scenarios where an inference engine
+    has its own session management API. We use the
+    proper decorators to register handlers and verify that:
+    1. Decorators properly register and invoke custom handlers
+    2. Transforms correctly map between SageMaker and engine formats
+    3. Session lifecycle works end-to-end with custom handlers
+    4. Error cases are handled gracefully
 """
 
 import json
 import os
 import shutil
 import tempfile
-from http import HTTPStatus
+import uuid
 from typing import Optional
 
 import pytest
-from fastapi import APIRouter, FastAPI, Request, Response
+from fastapi import APIRouter, FastAPI, Request
+from fastapi.exceptions import HTTPException
+from fastapi.responses import Response
 from fastapi.testclient import TestClient
+from pydantic import BaseModel
 
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 from model_hosting_container_standards.common.handler.registry import handler_registry
-from model_hosting_container_standards.sagemaker.sessions import (
-    register_engine_session_handler,
-)
 from model_hosting_container_standards.sagemaker.sessions.manager import (
     init_session_manager_from_env,
 )
 from model_hosting_container_standards.sagemaker.sessions.models import (
     SageMakerSessionHeader,
 )
+
+DEFAULT_SESSION_ID = "default-session"
+
+
+class CreateSessionRequest(BaseModel):
+    capacity_of_str_len: int
+    session_id: Optional[str] = None
+
+
+class CloseSessionRequest(BaseModel):
+    session_id: str
 
 
 @pytest.fixture(autouse=True)
@@ -41,12 +63,10 @@ def enable_sessions_for_integration(monkeypatch):
     monkeypatch.setenv("SAGEMAKER_SESSIONS_PATH", temp_dir)
     monkeypatch.setenv("SAGEMAKER_SESSIONS_EXPIRATION", "600")
 
-    # Reinitialize the global session manager
     init_session_manager_from_env()
 
     yield
 
-    # Clean up
     if os.path.exists(temp_dir):
         shutil.rmtree(temp_dir)
     monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
@@ -56,681 +76,805 @@ def enable_sessions_for_integration(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def clear_handler_registry():
-    """Clear handler registry before and after each test."""
-    handler_registry.clear()
+def cleanup_handler_registry():
+    """Clean up handler registry after each test."""
     yield
-    handler_registry.clear()
+    handler_registry.remove_handler("create_session")
+    handler_registry.remove_handler("close_session")
 
 
 def extract_session_id_from_header(header_value: str) -> str:
-    """Extract session ID from SageMaker session header.
-
-    Header format: "<uuid>; Expires=<timestamp>"
-    """
+    """Extract session ID from SageMaker session header."""
     if ";" in header_value:
         return header_value.split(";")[0].strip()
     return header_value.strip()
 
 
-class MockEngineAPI:
-    """Mock engine API that simulates an inference engine's session management.
+class BaseCustomHandlerIntegrationTest:
+    """Base class for custom handler integration tests with common setup.
 
-    This simulates engines like vLLM or TGI that have their own session APIs.
+    Provides:
+    - FastAPI app and router setup
+    - Mock engine client for simulating engine APIs
+    - Handler call tracking
+    - TestClient for making requests
+    - Common setup/teardown patterns
+
+    Subclasses should override setup_handlers() to register their specific
+    custom handlers using the appropriate decorators.
     """
 
-    def __init__(self):
-        self.sessions = {}
-        self.call_count = {"create": 0, "close": 0}
-
-    def create_session(self, model: Optional[str] = None):
-        """Simulate engine's create session API."""
-        self.call_count["create"] += 1
-        session_id = f"engine-session-{self.call_count['create']}"
-        self.sessions[session_id] = {"model": model, "active": True}
-        return {
-            "session": {"id": session_id, "status": "active"},
-            "message": f"Engine session created with model {model}",
-        }
-
-    def close_session(self, session_id: str):
-        """Simulate engine's close session API."""
-        self.call_count["close"] += 1
-        if session_id not in self.sessions:
-            raise ValueError(f"Session {session_id} not found in engine")
-        self.sessions[session_id]["active"] = False
-        return {"result": {"message": f"Engine session {session_id} closed"}}
-
-    def reset(self):
-        """Reset the mock engine state."""
-        self.sessions.clear()
-        self.call_count = {"create": 0, "close": 0}
-
-
-class TestCustomHandlerRegistration:
-    """Test that custom handlers can be registered and invoked."""
-
     def setup_method(self):
-        """Set up test fixtures."""
+        """Common setup for all custom handler integration tests."""
         self.app = FastAPI()
         self.router = APIRouter()
-        self.mock_engine = MockEngineAPI()
+
+        # Track handler invocations for verification
+        self.handler_calls = {"create": 0, "close": 0}
+
+        # Setup handlers (to be overridden by subclasses)
         self.setup_handlers()
+
+        # Bootstrap the app with SageMaker standards
         self.app.include_router(self.router)
-        # bootstrap() not needed - tests define their own routes
+        sagemaker_standards.bootstrap(self.app)
         self.client = TestClient(self.app)
 
     def setup_handlers(self):
-        """Set up handlers and register custom session handlers.
+        """Override in subclasses to register custom handlers.
 
-        Note: With the hybrid caching strategy, handlers can be registered
-        in any order - no timing dependency!
+        This method should:
+        1. Define custom handler functions
+        2. Register them using @register_create_session_handler or @register_close_session_handler
+        3. Set up the /invocations endpoint with @stateful_session_manager
         """
+        self.setup_common_handlers()
+        self.setup_invocation_handler()
 
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        # Implement in child classes
+        pass
+
+    def custom_close_session(self, obj: CloseSessionRequest, request: Request):
+        # Implement in child classes
+        pass
+
+    def setup_common_handlers(self):
+        @sagemaker_standards.register_create_session_handler(
+            request_shape={
+                "capacity_of_str_len": "`1024`",
+            },
+            response_session_id_path="body",
+            content_path="`successfully created session.`",
+        )
+        @self.app.api_route("/open_session", methods=["GET", "POST"])
+        async def create_session(obj: CreateSessionRequest, request: Request):
+            return self.custom_create_session(obj, request)
+
+        @sagemaker_standards.register_close_session_handler(
+            request_shape={
+                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+            },
+            content_path="`successfully closed session.`",
+        )
+        @self.app.api_route("/close_session", methods=["GET", "POST"])
+        async def close_session(obj: CloseSessionRequest, request: Request):
+            return self.custom_close_session(obj, request)
+
+    async def custom_invocations(self, request: Request):
+        body_bytes = await request.body()
+        body = json.loads(body_bytes.decode())
+        # Extract session ID from request headers if present
+        session_id = body.get("session_id") or request.headers.get(
+            SageMakerSessionHeader.SESSION_ID
+        )
+        return Response(
+            status_code=200,
+            content=json.dumps(
+                {
+                    "message": "Request in session",
+                    "session_id": session_id or "no-session",
+                    "echo": body,
+                }
+            ),
+        )
+
+    def setup_invocation_handler(self):
         @self.router.post("/invocations")
         @sagemaker_standards.stateful_session_manager()
         async def invocations(request: Request):
-            """Handler with session management."""
-            body_bytes = await request.body()
-            body = json.loads(body_bytes.decode())
-            return Response(
-                status_code=200,
-                content=json.dumps({"message": "success", "echo": body}),
-            )
+            return await self.custom_invocations(request)
 
-        # Register custom create session handler
-        @register_engine_session_handler(
-            handler_type="create_session",
-            request_shape={},  # Session requests don't have extra fields
-            session_id_path="body.session.id",  # Path to session ID in response body
-            content_path="body.message",  # Path to message in response body
-        )
-        async def custom_create_session(raw_request: Request):
-            """Custom handler that delegates to engine API."""
-            # Call mock engine API with default model
-            result = self.mock_engine.create_session("default-model")
-            return result
-
-        # Register custom close session handler
-        @register_engine_session_handler(
-            handler_type="close_session",
-            request_shape={},
-            content_path="body.result.message",  # Path to message in response body
-        )
-        async def custom_close_session(raw_request: Request):
-            """Custom handler that delegates to engine API."""
-            session_id = raw_request.headers.get(SageMakerSessionHeader.SESSION_ID)
-
-            # Call mock engine API
-            result = self.mock_engine.close_session(session_id)
-            return result
-
-    def test_custom_create_handler_is_invoked(self):
-        """Test that custom create handler is called instead of default."""
+    # Helper methods for common test operations
+    def create_session(self) -> str:
+        """Helper to create a session and return the session ID."""
         response = self.client.post("/invocations", json={"requestType": "NEW_SESSION"})
-
         assert response.status_code == 200
         assert SageMakerSessionHeader.NEW_SESSION_ID in response.headers
-
-        # Verify custom handler was called
-        assert self.mock_engine.call_count["create"] == 1
-
-    def test_custom_close_handler_is_invoked(self):
-        """Test that custom close handler is called instead of default."""
-        # First create a session
-        create_response = self.client.post(
-            "/invocations", json={"requestType": "NEW_SESSION"}
-        )
-        session_id = extract_session_id_from_header(
-            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
+        return extract_session_id_from_header(
+            response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
         )
 
-        # Now close it
-        close_response = self.client.post(
+    def create_session_with_id(self, session_id: str) -> Response:
+        """Helper to create a session with a specific ID."""
+        return self.client.post(
+            "/invocations",
+            json={"requestType": "NEW_SESSION"},
+            headers={SageMakerSessionHeader.SESSION_ID: session_id},
+        )
+
+    def close_session(self, session_id: str) -> Response:
+        """Helper to close a session."""
+        return self.client.post(
             "/invocations",
             json={"requestType": "CLOSE"},
             headers={SageMakerSessionHeader.SESSION_ID: session_id},
         )
 
-        if close_response.status_code != 200:
-            print(f"Close response status: {close_response.status_code}")
-            print(f"Close response body: {close_response.text}")
+    def invoke_with_session(self, session_id: str, body: dict) -> Response:
+        """Helper to make an invocation request with a session."""
+        return self.client.post(
+            "/invocations",
+            json=body,
+            headers={SageMakerSessionHeader.SESSION_ID: session_id},
+        )
 
-        assert close_response.status_code == 200
-        assert SageMakerSessionHeader.CLOSED_SESSION_ID in close_response.headers
 
-        # Verify custom handler was called
-        assert self.mock_engine.call_count["close"] == 1
+class TestSimpleCreateSessionCustomHandler(BaseCustomHandlerIntegrationTest):
+    """Test basic custom create session handler with simple string return."""
 
-    def test_custom_handler_response_transformation(self):
-        """Test that response is properly transformed from engine format to SageMaker format."""
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        return DEFAULT_SESSION_ID
+
+    def test_create_new_session(self):
+        """Test that custom handler returning a simple string works correctly.
+
+        This validates the simplest case where a custom handler returns just a string
+        (the session ID) rather than a complex object. This is useful when the engine's
+        session API returns a simple session identifier.
+        """
+        # Send NEW_SESSION request to trigger custom create handler
         response = self.client.post("/invocations", json={"requestType": "NEW_SESSION"})
 
-        # Verify response has SageMaker format
+        # Verify successful session creation
         assert response.status_code == 200
+        assert SageMakerSessionHeader.NEW_SESSION_ID in response.headers
+
+        # Extract session ID from response header
         session_id = extract_session_id_from_header(
             response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
         )
 
-        # Session ID should be from engine (engine-session-X format)
-        assert session_id.startswith("engine-session-")
-
-        # Response body should contain engine message
-        assert b"Engine session created" in response.content
-
-    def test_custom_handler_request_transformation(self):
-        """Test that custom handler is invoked for session creation."""
-        self.client.post(
-            "/invocations",
-            json={"requestType": "NEW_SESSION"},
-        )
-
-        # Verify the engine received the request
-        assert self.mock_engine.call_count["create"] == 1
-        # Check that session was created in engine
-        sessions = list(self.mock_engine.sessions.values())
-        assert len(sessions) == 1
-        assert sessions[0]["model"] == "default-model"
+        # Verify the custom handler's return value (DEFAULT_SESSION_ID) is used as session ID
+        # This confirms the transform correctly extracted the session ID from the string response
+        assert session_id == DEFAULT_SESSION_ID
 
 
-class TestCustomHandlerErrorHandling:
-    """Test error handling in custom handlers."""
+class TestErrorCreateSessionCustomHandler(BaseCustomHandlerIntegrationTest):
+    """Test error handling when custom create session handler fails."""
 
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.app = FastAPI()
-        self.router = APIRouter()
-        self.mock_engine = MockEngineAPI()
-        self.setup_handlers()
-        self.app.include_router(self.router)
-        # bootstrap() not needed - tests define their own routes
-        self.client = TestClient(self.app)
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        raise HTTPException(status_code=400, detail="Engine failed to create session")
 
-    def setup_handlers(self):
-        """Set up handlers and register custom session handlers."""
+    def test_create_new_session_error(self):
+        """Test that errors from custom create handler are properly propagated.
 
-        @self.router.post("/invocations")
-        @sagemaker_standards.stateful_session_manager()
-        async def invocations(request: Request):
-            """Handler with session management."""
-            body_bytes = await request.body()
-            body = json.loads(body_bytes.decode())
-            return Response(
-                status_code=200,
-                content=json.dumps({"message": "success", "echo": body}),
-            )
-
-        @register_engine_session_handler(
-            handler_type="create_session",
-            request_shape={},
-            session_id_path="body.session.id",
-            content_path="body.message",
-        )
-        async def custom_create_session(raw_request: Request):
-            """Custom handler that can fail."""
-            result = self.mock_engine.create_session()
-            return result
-
-        @register_engine_session_handler(
-            handler_type="close_session",
-            request_shape={},
-            content_path="body.result.message",
-        )
-        async def custom_close_session(raw_request: Request):
-            """Custom handler that validates session exists."""
-            session_id = raw_request.headers.get(SageMakerSessionHeader.SESSION_ID)
-            # This will raise ValueError if session not found
-            result = self.mock_engine.close_session(session_id)
-            return result
-
-    def test_custom_handler_error_propagates(self):
-        """Test that errors from custom handlers propagate correctly.
-
-        Note: Unhandled exceptions in custom handlers will bubble up through FastAPI.
-        In production, these should be caught by FastAPI's exception handlers.
-        For testing with TestClient, the exception is raised directly.
+        When the underlying engine fails to create a session (e.g., resource exhaustion,
+        invalid parameters), the error should be propagated to the client with appropriate
+        status code and error message.
         """
-        # Try to close a non-existent session - this will raise ValueError
-        with pytest.raises(ValueError, match="Session nonexistent-session not found"):
-            self.client.post(
-                "/invocations",
-                json={"requestType": "CLOSE"},
-                headers={SageMakerSessionHeader.SESSION_ID: "nonexistent-session"},
-            )
-
-    def test_custom_handler_missing_session_id_in_response(self):
-        """Test handling when custom handler doesn't return session ID."""
-
-        # Create a handler that returns invalid response
-        @register_engine_session_handler(
-            handler_type="create_session",
-            request_shape={},
-            session_id_path="body.session.id",  # Path that won't exist
-            content_path="body.message",
-        )
-        async def broken_create_session(raw_request: Request):
-            """Handler that returns response without session.id."""
-            return {"message": "created but no session id"}
-
+        # Attempt to create session - custom handler will raise HTTPException
         response = self.client.post("/invocations", json={"requestType": "NEW_SESSION"})
 
-        # Should fail with BAD_GATEWAY since session ID is missing
-        assert response.status_code == HTTPStatus.BAD_GATEWAY.value
+        # Verify error status code is returned
+        assert response.status_code == 400
+
+        # Verify error message from custom handler is included in response
+        assert "Engine failed to create session" in response.text
+
+        # Verify no session header is present on error (session was not created)
+        assert SageMakerSessionHeader.NEW_SESSION_ID not in response.headers
 
 
-class TestCustomHandlerWithSessionIdPath:
-    """Test custom handlers work with session_id_path parameter."""
+class TestErrorCloseSessionCustomHandler(BaseCustomHandlerIntegrationTest):
+    """Test error handling when custom close session handler fails."""
 
     def setup_method(self):
-        """Set up test fixtures."""
-        self.app = FastAPI()
-        self.router = APIRouter()
-        self.mock_engine = MockEngineAPI()
-        self.captured_requests = []
-        self.setup_handlers_with_session_id_path()
-        self.app.include_router(self.router)
-        # bootstrap() not needed - tests define their own routes
-        self.client = TestClient(self.app)
+        self.sessions = {}
+        super().setup_method()
 
-    def setup_handlers_with_session_id_path(self):
-        """Set up handlers that use session_id_path."""
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        session_id = str(uuid.uuid4())
+        self.sessions[session_id] = session_id
+        return session_id
 
+    def custom_close_session(self, obj: CloseSessionRequest, request: Request):
+        if obj.session_id in self.sessions:
+            self.sessions.pop(obj.session_id)
+            return Response(
+                status_code=200, content=f"Session {obj.session_id} closed."
+            )
+        raise HTTPException(
+            status_code=404, detail=f"Session {obj.session_id} does not exist."
+        )
+
+    def test_duplicate_close_session(self):
+        """Test that closing an already-closed session returns 404.
+
+        This validates idempotency handling - attempting to close a session that's
+        already been closed should return a 404 error rather than succeeding silently.
+        This is important for detecting client-side bugs or race conditions.
+        """
+        # Create a new session for testing
+        session_id = self.create_session()
+
+        # First close should succeed - session exists in custom handler's storage
+        success_response = self.close_session(session_id)
+        assert success_response.status_code == 200
+        assert SageMakerSessionHeader.CLOSED_SESSION_ID in success_response.headers
+
+        # Second close should fail - session no longer exists (was removed on first close)
+        # Custom handler raises HTTPException(404) when session not found
+        duplicate_response = self.close_session(session_id)
+        assert duplicate_response.status_code == 404
+
+
+class TestCustomSessionEndToEndFlow(BaseCustomHandlerIntegrationTest):
+    """Test complete end-to-end flows with custom session handlers."""
+
+    def setup_method(self):
+        self.sessions = {}
+        super().setup_method()
+
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        self.handler_calls["create"] += 1
+        if not obj.session_id:
+            obj.session_id = str(uuid.uuid4())
+        if obj.session_id in self.sessions:
+            return Response(status_code=400)
+        self.sessions[obj.session_id] = obj.session_id
+        return {"session_id": obj.session_id}
+
+    def custom_close_session(self, obj: CloseSessionRequest, request: Request):
+        self.handler_calls["close"] += 1
+        if obj.session_id not in self.sessions:
+            raise HTTPException(
+                status_code=404, detail=f"Session {obj.session_id} does not exist."
+            )
+        self.sessions.pop(obj.session_id)
+        return Response(status_code=200, content=f"Session {obj.session_id} closed.")
+
+    def setup_common_handlers(self):
+        @sagemaker_standards.register_create_session_handler(
+            request_shape={
+                "capacity_of_str_len": "`1024`",
+                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"',
+            },
+            response_session_id_path="body.session_id",  # Nested
+            content_path="`successfully created session.`",
+        )
+        @self.app.api_route("/open_session", methods=["GET", "POST"])
+        async def create_session(obj: CreateSessionRequest, request: Request):
+            return self.custom_create_session(obj, request)
+
+        @sagemaker_standards.register_close_session_handler(
+            request_shape={
+                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+            },
+            content_path="`successfully closed session.`",
+        )
+        @self.app.api_route("/close_session", methods=["GET", "POST"])
+        async def close_session(obj: CloseSessionRequest, request: Request):
+            return self.custom_close_session(obj, request)
+
+    def setup_invocation_handler(self):
         @self.router.post("/invocations")
-        @sagemaker_standards.stateful_session_manager(session_id_path="session_id")
+        @sagemaker_standards.stateful_session_manager(
+            request_session_id_path="session_id"
+        )
         async def invocations(request: Request):
-            """Handler that injects session ID into request body."""
+            return await self.custom_invocations(request)
+
+    def test_create_existing_session_error_handling(self):
+        """Test that attempting to create a session with existing ID fails.
+
+        This validates that the custom handler properly rejects attempts to create
+        a session with a duplicate ID. This prevents session ID collisions and ensures
+        session uniqueness.
+        """
+        # Create initial session
+        session_id = self.create_session()
+
+        # Try to create another session with the same ID by passing it in the header
+        # Custom handler checks if session_id already exists and returns 400 if it does
+        header_response = self.create_session_with_id(session_id)
+        assert header_response.status_code == 400
+
+    def test_end_to_end_simple(self):
+        """Test complete session lifecycle: create -> use -> close.
+
+        This is the primary happy path test that validates the full session workflow
+        works correctly with custom handlers. This simulates a typical client interaction
+        pattern for stateful ML inference (e.g., multi-turn conversation with an LLM).
+        """
+        # Step 1: Create session via custom handler
+        session_id = self.create_session()
+
+        # Step 2: Use session for inference request
+        # Session ID is passed in header and should be available to the handler
+        invoke_response = self.invoke_with_session(session_id, {"prompt": "hello"})
+        assert invoke_response.status_code == 200
+        # Verify session ID is echoed back, confirming session context was maintained
+        assert session_id in invoke_response.text
+
+        # Step 3: Close session via custom handler
+        close_response = self.close_session(session_id)
+        assert close_response.status_code == 200
+        # Verify closed session header is returned
+        assert SageMakerSessionHeader.CLOSED_SESSION_ID in close_response.headers
+
+    def test_handler_call_tracking(self):
+        """Test that custom handlers are actually being invoked.
+
+        This validates that the decorator registration system correctly routes session
+        requests to the custom handlers rather than using default handlers. The counters
+        prove the custom handler code is executing.
+        """
+        # Reset counters to ensure clean state
+        self.handler_calls = {"create": 0, "close": 0}
+
+        # Create session - should increment create counter
+        session_id = self.create_session()
+        assert self.handler_calls["create"] == 1  # Custom create handler was called
+        assert self.handler_calls["close"] == 0  # Close handler not called yet
+
+        # Close session - should increment close counter
+        close_response = self.close_session(session_id)
+        assert close_response.status_code == 200
+        assert self.handler_calls["create"] == 1  # Create counter unchanged
+        assert self.handler_calls["close"] == 1  # Custom close handler was called
+
+    def test_multiple_sessions_independent_state(self):
+        """Test that multiple sessions maintain independent state in custom handlers.
+
+        This validates session isolation - multiple concurrent sessions should not
+        interfere with each other. This is critical for multi-tenant scenarios where
+        different users/clients have active sessions simultaneously.
+        """
+        # Create two independent sessions
+        session1_id = self.create_session()
+        session2_id = self.create_session()
+
+        # Verify both sessions exist in custom handler's storage
+        assert session1_id in self.sessions
+        assert session2_id in self.sessions
+        # Verify sessions have unique IDs
+        assert session1_id != session2_id
+
+        # Close first session only
+        self.close_session(session1_id)
+
+        # Verify only first session was removed from storage
+        assert session1_id not in self.sessions
+        # Verify second session still exists and is unaffected
+        assert session2_id in self.sessions
+
+        # Verify second session is still functional after first session closed
+        response = self.invoke_with_session(session2_id, {"prompt": "test"})
+        assert response.status_code == 200
+
+
+class TestCustomHandlerResponseFormats(BaseCustomHandlerIntegrationTest):
+    """Test that custom handlers can return different response formats."""
+
+    def setup_method(self):
+        self.sessions = {}
+        self.response_format = "dict"  # Can be "dict", "string", or "response_object"
+        super().setup_method()
+
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        session_id = str(uuid.uuid4())
+        self.sessions[session_id] = True
+
+        if self.response_format == "dict":
+            return {"session_id": session_id, "metadata": {"engine": "custom"}}
+        elif self.response_format == "string":
+            return session_id
+        elif self.response_format == "response_object":
+            return Response(
+                status_code=201,
+                content=json.dumps({"session_id": session_id}),
+                media_type="application/json",
+            )
+
+    def custom_close_session(self, obj: CloseSessionRequest, request: Request):
+        if obj.session_id in self.sessions:
+            del self.sessions[obj.session_id]
+        return Response(status_code=200, content="Closed")
+
+    def setup_common_handlers(self):
+        # Use different response_session_id_path based on format
+        response_path = "body.session_id" if self.response_format == "dict" else "body"
+
+        @sagemaker_standards.register_create_session_handler(
+            request_shape={"capacity_of_str_len": "`1024`"},
+            response_session_id_path=response_path,
+            content_path="`successfully created session.`",
+        )
+        @self.app.api_route("/open_session", methods=["GET", "POST"])
+        async def create_session(obj: CreateSessionRequest, request: Request):
+            return self.custom_create_session(obj, request)
+
+        @sagemaker_standards.register_close_session_handler(
+            request_shape={
+                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+            },
+            content_path="`successfully closed session.`",
+        )
+        @self.app.api_route("/close_session", methods=["GET", "POST"])
+        async def close_session(obj: CloseSessionRequest, request: Request):
+            return self.custom_close_session(obj, request)
+
+    def test_dict_response_with_metadata(self):
+        """Test custom handler returning dict with additional metadata.
+
+        Many engine APIs return rich response objects with metadata alongside the
+        session ID. This validates that the transform can extract the session ID
+        from a nested path while preserving other response data.
+        """
+        self.response_format = "dict"
+        # Create session - handler returns {"session_id": "...", "metadata": {...}}
+        session_id = self.create_session()
+
+        # Verify session was created successfully
+        assert session_id in self.sessions
+        # Verify session ID is in UUID format (36 characters with hyphens)
+        assert len(session_id) == 36
+
+    def test_dict_response_with_nested_session_id(self):
+        """Test custom handler returning dict with nested session ID path.
+
+        This validates that the response_session_id_path configuration correctly
+        extracts the session ID from nested response structures (e.g., body.session_id).
+        """
+        self.response_format = "dict"
+        # Create session with nested response structure
+        session_id = self.create_session()
+
+        # Verify session was created and can be used for subsequent requests
+        response = self.invoke_with_session(session_id, {"test": "data"})
+        assert response.status_code == 200
+
+
+class TestCustomHandlerMultipleInvocations(BaseCustomHandlerIntegrationTest):
+    """Test multiple invocations within the same session with custom handlers."""
+
+    def setup_method(self):
+        self.sessions = {}
+        self.invocation_counts = {}
+        super().setup_method()
+
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        session_id = str(uuid.uuid4())
+        self.sessions[session_id] = {"created": True}
+        self.invocation_counts[session_id] = 0
+        return {"session_id": session_id}
+
+    def custom_close_session(self, obj: CloseSessionRequest, request: Request):
+        if obj.session_id in self.sessions:
+            del self.sessions[obj.session_id]
+            if obj.session_id in self.invocation_counts:
+                del self.invocation_counts[obj.session_id]
+        return Response(status_code=200)
+
+    def setup_common_handlers(self):
+        @sagemaker_standards.register_create_session_handler(
+            request_shape={"capacity_of_str_len": "`1024`"},
+            response_session_id_path="body.session_id",
+            content_path="`successfully created session.`",
+        )
+        @self.app.api_route("/open_session", methods=["GET", "POST"])
+        async def create_session(obj: CreateSessionRequest, request: Request):
+            return self.custom_create_session(obj, request)
+
+        @sagemaker_standards.register_close_session_handler(
+            request_shape={
+                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+            },
+            content_path="`successfully closed session.`",
+        )
+        @self.app.api_route("/close_session", methods=["GET", "POST"])
+        async def close_session(obj: CloseSessionRequest, request: Request):
+            return self.custom_close_session(obj, request)
+
+    async def custom_invocations(self, request: Request):
+        body_bytes = await request.body()
+        body = json.loads(body_bytes.decode())
+        session_id = request.headers.get(SageMakerSessionHeader.SESSION_ID)
+
+        # Track invocation count per session
+        if session_id and session_id in self.invocation_counts:
+            self.invocation_counts[session_id] += 1
+
+        return Response(
+            status_code=200,
+            content=json.dumps(
+                {
+                    "message": "success",
+                    "session_id": session_id,
+                    "invocation_count": self.invocation_counts.get(session_id, 0),
+                    "echo": body,
+                }
+            ),
+        )
+
+    def test_multiple_invocations_same_session(self):
+        """Test that multiple invocations work correctly within the same session.
+
+        This validates that session state (invocation count) accumulates correctly
+        across multiple requests. This is essential for stateful ML scenarios like
+        maintaining conversation context or tracking request history.
+        """
+        session_id = self.create_session()
+
+        # Make 5 sequential invocations to the same session
+        for i in range(5):
+            response = self.invoke_with_session(session_id, {"request_num": i + 1})
+            assert response.status_code == 200
+            data = json.loads(response.text)
+            # Verify invocation count increments with each request
+            assert data["invocation_count"] == i + 1
+            # Verify session ID remains consistent
+            assert data["session_id"] == session_id
+
+    def test_invocation_counts_independent_across_sessions(self):
+        """Test that invocation counts are independent across different sessions.
+
+        This validates session isolation at the invocation level - each session
+        maintains its own independent counter. Critical for ensuring one user's
+        session activity doesn't affect another user's session.
+        """
+        # Create two separate sessions
+        session1_id = self.create_session()
+        session2_id = self.create_session()
+
+        # Make 3 invocations to session 1
+        for i in range(3):
+            self.invoke_with_session(session1_id, {"msg": "session1"})
+
+        # Make 5 invocations to session 2
+        for i in range(5):
+            self.invoke_with_session(session2_id, {"msg": "session2"})
+
+        # Verify each session has its own independent count
+        assert self.invocation_counts[session1_id] == 3
+        assert self.invocation_counts[session2_id] == 5
+
+
+class TestCustomHandlerWithSessionIdInjection(BaseCustomHandlerIntegrationTest):
+    """Test custom handlers with request_session_id_path parameter."""
+
+    def setup_method(self):
+        self.sessions = {}
+        super().setup_method()
+
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        session_id = str(uuid.uuid4())
+        self.sessions[session_id] = {"created": True}
+        return {"session_id": session_id}
+
+    def custom_close_session(self, obj: CloseSessionRequest, request: Request):
+        if obj.session_id in self.sessions:
+            del self.sessions[obj.session_id]
+            return Response(status_code=200, content="Session closed")
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    def setup_common_handlers(self):
+        @sagemaker_standards.register_create_session_handler(
+            request_shape={"capacity_of_str_len": "`1024`"},
+            response_session_id_path="body.session_id",
+            content_path="`successfully created session.`",
+        )
+        @self.app.api_route("/open_session", methods=["GET", "POST"])
+        async def create_session(obj: CreateSessionRequest, request: Request):
+            return self.custom_create_session(obj, request)
+
+        @sagemaker_standards.register_close_session_handler(
+            request_shape={
+                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+            },
+            content_path="`successfully closed session.`",
+        )
+        @self.app.api_route("/close_session", methods=["GET", "POST"])
+        async def close_session(obj: CloseSessionRequest, request: Request):
+            return self.custom_close_session(obj, request)
+
+    def setup_invocation_handler(self):
+        @self.router.post("/invocations")
+        @sagemaker_standards.stateful_session_manager(
+            request_session_id_path="metadata.session_id"
+        )
+        async def invocations(request: Request):
             body_bytes = await request.body()
             body = json.loads(body_bytes.decode())
 
-            # Capture for verification
-            self.captured_requests.append(body)
+            # Extract session ID from nested path
+            session_id = body.get("metadata", {}).get("session_id")
 
             return Response(
                 status_code=200,
                 content=json.dumps(
-                    {
-                        "message": "success",
-                        "session_id_from_body": body.get("session_id"),
-                    }
+                    {"message": "success", "session_id": session_id, "body": body}
                 ),
             )
 
-        @register_engine_session_handler(
-            handler_type="create_session",
-            request_shape={},
-            session_id_path="body.session.id",
-            content_path="body.message",
-        )
-        async def custom_create_session(raw_request: Request):
-            """Custom create handler."""
-            result = self.mock_engine.create_session()
-            return result
+    def test_session_id_injected_into_nested_path(self):
+        """Test that session ID is injected into nested path in request body.
 
-        @register_engine_session_handler(
-            handler_type="close_session",
-            request_shape={},
-            content_path="body.result.message",
-        )
-        async def custom_close_session(raw_request: Request):
-            """Custom close handler."""
-            session_id = raw_request.headers.get(SageMakerSessionHeader.SESSION_ID)
-            result = self.mock_engine.close_session(session_id)
-            return result
+        Some ML engines expect the session ID to be in the request body rather than
+        just in headers. The request_session_id_path parameter allows automatic
+        injection of the session ID into a specified path in the request body
+        (e.g., metadata.session_id). This test validates that injection works correctly.
+        """
+        # Create session
+        session_id = self.create_session()
 
-    def test_session_id_injected_with_custom_handler(self):
-        """Test that session_id_path works with custom handlers."""
-        # Create session with custom handler
-        create_response = self.client.post(
-            "/invocations", json={"requestType": "NEW_SESSION"}
-        )
-        session_id = extract_session_id_from_header(
-            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
-        )
-
-        # Make request with session ID - should be injected into body
-        self.captured_requests.clear()
-        response = self.client.post(
-            "/invocations",
-            json={"prompt": "test"},
-            headers={SageMakerSessionHeader.SESSION_ID: session_id},
+        # Make request with session - note we don't include session_id in the body
+        # The framework should inject it automatically at metadata.session_id
+        response = self.invoke_with_session(
+            session_id, {"prompt": "test", "metadata": {"user": "test_user"}}
         )
 
         assert response.status_code == 200
         data = json.loads(response.text)
 
-        # Verify session ID was injected
-        assert data["session_id_from_body"] == session_id
-        assert len(self.captured_requests) == 1
-        assert self.captured_requests[0]["session_id"] == session_id
-
-
-class TestCustomHandlerConcurrency:
-    """Test concurrent operations with custom handlers."""
-
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.app = FastAPI()
-        self.router = APIRouter()
-        self.mock_engine = MockEngineAPI()
-        self.setup_custom_handlers()
-        self.app.include_router(self.router)
-        # bootstrap() not needed - tests define their own routes
-        self.client = TestClient(self.app)
-
-    def setup_custom_handlers(self):
-        """Register custom handlers."""
-
-        @self.router.post("/invocations")
-        @sagemaker_standards.stateful_session_manager()
-        async def invocations(request: Request):
-            """Handler with session management."""
-            body_bytes = await request.body()
-            body = json.loads(body_bytes.decode())
-            return Response(
-                status_code=200,
-                content=json.dumps({"message": "success", "echo": body}),
-            )
-
-        @register_engine_session_handler(
-            handler_type="create_session",
-            request_shape={},
-            session_id_path="body.session.id",
-            content_path="body.message",
-        )
-        async def custom_create_session(raw_request: Request):
-            """Custom create handler."""
-            result = self.mock_engine.create_session()
-            return result
-
-        @register_engine_session_handler(
-            handler_type="close_session",
-            request_shape={},
-            content_path="body.result.message",
-        )
-        async def custom_close_session(raw_request: Request):
-            """Custom close handler."""
-            session_id = raw_request.headers.get(SageMakerSessionHeader.SESSION_ID)
-            result = self.mock_engine.close_session(session_id)
-            return result
-
-    def test_multiple_sessions_with_custom_handlers(self):
-        """Test creating and managing multiple sessions with custom handlers."""
-        # Create multiple sessions
-        session_ids = []
-        for i in range(3):
-            response = self.client.post(
-                "/invocations", json={"requestType": "NEW_SESSION"}
-            )
-            assert response.status_code == 200
-            session_id = extract_session_id_from_header(
-                response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
-            )
-            session_ids.append(session_id)
-
-        # Verify all sessions were created in engine
-        assert self.mock_engine.call_count["create"] == 3
-        assert len(self.mock_engine.sessions) == 3
-
-        # Close all sessions
-        for session_id in session_ids:
-            response = self.client.post(
-                "/invocations",
-                json={"requestType": "CLOSE"},
-                headers={SageMakerSessionHeader.SESSION_ID: session_id},
-            )
-            assert response.status_code == 200
-
-        # Verify all sessions were closed in engine
-        assert self.mock_engine.call_count["close"] == 3
-
-    def test_interleaved_operations_with_custom_handlers(self):
-        """Test interleaved create/use/close operations."""
-        # Create session 1
-        response1 = self.client.post(
-            "/invocations", json={"requestType": "NEW_SESSION"}
-        )
-        session1_id = extract_session_id_from_header(
-            response1.headers[SageMakerSessionHeader.NEW_SESSION_ID]
-        )
-
-        # Create session 2
-        response2 = self.client.post(
-            "/invocations", json={"requestType": "NEW_SESSION"}
-        )
-        session2_id = extract_session_id_from_header(
-            response2.headers[SageMakerSessionHeader.NEW_SESSION_ID]
-        )
-
-        # Close session 1
-        close1 = self.client.post(
-            "/invocations",
-            json={"requestType": "CLOSE"},
-            headers={SageMakerSessionHeader.SESSION_ID: session1_id},
-        )
-        assert close1.status_code == 200
-
-        # Session 2 should still work
-        # (Note: In this test we're just verifying the close worked)
-        assert self.mock_engine.sessions[session1_id]["active"] is False
-        assert self.mock_engine.sessions[session2_id]["active"] is True
-
-
-class TestCustomHandlerComplexTransformations:
-    """Test custom handlers with complex request/response transformations."""
-
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.app = FastAPI()
-        self.router = APIRouter()
-        self.mock_engine = MockEngineAPI()
-        self.setup_complex_handlers()
-        self.app.include_router(self.router)
-        # bootstrap() not needed - tests define their own routes
-        self.client = TestClient(self.app)
-
-    def setup_complex_handlers(self):
-        """Register handlers with complex transformations."""
-
-        @self.router.post("/invocations")
-        @sagemaker_standards.stateful_session_manager()
-        async def invocations(request: Request):
-            """Handler with session management."""
-            body_bytes = await request.body()
-            body = json.loads(body_bytes.decode())
-            return Response(
-                status_code=200,
-                content=json.dumps({"message": "success", "echo": body}),
-            )
-
-        @register_engine_session_handler(
-            handler_type="create_session",
-            request_shape={},
-            session_id_path="body.session.id",
-            content_path="body.message",
-        )
-        async def custom_create_session(raw_request: Request):
-            """Handler for session creation."""
-            result = self.mock_engine.create_session("default")
-            return result
-
-        @register_engine_session_handler(
-            handler_type="close_session",
-            request_shape={},
-            content_path="body.result.message",
-        )
-        async def custom_close_session(raw_request: Request):
-            """Handler for session closure."""
-            session_id = raw_request.headers.get(SageMakerSessionHeader.SESSION_ID)
-
-            # Engine API closes the session
-            result = self.mock_engine.close_session(session_id)
-            return result
-
-    def test_complex_request_transformation(self):
-        """Test that custom handlers work with session creation."""
-        response = self.client.post(
-            "/invocations",
-            json={"requestType": "NEW_SESSION"},
-        )
-
-        assert response.status_code == 200
-        assert SageMakerSessionHeader.NEW_SESSION_ID in response.headers
-
-        # Verify engine created session
-        assert self.mock_engine.call_count["create"] == 1
-
-    def test_close_with_custom_handler(self):
-        """Test close handler with custom implementation."""
-        # Create session first
-        create_response = self.client.post(
-            "/invocations", json={"requestType": "NEW_SESSION"}
-        )
-        session_id = extract_session_id_from_header(
-            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
-        )
-
-        # Close session
-        close_response = self.client.post(
-            "/invocations",
-            json={"requestType": "CLOSE"},
-            headers={SageMakerSessionHeader.SESSION_ID: session_id},
-        )
-
-        assert close_response.status_code == 200
-        assert SageMakerSessionHeader.CLOSED_SESSION_ID in close_response.headers
-        assert self.mock_engine.call_count["close"] == 1
-
-
-class TestCustomHandlerEndToEnd:
-    """End-to-end tests simulating real engine integration patterns."""
-
-    def setup_method(self):
-        """Set up test fixtures."""
-        self.app = FastAPI()
-        self.router = APIRouter()
-        self.mock_engine = MockEngineAPI()
-        self.setup_realistic_handlers()
-        self.app.include_router(self.router)
-        # bootstrap() not needed - tests define their own routes
-        self.client = TestClient(self.app)
-
-    def setup_realistic_handlers(self):
-        """Set up handlers that simulate real vLLM/TGI integration."""
-
-        @self.router.post("/invocations")
-        @sagemaker_standards.stateful_session_manager(
-            session_id_path="metadata.session_id"
-        )
-        async def invocations(request: Request):
-            """Realistic inference handler."""
-            body_bytes = await request.body()
-            body = json.loads(body_bytes.decode())
-
-            # Simulate inference with session context
-            session_id = body.get("metadata", {}).get("session_id")
-            prompt = body.get("prompt", "")
-
-            return Response(
-                status_code=200,
-                content=json.dumps(
-                    {
-                        "generated_text": f"Response to: {prompt}",
-                        "session_id": session_id,
-                        "metadata": {"tokens": 42},
-                    }
-                ),
-            )
-
-        @register_engine_session_handler(
-            handler_type="create_session",
-            request_shape={},
-            session_id_path="body.session.id",
-            content_path="body.message",
-        )
-        async def vllm_create_session(raw_request: Request):
-            """Simulate vLLM session creation."""
-            result = self.mock_engine.create_session("default-model")
-            return result
-
-        @register_engine_session_handler(
-            handler_type="close_session",
-            request_shape={},
-            content_path="body.result.message",
-        )
-        async def vllm_close_session(raw_request: Request):
-            """Simulate vLLM session closure."""
-            session_id = raw_request.headers.get(SageMakerSessionHeader.SESSION_ID)
-            result = self.mock_engine.close_session(session_id)
-            return result
-
-    def test_full_lifecycle_with_custom_handlers(self):
-        """Test complete lifecycle: create -> use -> close with custom handlers."""
-        # 1. Create session via custom handler
-        create_response = self.client.post(
-            "/invocations",
-            json={"requestType": "NEW_SESSION"},
-        )
-        assert create_response.status_code == 200
-        session_id = extract_session_id_from_header(
-            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
-        )
-        assert session_id.startswith("engine-session-")
-
-        # 2. Use session for inference
-        inference_response = self.client.post(
-            "/invocations",
-            json={"prompt": "Hello, world!", "metadata": {}},
-            headers={SageMakerSessionHeader.SESSION_ID: session_id},
-        )
-        assert inference_response.status_code == 200
-        data = json.loads(inference_response.text)
+        # Verify session ID was automatically injected into the nested path
         assert data["session_id"] == session_id
-        assert "Response to: Hello, world!" in data["generated_text"]
+        assert data["body"]["metadata"]["session_id"] == session_id
+        # Verify original metadata fields are preserved
+        assert data["body"]["metadata"]["user"] == "test_user"
 
-        # 3. Close session via custom handler
-        close_response = self.client.post(
-            "/invocations",
-            json={"requestType": "CLOSE"},
-            headers={SageMakerSessionHeader.SESSION_ID: session_id},
+
+class TestCustomHandlerSessionPersistence(BaseCustomHandlerIntegrationTest):
+    """Test that session state persists correctly across invocations with custom handlers."""
+
+    def setup_method(self):
+        self.sessions = {}
+        super().setup_method()
+
+    def custom_create_session(self, obj: CreateSessionRequest, request: Request):
+        session_id = str(uuid.uuid4())
+        # Store session with initial state for ML inference
+        self.sessions[session_id] = {
+            "conversation_history": [],
+            "inference_params": {},
+            "created_at": "2024-01-01",
+        }
+        return {"session_id": session_id}
+
+    def custom_close_session(self, obj: CloseSessionRequest, request: Request):
+        if obj.session_id in self.sessions:
+            del self.sessions[obj.session_id]
+        return Response(status_code=200)
+
+    def setup_common_handlers(self):
+        @sagemaker_standards.register_create_session_handler(
+            request_shape={"capacity_of_str_len": "`1024`"},
+            response_session_id_path="body.session_id",
+            content_path="`successfully created session.`",
         )
-        assert close_response.status_code == 200
-        assert (
-            close_response.headers[SageMakerSessionHeader.CLOSED_SESSION_ID]
-            == session_id
+        @self.app.api_route("/open_session", methods=["GET", "POST"])
+        async def create_session(obj: CreateSessionRequest, request: Request):
+            return self.custom_create_session(obj, request)
+
+        @sagemaker_standards.register_close_session_handler(
+            request_shape={
+                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+            },
+            content_path="`successfully closed session.`",
+        )
+        @self.app.api_route("/close_session", methods=["GET", "POST"])
+        async def close_session(obj: CloseSessionRequest, request: Request):
+            return self.custom_close_session(obj, request)
+
+    async def custom_invocations(self, request: Request):
+        body_bytes = await request.body()
+        body = json.loads(body_bytes.decode())
+        session_id = request.headers.get(SageMakerSessionHeader.SESSION_ID)
+
+        # Simulate updating session state for ML inference
+        if session_id and session_id in self.sessions:
+            if "message" in body:
+                self.sessions[session_id]["conversation_history"].append(
+                    body["message"]
+                )
+            if "inference_params" in body:
+                self.sessions[session_id]["inference_params"].update(
+                    body["inference_params"]
+                )
+
+        session_data = self.sessions.get(session_id, {})
+
+        return Response(
+            status_code=200,
+            content=json.dumps(
+                {
+                    "session_id": session_id,
+                    "conversation_history": session_data.get(
+                        "conversation_history", []
+                    ),
+                    "inference_params": session_data.get("inference_params", {}),
+                }
+            ),
         )
 
-        # Verify engine state
-        assert self.mock_engine.call_count["create"] == 1
-        assert self.mock_engine.call_count["close"] == 1
-        assert self.mock_engine.sessions[session_id]["active"] is False
+    def test_conversation_history_persists(self):
+        """Test that conversation history accumulates across invocations.
 
-    def test_multiple_inference_calls_with_custom_session(self):
-        """Test multiple inference calls using custom session."""
-        # Create session
-        create_response = self.client.post(
-            "/invocations", json={"requestType": "NEW_SESSION"}
-        )
-        session_id = extract_session_id_from_header(
-            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
-        )
+        This simulates a multi-turn conversation with an LLM where each message
+        is added to the session's conversation history. This is a common pattern
+        for chatbots and conversational AI where context from previous turns
+        needs to be maintained.
+        """
+        session_id = self.create_session()
 
-        # Make multiple inference calls
-        prompts = ["First prompt", "Second prompt", "Third prompt"]
-        for prompt in prompts:
-            response = self.client.post(
-                "/invocations",
-                json={"prompt": prompt, "metadata": {}},
-                headers={SageMakerSessionHeader.SESSION_ID: session_id},
-            )
+        # Send multiple messages in sequence (simulating a conversation)
+        messages = ["Hello", "How are you?", "Tell me a joke"]
+        for msg in messages:
+            # Each message is added to the session's conversation history
+            response = self.invoke_with_session(session_id, {"message": msg})
             assert response.status_code == 200
-            data = json.loads(response.text)
-            assert data["session_id"] == session_id
-            assert prompt in data["generated_text"]
 
-        # Close session
-        close_response = self.client.post(
-            "/invocations",
-            json={"requestType": "CLOSE"},
-            headers={SageMakerSessionHeader.SESSION_ID: session_id},
-        )
-        assert close_response.status_code == 200
+        # Make a final request to retrieve the accumulated history
+        final_response = self.invoke_with_session(session_id, {})
+        data = json.loads(final_response.text)
+        # Verify all messages were stored in order
+        assert data["conversation_history"] == messages
+
+    def test_inference_parameters_persist(self):
+        """Test that ML inference parameters are maintained across invocations.
+
+        This validates that ML-specific inference parameters (temperature, max_tokens, top_p)
+        can be set incrementally and persist across the session. This is useful for:
+        - LLM inference where users want consistent generation parameters
+        - A/B testing different parameter combinations within a session
+        - Gradual parameter tuning based on user feedback
+        """
+        session_id = self.create_session()
+
+        # Set inference parameters incrementally across multiple requests
+        # Temperature: controls randomness in text generation (0.0 = deterministic, 1.0 = creative)
+        self.invoke_with_session(session_id, {"inference_params": {"temperature": 0.7}})
+        # Max tokens: limits the length of generated output
+        self.invoke_with_session(session_id, {"inference_params": {"max_tokens": 512}})
+        # Top-p (nucleus sampling): controls diversity of token selection
+        self.invoke_with_session(session_id, {"inference_params": {"top_p": 0.9}})
+
+        # Retrieve accumulated parameters
+        response = self.invoke_with_session(session_id, {})
+        data = json.loads(response.text)
+        # Verify all parameters were stored and are accessible
+        assert data["inference_params"]["temperature"] == 0.7
+        assert data["inference_params"]["max_tokens"] == 512
+        assert data["inference_params"]["top_p"] == 0.9
+
+    def test_session_state_cleared_after_close(self):
+        """Test that session state is properly cleared when session is closed.
+
+        This validates proper cleanup of session resources. When a session is closed,
+        all associated state (conversation history, parameters, etc.) should be
+        removed to prevent memory leaks and ensure data privacy.
+        """
+        session_id = self.create_session()
+
+        # Add some state to the session
+        self.invoke_with_session(session_id, {"message": "test"})
+        # Verify state was stored
+        assert len(self.sessions[session_id]["conversation_history"]) == 1
+
+        # Close the session - should trigger cleanup in custom handler
+        self.close_session(session_id)
+
+        # Verify session and all its state was completely removed from storage
+        # This is important for memory management and data privacy
+        assert session_id not in self.sessions

@@ -122,19 +122,23 @@ def inject_adapter_id(
     )
 
 
-def stateful_session_manager(session_id_path: Optional[str] = None):
+def stateful_session_manager(request_session_id_path: Optional[str] = None):
     """Create a decorator for session-based sticky routing.
 
     This decorator enables stateful session management without JMESPath transformations.
     Pass empty dicts to enable transform infrastructure (for intercept functionality)
     without requiring JMESPath expressions.
 
+    Args:
+        request_session_id_path: JMESPath target path where session ID should be
+                                 injected INTO the request body from the session header
+
     Returns:
         A decorator that can be applied to route handlers to enable session management
     """
     request_shape = {}
-    if session_id_path:
-        request_shape[session_id_path] = (
+    if request_session_id_path:
+        request_shape[request_session_id_path] = (
             f'headers."{SageMakerSessionHeader.SESSION_ID}"'
         )
     return create_session_transform_decorator()(
@@ -143,19 +147,21 @@ def stateful_session_manager(session_id_path: Optional[str] = None):
 
 
 def register_create_session_handler(
-    request_shape, session_id_path: str, content_path: Optional[str] = None
+    request_shape, response_session_id_path: str, content_path: Optional[str] = None
 ):
     return register_engine_session_handler(
         "create_session",
         request_shape=request_shape,
-        session_id_path=session_id_path,
-        content_path=content_path,
+        response_session_id_path=response_session_id_path,
+        content_path=content_path or "`successfully created session.`",
     )
 
 
 def register_close_session_handler(request_shape, content_path: Optional[str] = None):
     return register_engine_session_handler(
-        "close_session", request_shape=request_shape, content_path=content_path
+        "close_session",
+        request_shape=request_shape,
+        content_path=content_path or "`successfully closed session.`",
     )
 
 

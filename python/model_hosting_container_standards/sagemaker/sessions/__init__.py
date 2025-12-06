@@ -34,7 +34,7 @@ def _create_engine_session_transform_decorator(handler_type: str):
 def register_engine_session_handler(
     handler_type: str,
     request_shape,
-    session_id_path: Optional[str] = None,
+    response_session_id_path: Optional[str] = None,
     content_path: Optional[str] = None,
 ):
     """Register a handler for engine-specific session management.
@@ -42,8 +42,9 @@ def register_engine_session_handler(
     Args:
         handler_type: Type of session handler ('create_session' or 'close_session')
         request_shape: JMESPath expressions for transforming request data
-        session_id_path: JMESPath expression for extracting session ID from response
-                        (required for 'create_session', ignored for 'close_session')
+        response_session_id_path: JMESPath expression for extracting session ID FROM
+                                  the engine's response (required for 'create_session',
+                                  ignored for 'close_session')
         content_path: JMESPath expression for extracting content from response
 
     Returns:
@@ -64,9 +65,9 @@ def register_engine_session_handler(
     }
 
     if handler_type == "create_session":
-        if not session_id_path:
-            raise ValueError("session_id_path is required for create_session")
-        response_shape[SageMakerSessionHeader.NEW_SESSION_ID] = session_id_path
+        if not response_session_id_path:
+            raise ValueError("response_session_id_path is required for create_session")
+        response_shape[SageMakerSessionHeader.NEW_SESSION_ID] = response_session_id_path
 
     return _create_engine_session_transform_decorator(handler_type)(
         request_shape, response_shape
