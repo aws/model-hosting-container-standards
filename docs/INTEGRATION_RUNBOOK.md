@@ -94,18 +94,18 @@
 
 ## 1. Introduction
 
-### 1.1 What is MHCS?
+### 1.1 What is MHCS? 
 
-Model Hosting Container Standards (MHCS) is a Python library that acts as a bridge between Amazon SageMaker's platform requirements and ML inference engines with rapidly evolving APIs. It standardizes how ML frameworks integrate with SageMaker while maintaining backwards compatibility and adapting to changing engine interfaces.
+Model Hosting Container Standards (MHCS) is a Python library that acts as a bridge between model hosting platforms and ML inference engines with rapidly evolving APIs. It standardizes how ML frameworks integrate with hosting platforms while maintaining backwards compatibility and adapting to changing engine interfaces.
 
 **Why MHCS Exists:**
 
-SageMaker has strict, difficult-to-change platform requirements (like specific endpoint contracts and management APIs), while ML engines like vLLM, SGLang, and TensorRT-LLM frequently update their APIs and capabilities. MHCS sits between these two worlds, providing:
+Model hosting platforms have strict, difficult-to-change requirements (like specific endpoint contracts and management APIs), while ML engines like vLLM, SGLang, and TensorRT-LLM frequently update their APIs and capabilities. MHCS sits between these two worlds, providing:
 
-- **Stable Platform Interface**: Implements SageMaker's required endpoints (`/ping`, `/invocations`) and management APIs consistently
-- **Engine Flexibility**: Adapts to different ML engine APIs without requiring SageMaker platform changes
-- **Backwards Compatibility**: Ensures existing integrations continue working as both SageMaker and engines evolve
-- **Focus on Management**: Prioritizes platform management APIs (health checks, adapter loading, session management) that SageMaker needs most
+- **Stable Platform Interface**: Implements common hosting platform endpoints (such as `/ping`, `/invocations`) and management APIs consistently
+- **Engine Flexibility**: Adapts to different ML engine APIs without requiring platform changes
+- **Backwards Compatibility**: Ensures existing integrations continue working as both platforms and engines evolve
+- **Focus on Management**: Prioritizes platform management APIs (health checks, adapter loading, session management) that hosting platforms need most
 
 **Key Benefits:**
 
@@ -120,7 +120,7 @@ SageMaker has strict, difficult-to-change platform requirements (like specific e
 
 **Required:**
 - Python >= 3.10
-- FastAPI >= 0.117.1
+- FastAPI >= 0.121.1
 - An existing FastAPI application (your ML framework's serving layer)
 
 **Installation:**
@@ -1203,7 +1203,7 @@ This step-by-step checklist guides you through a complete MHCS integration. Foll
 **Prerequisites Checklist:**
 
 - [ ] Python >= 3.10 installed
-- [ ] FastAPI >= 0.117.1 installed
+- [ ] FastAPI >= 0.121.1 installed
 - [ ] MHCS library installed (`pip install model_hosting_container_standards-*.whl`)
 - [ ] Existing FastAPI application with inference logic
 
