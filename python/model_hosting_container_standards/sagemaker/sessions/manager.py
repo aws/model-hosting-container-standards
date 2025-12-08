@@ -136,9 +136,15 @@ class SessionManager:
         # Determine sessions path with fallback to /dev/shm or temp directory
         sessions_path = properties.get("sessions_path")
         if sessions_path is None:
-            temp_sessions_path = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
-            shm_accessible = os.path.exists("/dev/shm") and os.access("/dev/shm", os.R_OK | os.W_OK)
-            sessions_path = "/dev/shm/sagemaker_sessions" if shm_accessible else temp_sessions_path
+            temp_sessions_path = os.path.join(
+                tempfile.gettempdir(), "sagemaker_sessions"
+            )
+            shm_accessible = os.path.exists("/dev/shm") and os.access(
+                "/dev/shm", os.R_OK | os.W_OK
+            )
+            sessions_path = (
+                "/dev/shm/sagemaker_sessions" if shm_accessible else temp_sessions_path
+            )
 
         self.sessions_path = sessions_path
         self.sessions: dict[str, Session] = {}  # Active sessions registry
@@ -147,11 +153,15 @@ class SessionManager:
         # Create sessions directory and load existing sessions
         try:
             os.makedirs(self.sessions_path, exist_ok=True)  # Create if needed
-            for session_id in os.listdir(self.sessions_path):  # Restore persisted sessions
+            for session_id in os.listdir(
+                self.sessions_path
+            ):  # Restore persisted sessions
                 self.sessions[session_id] = Session(session_id, self.sessions_path)
         except (PermissionError, OSError):
             # Fall back to temp directory on permission errors
-            self.sessions_path = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
+            self.sessions_path = os.path.join(
+                tempfile.gettempdir(), "sagemaker_sessions"
+            )
             os.makedirs(self.sessions_path, exist_ok=True)  # Start fresh in temp
 
     def create_session(self) -> Session:
