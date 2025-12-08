@@ -133,23 +133,26 @@ class SessionManager:
         # Session expiration time in seconds (default: 20 minutes)
         self.expiration = int(properties.get("sessions_expiration", str(20 * 60)))
 
-        # Prefer /dev/shm (memory-backed filesystem) for performance
-        if os.path.exists("/dev/shm"):
-            session_dir = "/dev/shm/sagemaker_sessions"
-        else:
-            session_dir = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
+        # Determine sessions path with fallback to /dev/shm or temp directory
+        sessions_path = properties.get("sessions_path")
+        if sessions_path is None:
+            temp_sessions_path = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
+            shm_accessible = os.path.exists("/dev/shm") and os.access("/dev/shm", os.R_OK | os.W_OK)
+            sessions_path = "/dev/shm/sagemaker_sessions" if shm_accessible else temp_sessions_path
 
-        self.sessions_path = properties.get("sessions_path") or session_dir
-        self.sessions: dict[str, Session] = {}
-        self._lock = RLock()  # Thread safety for concurrent session access
+        self.sessions_path = sessions_path
+        self.sessions: dict[str, Session] = {}  # Active sessions registry
+        self._lock = RLock()  # Thread safety for concurrent access
 
-        # Create sessions directory if it doesn't exist
-        if not os.path.exists(self.sessions_path):
-            os.makedirs(self.sessions_path, exist_ok=True)
-
-        # Load any previously saved sessions from disk (for persistence across restarts)
-        for session_id in os.listdir(self.sessions_path):
-            self.sessions[session_id] = Session(session_id, self.sessions_path)
+        # Create sessions directory and load existing sessions
+        try:
+            os.makedirs(self.sessions_path, exist_ok=True)  # Create if needed
+            for session_id in os.listdir(self.sessions_path):  # Restore persisted sessions
+                self.sessions[session_id] = Session(session_id, self.sessions_path)
+        except (PermissionError, OSError):
+            # Fall back to temp directory on permission errors
+            self.sessions_path = os.path.join(tempfile.gettempdir(), "sagemaker_sessions")
+            os.makedirs(self.sessions_path, exist_ok=True)  # Start fresh in temp
 
     def create_session(self) -> Session:
         """Create a new session with a unique ID and expiration timestamp.
