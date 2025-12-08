@@ -20,12 +20,31 @@ class TestMiddlewareExceptions:
 
     def setup_method(self):
         """Clear global state before each test."""
+        from model_hosting_container_standards.common.fastapi.middleware.registry import (
+            middleware_registry,
+        )
         from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
             decorator_loader,
         )
 
         # Clear decorator loader state
         decorator_loader.clear()
+        # Clear middleware registry state
+        middleware_registry.clear_middlewares()
+
+    def teardown_method(self):
+        """Clear global state after each test."""
+        from model_hosting_container_standards.common.fastapi.middleware.registry import (
+            middleware_registry,
+        )
+        from model_hosting_container_standards.common.fastapi.middleware.source.decorator_loader import (
+            decorator_loader,
+        )
+
+        # Clear decorator loader state
+        decorator_loader.clear()
+        # Clear middleware registry state
+        middleware_registry.clear_middlewares()
 
     def test_middleware_registration_error_invalid_name(self):
         """Test MiddlewareRegistrationError for invalid middleware name."""
@@ -121,12 +140,6 @@ class TestMiddlewareExceptions:
 
     def test_exception_chaining(self):
         """Test that exceptions are properly chained with 'from' clause."""
-        from model_hosting_container_standards.common.fastapi.middleware.registry import (
-            middleware_registry,
-        )
-
-        # Clear the global registry first
-        middleware_registry.clear_middlewares()
 
         # First register a middleware using decorator
         @custom_middleware("pre_post_process")
@@ -143,6 +156,3 @@ class TestMiddlewareExceptions:
         # Check that the original ValueError is chained
         assert exc_info.value.__cause__ is not None
         assert isinstance(exc_info.value.__cause__, ValueError)
-
-        # Clean up
-        middleware_registry.clear_middlewares()
