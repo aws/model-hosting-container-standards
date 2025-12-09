@@ -333,6 +333,53 @@ class TestSessionManager:
         assert manager.sessions_path == custom_path
         assert os.path.exists(custom_path)
 
+    def test_session_manager_actually_creates_temp_directory(
+        self, temp_session_storage
+    ):
+        """Test SessionManager physically creates 'sagemaker_sessions' folder in temp directory when /dev/shm unavailable."""
+        # Use a subdirectory of temp_session_storage to simulate temp directory
+        fake_temp_dir = os.path.join(temp_session_storage, "fake_tmp")
+        os.makedirs(fake_temp_dir, exist_ok=True)
+
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.manager.tempfile.gettempdir",
+            return_value=fake_temp_dir,
+        ):
+            with patch(
+                "model_hosting_container_standards.sagemaker.sessions.manager.os.path.exists"
+            ) as mock_exists:
+                with patch(
+                    "model_hosting_container_standards.sagemaker.sessions.manager.os.access"
+                ) as mock_access:
+                    # Simulate /dev/shm doesn't exist, but let other paths work normally
+                    def exists_side_effect(path):
+                        if path == "/dev/shm":
+                            return False
+                        # Use real exists for other paths
+                        return (
+                            os.path.exists.__wrapped__(path)
+                            if hasattr(os.path.exists, "__wrapped__")
+                            else True
+                        )
+
+                    mock_exists.side_effect = exists_side_effect
+                    mock_access.return_value = False
+
+                    manager = SessionManager({})
+
+                    # Verify the path is in the temp directory and ends with 'sagemaker_sessions'
+                    expected_path = os.path.join(fake_temp_dir, "sagemaker_sessions")
+                    assert manager.sessions_path == expected_path
+
+                    # Check using real filesystem (outside the patch context for exists)
+                    import pathlib
+
+                    assert pathlib.Path(expected_path).exists()
+                    assert pathlib.Path(expected_path).is_dir()
+
+                    # Verify it's named 'sagemaker_sessions'
+                    assert os.path.basename(expected_path) == "sagemaker_sessions"
+
     def test_create_session_generates_unique_id(self, session_manager):
         """Test create_session generates a unique session ID."""
         session1 = session_manager.create_session()
