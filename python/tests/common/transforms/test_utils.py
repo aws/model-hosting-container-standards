@@ -45,14 +45,45 @@ class TestSetValue:
     def test_set_value_with_create_parent_deep(self):
         """Test creating a deep nested structure."""
         obj = {}
-        result = set_value(obj, "a.b.c.d", "value", create_parent=True)
+        result = set_value(
+            obj, "a.b.c.d", "value", create_parent=True, max_create_depth=4
+        )
         assert result == {"a": {"b": {"c": {"d": "value"}}}}
 
     def test_set_value_with_create_parent_partial_existing(self):
         """Test creating parents when some already exist."""
         obj = {"a": {"b": {}}}
-        result = set_value(obj, "a.b.c.d", "value", create_parent=True)
+        result = set_value(
+            obj, "a.b.c.d", "value", create_parent=True, max_create_depth=4
+        )
         assert result == {"a": {"b": {"c": {"d": "value"}}}}
+
+    def test_set_value_with_create_parent_preserves_siblings(self):
+        """Test that creating nested paths preserves existing sibling keys."""
+        obj = {"a": {"b": {"existing_key": "existing_value", "another": 123}}}
+        result = set_value(
+            obj, "a.b.c.d", "new_value", create_parent=True, max_create_depth=4
+        )
+        assert result == {
+            "a": {
+                "b": {
+                    "existing_key": "existing_value",
+                    "another": 123,
+                    "c": {"d": "new_value"},
+                }
+            }
+        }
+        # Verify existing keys are preserved
+        assert result["a"]["b"]["existing_key"] == "existing_value"
+        assert result["a"]["b"]["another"] == 123
+
+    def test_set_value_preserves_sibling_at_target_level(self):
+        """Test that updating a value preserves sibling keys at the same level."""
+        obj = {"a": {"b": {"c": {"d": "old_value", "e": "other_value"}}}}
+        result = set_value(obj, "a.b.c.d", "new_value", create_parent=True)
+        assert result == {"a": {"b": {"c": {"d": "new_value", "e": "other_value"}}}}
+        # Verify sibling key 'e' is preserved
+        assert result["a"]["b"]["c"]["e"] == "other_value"
 
     def test_set_value_with_create_parent_max_depth_allowed(self):
         """Test that paths within max_create_depth are allowed."""
@@ -67,6 +98,17 @@ class TestSetValue:
         obj = {}
         with pytest.raises(KeyError, match="exceeds max depth of 3"):
             set_value(obj, "a.b.c.d", "value", create_parent=True, max_create_depth=3)
+
+    def test_set_value_with_create_parent_default_depth_exceeded(self):
+        """Test that paths exceeding DEFAULT_MAX_DEPTH_TO_CREATE raise KeyError."""
+        obj = {}
+        # Default is 2, so depth 3 should fail
+        with pytest.raises(KeyError, match="exceeds max depth of 2"):
+            set_value(obj, "a.b.c", "value", create_parent=True)
+
+        # Depth 4 should also fail
+        with pytest.raises(KeyError, match="exceeds max depth of 2"):
+            set_value(obj, "a.b.c.d", "value", create_parent=True)
 
     def test_set_value_with_create_parent_max_depth_existing_path_allowed(self):
         """Test that existing deep paths work regardless of max_create_depth."""
@@ -101,13 +143,17 @@ class TestSetValueWithParentCreation:
     def test_set_value_with_parent_creation_multiple_parents(self):
         """Test creating multiple parent levels."""
         obj = {}
-        result = _set_value_with_parent_creation(obj, ["a", "b", "c"], "d", "value")
+        result = _set_value_with_parent_creation(
+            obj, ["a", "b", "c"], "d", "value", max_create_depth=4
+        )
         assert result == {"a": {"b": {"c": {"d": "value"}}}}
 
     def test_set_value_with_parent_creation_partial_existing(self):
         """Test creating parents when some already exist."""
         obj = {"a": {"b": {}}}
-        result = _set_value_with_parent_creation(obj, ["a", "b", "c"], "d", "value")
+        result = _set_value_with_parent_creation(
+            obj, ["a", "b", "c"], "d", "value", max_create_depth=4
+        )
         assert result == {"a": {"b": {"c": {"d": "value"}}}}
 
     def test_set_value_with_parent_creation_all_existing(self):
@@ -131,6 +177,17 @@ class TestSetValueWithParentCreation:
             _set_value_with_parent_creation(
                 obj, ["a", "b", "c"], "d", "value", max_create_depth=3
             )
+
+    def test_set_value_with_parent_creation_default_depth_exceeded(self):
+        """Test that paths exceeding DEFAULT_MAX_DEPTH_TO_CREATE raise KeyError."""
+        obj = {}
+        # Default is 2, so depth 3 should fail
+        with pytest.raises(KeyError, match="exceeds max depth of 2"):
+            _set_value_with_parent_creation(obj, ["a", "b"], "c", "value")
+
+        # Depth 4 should also fail
+        with pytest.raises(KeyError, match="exceeds max depth of 2"):
+            _set_value_with_parent_creation(obj, ["a", "b", "c"], "d", "value")
 
     def test_set_value_with_parent_creation_max_depth_with_existing_parents(self):
         """Test that max_depth only applies when creating, not for existing paths."""
@@ -163,3 +220,30 @@ class TestSetValueWithParentCreation:
         obj = {"a": {"b": {"c": "old_value"}}}
         result = _set_value_with_parent_creation(obj, ["a", "b"], "c", "new_value")
         assert result == {"a": {"b": {"c": "new_value"}}}
+
+    def test_set_value_with_parent_creation_preserves_siblings(self):
+        """Test that creating nested paths preserves existing sibling keys."""
+        obj = {"a": {"b": {"existing_key": "existing_value", "another": 123}}}
+        result = _set_value_with_parent_creation(
+            obj, ["a", "b", "c"], "d", "new_value", max_create_depth=4
+        )
+        assert result == {
+            "a": {
+                "b": {
+                    "existing_key": "existing_value",
+                    "another": 123,
+                    "c": {"d": "new_value"},
+                }
+            }
+        }
+        # Verify existing keys are preserved
+        assert result["a"]["b"]["existing_key"] == "existing_value"
+        assert result["a"]["b"]["another"] == 123
+
+    def test_set_value_with_parent_creation_preserves_sibling_at_target_level(self):
+        """Test that updating a value preserves sibling keys at the same level."""
+        obj = {"a": {"b": {"c": {"d": "old_value", "e": "other_value"}}}}
+        result = _set_value_with_parent_creation(obj, ["a", "b", "c"], "d", "new_value")
+        assert result == {"a": {"b": {"c": {"d": "new_value", "e": "other_value"}}}}
+        # Verify sibling key 'e' is preserved
+        assert result["a"]["b"]["c"]["e"] == "other_value"

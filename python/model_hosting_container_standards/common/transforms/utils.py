@@ -122,12 +122,12 @@ def _set_value_with_parent_creation(
                 )
 
         return _set_value_with_parent_creation(
-            obj,
-            parent_parts[:-1],
-            parent_parts[-1],
-            {child: value},
-            max_create_depth,
-            _full_depth,
+            obj=obj,
+            parent_parts=parent_parts[:-1],
+            child=parent_parts[-1],
+            value={child: value},
+            max_create_depth=max_create_depth,
+            _full_depth=_full_depth,
         )
 
     parent[child] = value
