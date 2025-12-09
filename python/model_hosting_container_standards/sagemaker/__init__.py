@@ -123,23 +123,29 @@ def inject_adapter_id(
     )
 
 
-def stateful_session_manager(request_session_id_path: Optional[str] = None):
+def stateful_session_manager(engine_request_session_id_path: Optional[str] = None):
     """Create a decorator for session-based sticky routing.
 
-    This decorator enables stateful session management without JMESPath transformations.
-    Pass empty dicts to enable transform infrastructure (for intercept functionality)
-    without requiring JMESPath expressions.
+    This decorator enables stateful session management for regular invocation requests,
+    allowing the session ID to be injected into the request body for stateful inference.
 
     Args:
-        request_session_id_path: JMESPath target path where session ID should be
-                                 injected INTO the request body from the session header
+        engine_request_session_id_path: Optional target path in the request body where
+                                        the session ID will be injected. The session ID
+                                        is extracted from the SageMaker session header and
+                                        placed at this path in the request sent to the engine.
+
+                                        Examples: "session_id", "metadata.session_id"
+
+                                        If None, session management is enabled but the
+                                        session ID is not injected into the request body.
 
     Returns:
         A decorator that can be applied to route handlers to enable session management
     """
     request_shape = {}
-    if request_session_id_path:
-        request_shape[request_session_id_path] = (
+    if engine_request_session_id_path:
+        request_shape[engine_request_session_id_path] = (
             f'headers."{SageMakerSessionHeader.SESSION_ID}"'
         )
     return create_session_transform_decorator()(
@@ -148,8 +154,8 @@ def stateful_session_manager(request_session_id_path: Optional[str] = None):
 
 
 def register_create_session_handler(
-    request_session_id_path: str,
-    response_session_id_path: str,
+    engine_response_session_id_path: str,
+    engine_request_session_id_path: Optional[str] = None,
     additional_request_shape: Optional[Dict[str, str]] = None,
     content_path: str = "`successfully created session.`",
 ):
@@ -159,13 +165,36 @@ def register_create_session_handler(
     the session ID and extracts the session ID from the engine's response.
 
     Args:
-        request_session_id_path: JMESPath target where the session ID should be injected
-                                 into the request body sent to the engine.
-        response_session_id_path: JMESPath expression to extract the session ID from
-                                  the engine's response body.
+        engine_response_session_id_path: JMESPath expression specifying where to extract
+                                         the session ID from the engine's response. Must
+                                         include a prefix indicating the source location:
+
+                                         - "body.session_id" - extract from response body
+                                         - "headers.X-Session-Id" - extract from response headers
+
+                                         The extracted session ID is placed in the SageMaker
+                                         response body for the client.
+
+        engine_request_session_id_path: Optional target path in the engine request body
+                                        where the session ID will be injected. The session
+                                        ID is extracted from the SageMaker session header
+                                        and placed at this path in the request sent to the
+                                        engine.
+
+                                        Examples: "session_id", "metadata.session_id"
+
+                                        If None, the session ID is not injected into the
+                                        engine request body. This is useful when the engine
+                                        manages session IDs internally and doesn't need them
+                                        in the request.
+
+                                        Limitation: Currently only supports injection into
+                                        the request body, not headers.
+
         additional_request_shape: Optional dict of additional JMESPath transformations
-                                  to apply to the request. Keys are target paths, values
-                                  are source expressions. Defaults to None.
+                                  to apply to the request. Keys are target paths in the
+                                  request body, values are source expressions. Defaults to None.
+
         content_path: JMESPath expression for the success message in the response.
                       Defaults to a literal success message.
 
@@ -173,23 +202,23 @@ def register_create_session_handler(
         A decorator that can be applied to engine-specific session creation handlers.
 
     Note:
-        If request_session_id_path appears in additional_request_shape, it will be
+        If engine_request_session_id_path appears in additional_request_shape, it will be
         overwritten to ensure the session ID is properly injected.
     """
     request_shape = build_session_request_shape(
-        request_session_id_path, additional_request_shape
+        engine_request_session_id_path, additional_request_shape
     )
 
     return register_engine_session_handler(
         "create_session",
         request_shape=request_shape,
-        response_session_id_path=response_session_id_path,
+        response_session_id_path=engine_response_session_id_path,
         content_path=content_path,
     )
 
 
 def register_close_session_handler(
-    request_session_id_path: str,
+    engine_request_session_id_path: str,
     additional_request_shape: Optional[Dict[str, str]] = None,
     content_path: str = "`successfully closed session.`",
 ):
@@ -199,23 +228,45 @@ def register_close_session_handler(
     the session ID for proper session cleanup.
 
     Args:
-        request_session_id_path: JMESPath target where the session ID should be injected
-                                 into the request body sent to the engine.
+        engine_request_session_id_path: Required. Target path in the engine request body
+                                        where the session ID will be injected. The session
+                                        ID is extracted from the SageMaker session header
+                                        and placed at this path in the request sent to the
+                                        engine.
+
+                                        Examples: "session_id", "metadata.session_id"
+
+                                        This parameter is required because the engine needs
+                                        to know which session to close.
+
+                                        Limitation: Currently only supports injection into
+                                        the request body, not headers.
+
         additional_request_shape: Optional dict of additional JMESPath transformations
-                                  to apply to the request. Keys are target paths, values
-                                  are source expressions. Defaults to None.
+                                  to apply to the request. Keys are target paths in the
+                                  request body, values are source expressions. Defaults to None.
+
         content_path: JMESPath expression for the success message in the response.
                       Defaults to a literal success message.
 
     Returns:
         A decorator that can be applied to engine-specific session closure handlers.
 
+    Raises:
+        ValueError: If engine_request_session_id_path is None or empty.
+
     Note:
-        If request_session_id_path appears in additional_request_shape, it will be
+        If engine_request_session_id_path appears in additional_request_shape, it will be
         overwritten to ensure the session ID is properly injected.
     """
+    if not engine_request_session_id_path:
+        raise ValueError(
+            "engine_request_session_id_path is required for close_session handler. "
+            "The engine needs to know which session to close."
+        )
+
     request_shape = build_session_request_shape(
-        request_session_id_path, additional_request_shape
+        engine_request_session_id_path, additional_request_shape
     )
 
     return register_engine_session_handler(

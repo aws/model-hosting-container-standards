@@ -643,7 +643,7 @@ class TestSessionIdPathInjection(BaseSessionIntegrationTest):
 
         @self.router.post("/invocations-with-path")
         @sagemaker_standards.stateful_session_manager(
-            request_session_id_path="session_id"
+            engine_request_session_id_path="session_id"
         )
         async def invocations_with_path(request: Request):
             """Handler that injects session ID into request body at 'session_id' key."""
@@ -668,7 +668,7 @@ class TestSessionIdPathInjection(BaseSessionIntegrationTest):
 
         @self.router.post("/invocations-nested-path")
         @sagemaker_standards.stateful_session_manager(
-            request_session_id_path="metadata.session_id"
+            engine_request_session_id_path="metadata.session_id"
         )
         async def invocations_nested_path(request: Request):
             """Handler that injects session ID into nested path in request body."""

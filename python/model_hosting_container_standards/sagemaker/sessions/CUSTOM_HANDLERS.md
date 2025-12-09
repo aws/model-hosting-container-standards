@@ -56,10 +56,11 @@ class CreateSessionResponse(BaseModel):
 
 # Register custom create session handler
 @register_create_session_handler(
-    request_shape={
-        "capacity": "`1024`"  # JMESPath literal value
+    engine_response_session_id_path="body.session_id",  # Extract session ID from response
+    engine_request_session_id_path="session_id",  # Where to inject session ID in engine request
+    additional_request_shape={
+        "capacity": "`1024`"  # Additional fields to include
     },
-    response_session_id_path="body.session_id",  # Extract session ID from response
     content_path="body.message"  # Extract content for logging
 )
 @app.post("/engine/create_session")
@@ -68,11 +69,23 @@ async def create_session(obj: CreateSessionRequest, request: Request):
     session_id = await my_engine.create_session(capacity=obj.capacity)
     return CreateSessionResponse(session_id=session_id, message="Session created")
 
+# Alternative: If your engine manages session IDs internally
+@register_create_session_handler(
+    engine_response_session_id_path="body.session_id",  # Extract session ID from response
+    # No engine_request_session_id_path - engine generates its own session ID
+    additional_request_shape={
+        "capacity": "`1024`"
+    }
+)
+@app.post("/engine/create_session")
+async def create_session_auto(obj: CreateSessionRequest, request: Request):
+    # Engine generates and returns its own session ID
+    session_id = await my_engine.create_session_auto(capacity=obj.capacity)
+    return CreateSessionResponse(session_id=session_id, message="Session created")
+
 # Register custom close session handler
 @register_close_session_handler(
-    request_shape={
-        "session_id": 'headers."X-Amzn-SageMaker-Session-Id"'  # Extract from header
-    },
+    engine_request_session_id_path="session_id",  # Where to inject session ID in engine request
     content_path="`Session closed successfully`"  # Static message
 )
 @app.post("/engine/close_session")
@@ -97,29 +110,33 @@ bootstrap(app)
 
 ```python
 @register_create_session_handler(
-    request_shape: dict,              # Required: JMESPath mappings for request transformation
-    response_session_id_path: str,    # Required: JMESPath to extract session ID from response
-    content_path: str = None          # Optional: JMESPath to extract content for logging
+    engine_response_session_id_path: str,          # Required: Where to extract session ID from engine response
+    engine_request_session_id_path: str = None,    # Optional: Where to inject session ID in engine request
+    additional_request_shape: dict = None,         # Optional: Additional JMESPath mappings
+    content_path: str = None                       # Optional: JMESPath to extract content for logging
 )
 ```
 
-- **`request_shape`**: Maps target keys to source JMESPath expressions. Transforms the incoming SageMaker request into your engine's expected format.
-- **`response_session_id_path`**: JMESPath expression to extract the session ID from your engine's response. This is **required** because the framework needs to return the session ID in the response header.
+- **`engine_response_session_id_path`**: JMESPath expression to extract the session ID from your engine's response. Must include prefix (`body.` or `headers.`). This is **required** because the framework needs to return the session ID to the client.
+- **`engine_request_session_id_path`**: Optional target path in the engine request body where the session ID will be injected. The session ID is extracted from the SageMaker session header and placed at this path. Example: `"session_id"` or `"metadata.session_id"`. If None, the session ID is not injected (useful when the engine manages sessions internally)
+- **`additional_request_shape`**: Optional dict mapping target keys to source JMESPath expressions for additional fields to include in the engine request.
 - **`content_path`**: Optional JMESPath expression to extract a message for logging. Defaults to a generic success message.
 
 ### `@register_close_session_handler`
 
 ```python
 @register_close_session_handler(
-    request_shape: dict,              # Required: JMESPath mappings for request transformation
-    content_path: str = None          # Optional: JMESPath to extract content for logging
+    engine_request_session_id_path: str,           # Required: Where to inject session ID in engine request
+    additional_request_shape: dict = None,         # Optional: Additional JMESPath mappings
+    content_path: str = None                       # Optional: JMESPath to extract content for logging
 )
 ```
 
-- **`request_shape`**: Maps target keys to source JMESPath expressions. Typically extracts the session ID from the request header.
+- **`engine_request_session_id_path`**: **Required.** Target path in the engine request body where the session ID will be injected. The session ID is extracted from the SageMaker session header and placed at this path. This is required because the engine needs to know which session to close. Example: `"session_id"` or `"metadata.session_id"`
+- **`additional_request_shape`**: Optional dict mapping target keys to source JMESPath expressions for additional fields to include in the engine request.
 - **`content_path`**: Optional JMESPath expression to extract a message for logging. Defaults to a generic success message.
 
-**Note**: `response_session_id_path` is not needed for close handlers because the session ID comes from the request header, not the response.
+**Note**: `engine_response_session_id_path` is not needed for close handlers because the session ID comes from the request header, not the response.
 
 ## How It Works
 
@@ -135,29 +152,35 @@ The key benefit: Your `/invocations` endpoint stays clean, and session managemen
 
 ## JMESPath Expressions
 
-The `request_shape` and `response_shape` parameters use JMESPath expressions to transform data:
+The parameters use JMESPath expressions to transform data:
 
-### Request Shape
+### Request Transformation
 
-Maps target keys to source expressions:
+The `engine_request_session_id_path` specifies where to inject the session ID (always relative to request body):
 
 ```python
-request_shape={
+engine_request_session_id_path="session_id"  # Inject at root level
+engine_request_session_id_path="metadata.session_id"  # Inject in nested path
+```
+
+The `additional_request_shape` maps target keys to source expressions:
+
+```python
+additional_request_shape={
     "capacity": "`1024`",  # Literal value
-    "session_id": 'headers."X-Amzn-SageMaker-Session-Id"',  # From header
-    "user_id": "body.metadata.user"  # From request body
 }
 ```
 
-### Response Shape
+### Response Extraction
 
 For **create session**, you must specify:
-- `response_session_id_path`: Where to extract the session ID from the engine's response
+- `engine_response_session_id_path`: Where to extract the session ID from the engine's response
 - `content_path`: Where to extract content for logging (optional)
 
 ```python
-response_session_id_path="body.session_id"  # Extract from {"session_id": "..."}
-response_session_id_path="body"  # If response is just the session ID string
+engine_response_session_id_path="body.session_id"  # Extract from {"session_id": "..."}
+engine_response_session_id_path="body"  # If response is just the session ID string
+engine_response_session_id_path="headers.X-Session-Id"  # Extract from response header
 content_path="body.message"  # Extract message from response
 content_path="`Session created`"  # Use literal string
 ```
@@ -244,11 +267,11 @@ class CreateSessionRequest(BaseModel):
     session_id: Optional[str] = None
 
 @register_create_session_handler(
-    request_shape={
-        "capacity": "`1024`",
-        "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+    engine_request_session_id_path="session_id",
+    engine_response_session_id_path="body.session_id",
+    additional_request_shape={
+        "capacity": "`1024`"
     },
-    response_session_id_path="body.session_id",
     content_path="body.message"
 )
 @app.post("/engine/create_session")
@@ -269,7 +292,7 @@ async def create_session(obj: CreateSessionRequest, request: Request):
     }
 
 @register_close_session_handler(
-    request_shape={"session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'},
+    engine_request_session_id_path="session_id",
     content_path="`Session closed successfully`"
 )
 @app.post("/engine/close_session")
@@ -283,7 +306,7 @@ async def close_session(session_id: str, request: Request):
     return Response(status_code=200, content="Session closed")
 
 @app.post("/invocations")
-@stateful_session_manager(request_session_id_path="session_id")
+@stateful_session_manager(engine_request_session_id_path="session_id")
 async def invocations(request: Request):
     body_bytes = await request.body()
     body = json.loads(body_bytes.decode())
@@ -327,13 +350,16 @@ This design allows your engine to manage sessions independently without interfer
 
 **Problem**: Getting "Engine failed to return a valid session ID" error.
 
-**Solution**: Check that your `response_session_id_path` matches your response structure:
+**Solution**: Check that your `engine_response_session_id_path` matches your response structure:
 ```python
 # If your handler returns: {"session_id": "abc123"}
-response_session_id_path="body.session_id"
+engine_response_session_id_path="body.session_id"
 
 # If your handler returns: "abc123"
-response_session_id_path="body"
+engine_response_session_id_path="body"
+
+# If session ID is in response header
+engine_response_session_id_path="headers.X-Session-Id"
 ```
 
 ### Request not reaching custom handler
@@ -349,13 +375,13 @@ async def create_session(...):
 bootstrap(app)  # Must be after handler registration
 ```
 
-### Session header not found in close handler
+### Session ID not injected into engine request
 
-**Problem**: Getting "Session ID is required in request headers" error.
+**Problem**: Engine receives request without session ID.
 
-**Solution**: Ensure your `request_shape` extracts the session ID from the header:
+**Solution**: Ensure your `engine_request_session_id_path` specifies where to inject the session ID:
 ```python
-request_shape={"session_id": 'headers."X-Amzn-SageMaker-Session-Id"'}
+engine_request_session_id_path="session_id"  # Injects at root level of request body
 ```
 
 ## See Also

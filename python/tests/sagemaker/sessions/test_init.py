@@ -2,6 +2,8 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from model_hosting_container_standards.sagemaker.sessions import (
     build_session_request_shape,
 )
@@ -147,3 +149,60 @@ class TestBuildSessionRequestShape:
         # Should not have logged any warning
         mock_logger.warning.assert_not_called()
         assert result["session_id"] == f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+
+    def test_none_session_id_path_returns_only_additional_shape(self):
+        """Test that None session_id_path returns only additional shape."""
+        additional = {
+            "capacity": "`1024`",
+            "model": "`gpt-4`",
+        }
+
+        result = build_session_request_shape(None, additional)
+
+        # Should only have additional fields, no session ID
+        assert result == additional
+        assert f'headers."{SageMakerSessionHeader.SESSION_ID}"' not in result.values()
+
+    def test_none_session_id_path_with_no_additional_shape(self):
+        """Test that None session_id_path with no additional shape returns empty dict."""
+        result = build_session_request_shape(None, None)
+
+        assert result == {}
+
+    def test_none_session_id_path_with_empty_additional_shape(self):
+        """Test that None session_id_path with empty additional shape returns empty dict."""
+        result = build_session_request_shape(None, {})
+
+        assert result == {}
+
+
+class TestRegisterCloseSessionHandler:
+    """Test register_close_session_handler validation."""
+
+    def test_raises_error_when_engine_request_session_id_path_is_none(self):
+        """Test raises ValueError when engine_request_session_id_path is None."""
+        from model_hosting_container_standards.sagemaker import (
+            register_close_session_handler,
+        )
+
+        with pytest.raises(
+            ValueError, match="engine_request_session_id_path is required"
+        ):
+            register_close_session_handler(
+                engine_request_session_id_path=None,
+                content_path="`Session closed`",
+            )
+
+    def test_raises_error_when_engine_request_session_id_path_is_empty(self):
+        """Test raises ValueError when engine_request_session_id_path is empty string."""
+        from model_hosting_container_standards.sagemaker import (
+            register_close_session_handler,
+        )
+
+        with pytest.raises(
+            ValueError, match="engine_request_session_id_path is required"
+        ):
+            register_close_session_handler(
+                engine_request_session_id_path="",
+                content_path="`Session closed`",
+            )
