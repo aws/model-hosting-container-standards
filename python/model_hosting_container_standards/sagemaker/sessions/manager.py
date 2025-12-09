@@ -2,7 +2,6 @@
 # https://github.com/deepjavalibrary/djl-serving/blob/master/engines/python/setup/djl_python/session_manager.py
 
 import json
-import logging
 import os
 import shutil
 import tempfile
@@ -11,6 +10,7 @@ import uuid
 from threading import RLock
 from typing import Optional
 
+from ...logging_config import logger
 from ..config import SageMakerConfig
 
 
@@ -80,7 +80,7 @@ class Session:
         """
         if not os.path.exists(self.files_path):
             raise ValueError(f"session directory does not exist: {self.session_id}")
-        logging.info(f"closing session: {self.session_id}")
+        logger.info(f"closing session: {self.session_id}")
         shutil.rmtree(self.files_path)
         return True
 
@@ -133,36 +133,51 @@ class SessionManager:
         # Session expiration time in seconds (default: 20 minutes)
         self.expiration = int(properties.get("sessions_expiration", str(20 * 60)))
 
-        # Determine sessions path with fallback to /dev/shm or temp directory
+        # Determine sessions path with fallback logic
+        # Priority: explicit config > /dev/shm (if accessible) > system temp
         sessions_path = properties.get("sessions_path")
         if sessions_path is None:
+            # No explicit path configured, auto-detect best location
             temp_sessions_path = os.path.join(
                 tempfile.gettempdir(), "sagemaker_sessions"
             )
+            # Check if /dev/shm exists and is writable (faster than disk-based temp)
             shm_accessible = os.path.exists("/dev/shm") and os.access(
                 "/dev/shm", os.R_OK | os.W_OK
             )
             sessions_path = (
                 "/dev/shm/sagemaker_sessions" if shm_accessible else temp_sessions_path
             )
+            logger.info(
+                f"Sessions path not configured, using {'shared memory' if shm_accessible else 'temp directory'}: {sessions_path}"
+            )
 
         self.sessions_path = sessions_path
         self.sessions: dict[str, Session] = {}  # Active sessions registry
         self._lock = RLock()  # Thread safety for concurrent access
 
-        # Create sessions directory and load existing sessions
+        # Initialize storage and restore any existing sessions
         try:
-            os.makedirs(self.sessions_path, exist_ok=True)  # Create if needed
-            for session_id in os.listdir(
-                self.sessions_path
-            ):  # Restore persisted sessions
+            os.makedirs(self.sessions_path, exist_ok=True)
+            # Verify actual write access (os.access on parent doesn't guarantee child write access)
+            if not os.access(self.sessions_path, os.R_OK | os.W_OK):
+                raise PermissionError(f"Cannot write to {self.sessions_path}")
+            logger.info(f"Session storage initialized at: {self.sessions_path}")
+            # Restore any potential sessions
+            for session_id in os.listdir(self.sessions_path):
                 self.sessions[session_id] = Session(session_id, self.sessions_path)
-        except (PermissionError, OSError):
-            # Fall back to temp directory on permission errors
+        except (PermissionError, OSError) as e:
+            # Fallback if initial path fails
+            logger.warning(
+                f"Failed to initialize sessions at {self.sessions_path}: {e}. Falling back to temp directory"
+            )
             self.sessions_path = os.path.join(
                 tempfile.gettempdir(), "sagemaker_sessions"
             )
-            os.makedirs(self.sessions_path, exist_ok=True)  # Start fresh in temp
+            os.makedirs(self.sessions_path, exist_ok=True)
+            logger.info(
+                f"Session storage initialized at fallback: {self.sessions_path}"
+            )
 
     def create_session(self) -> Session:
         """Create a new session with a unique ID and expiration timestamp.
@@ -220,7 +235,7 @@ class SessionManager:
                 session.expiration_ts is not None
                 and time.time() > session.expiration_ts
             ):
-                logging.info(f"Session expired: {session_id}")
+                logger.info(f"Session expired: {session_id}")
                 self.close_session(session_id)
                 return None
 
