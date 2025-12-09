@@ -1,6 +1,7 @@
-from typing import Optional
+from typing import Dict, Optional
 
 from ...common.transforms.base_factory import create_transform_decorator
+from ...logging_config import logger
 from .models import SageMakerSessionHeader
 from .transform import SessionApiTransform
 from .transforms import resolve_engine_session_transform
@@ -72,3 +73,39 @@ def register_engine_session_handler(
     return _create_engine_session_transform_decorator(handler_type)(
         request_shape, response_shape
     )
+
+
+def build_session_request_shape(
+    session_id_path: str,
+    additional_shape: Optional[Dict[str, str]] = None,
+) -> Dict[str, str]:
+    """Build the request shape for session handlers with proper session ID injection.
+
+    This helper consolidates the logic for constructing request shapes, ensuring
+    the session ID is always properly mapped and warning about any conflicts.
+
+    Args:
+        session_id_path: The target path for the session ID in the request.
+        additional_shape: Optional additional transformations to merge.
+
+    Returns:
+        A complete request shape dict with session ID and any additional mappings.
+    """
+    request_shape: Dict[str, str] = {}
+
+    if additional_shape:
+        # Warn if session_id_path would be overwritten
+        if session_id_path in additional_shape:
+            existing_value = additional_shape[session_id_path]
+            logger.warning(
+                f"Session ID path '{session_id_path}' found in additional_request_shape "
+                f"with value '{existing_value}'. This will be overwritten with the "
+                f"SageMaker session header value."
+            )
+
+        # Merge additional shape, ensuring session ID takes precedence
+        request_shape.update(additional_shape)
+
+    request_shape[session_id_path] = f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+
+    return request_shape

@@ -255,14 +255,14 @@ class CreateSessionRequest(BaseModel):
 async def create_session(obj: CreateSessionRequest, request: Request):
     # Generate or use provided session ID
     session_id = obj.session_id or str(uuid.uuid4())
-    
+
     # Check if session already exists
     if session_id in active_sessions:
         raise HTTPException(status_code=400, detail="Session already exists")
-    
+
     # Create session in your engine
     active_sessions[session_id] = {"capacity": obj.capacity}
-    
+
     return {
         "session_id": session_id,
         "message": f"Session created with capacity {obj.capacity}"
@@ -276,10 +276,10 @@ async def create_session(obj: CreateSessionRequest, request: Request):
 async def close_session(session_id: str, request: Request):
     if session_id not in active_sessions:
         raise HTTPException(status_code=404, detail="Session not found")
-    
+
     # Close session in your engine
     del active_sessions[session_id]
-    
+
     return Response(status_code=200, content="Session closed")
 
 @app.post("/invocations")
@@ -288,10 +288,10 @@ async def invocations(request: Request):
     body_bytes = await request.body()
     body = json.loads(body_bytes.decode())
     session_id = body.get("session_id")
-    
+
     if session_id and session_id not in active_sessions:
         raise HTTPException(status_code=400, detail="Invalid session")
-    
+
     # Process inference request with session context
     return JSONResponse({
         "result": "success",

@@ -22,6 +22,7 @@ from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
 from .sessions import (
+    build_session_request_shape,
     create_session_transform_decorator,
     register_engine_session_handler,
 )
@@ -147,21 +148,80 @@ def stateful_session_manager(request_session_id_path: Optional[str] = None):
 
 
 def register_create_session_handler(
-    request_shape, response_session_id_path: str, content_path: Optional[str] = None
+    request_session_id_path: str,
+    response_session_id_path: str,
+    additional_request_shape: Optional[Dict[str, str]] = None,
+    content_path: str = "`successfully created session.`",
 ):
+    """Register a handler for session creation with custom request/response transformations.
+
+    This decorator creates a session handler that transforms incoming requests to include
+    the session ID and extracts the session ID from the engine's response.
+
+    Args:
+        request_session_id_path: JMESPath target where the session ID should be injected
+                                 into the request body sent to the engine.
+        response_session_id_path: JMESPath expression to extract the session ID from
+                                  the engine's response body.
+        additional_request_shape: Optional dict of additional JMESPath transformations
+                                  to apply to the request. Keys are target paths, values
+                                  are source expressions. Defaults to None.
+        content_path: JMESPath expression for the success message in the response.
+                      Defaults to a literal success message.
+
+    Returns:
+        A decorator that can be applied to engine-specific session creation handlers.
+
+    Note:
+        If request_session_id_path appears in additional_request_shape, it will be
+        overwritten to ensure the session ID is properly injected.
+    """
+    request_shape = build_session_request_shape(
+        request_session_id_path, additional_request_shape
+    )
+
     return register_engine_session_handler(
         "create_session",
         request_shape=request_shape,
         response_session_id_path=response_session_id_path,
-        content_path=content_path or "`successfully created session.`",
+        content_path=content_path,
     )
 
 
-def register_close_session_handler(request_shape, content_path: Optional[str] = None):
+def register_close_session_handler(
+    request_session_id_path: str,
+    additional_request_shape: Optional[Dict[str, str]] = None,
+    content_path: str = "`successfully closed session.`",
+):
+    """Register a handler for session closure with custom request transformations.
+
+    This decorator creates a session handler that transforms incoming requests to include
+    the session ID for proper session cleanup.
+
+    Args:
+        request_session_id_path: JMESPath target where the session ID should be injected
+                                 into the request body sent to the engine.
+        additional_request_shape: Optional dict of additional JMESPath transformations
+                                  to apply to the request. Keys are target paths, values
+                                  are source expressions. Defaults to None.
+        content_path: JMESPath expression for the success message in the response.
+                      Defaults to a literal success message.
+
+    Returns:
+        A decorator that can be applied to engine-specific session closure handlers.
+
+    Note:
+        If request_session_id_path appears in additional_request_shape, it will be
+        overwritten to ensure the session ID is properly injected.
+    """
+    request_shape = build_session_request_shape(
+        request_session_id_path, additional_request_shape
+    )
+
     return register_engine_session_handler(
         "close_session",
         request_shape=request_shape,
-        content_path=content_path or "`successfully closed session.`",
+        content_path=content_path,
     )
 
 

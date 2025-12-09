@@ -141,10 +141,11 @@ class BaseCustomHandlerIntegrationTest:
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            request_shape={
+            request_session_id_path="session_id",
+            response_session_id_path="body",
+            additional_request_shape={
                 "capacity_of_str_len": "`1024`",
             },
-            response_session_id_path="body",
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -152,9 +153,7 @@ class BaseCustomHandlerIntegrationTest:
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            request_shape={
-                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
-            },
+            request_session_id_path="session_id",
             content_path="`successfully closed session.`",
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
@@ -346,11 +345,11 @@ class TestCustomSessionEndToEndFlow(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            request_shape={
-                "capacity_of_str_len": "`1024`",
-                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"',
-            },
+            request_session_id_path="session_id",
             response_session_id_path="body.session_id",  # Nested
+            additional_request_shape={
+                "capacity_of_str_len": "`1024`",
+            },
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -358,9 +357,7 @@ class TestCustomSessionEndToEndFlow(BaseCustomHandlerIntegrationTest):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            request_shape={
-                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
-            },
+            request_session_id_path="session_id",
             content_path="`successfully closed session.`",
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
@@ -497,8 +494,9 @@ class TestCustomHandlerResponseFormats(BaseCustomHandlerIntegrationTest):
         response_path = "body.session_id" if self.response_format == "dict" else "body"
 
         @sagemaker_standards.register_create_session_handler(
-            request_shape={"capacity_of_str_len": "`1024`"},
+            request_session_id_path="session_id",
             response_session_id_path=response_path,
+            additional_request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -506,9 +504,7 @@ class TestCustomHandlerResponseFormats(BaseCustomHandlerIntegrationTest):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            request_shape={
-                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
-            },
+            request_session_id_path="session_id",
             content_path="`successfully closed session.`",
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
@@ -569,8 +565,9 @@ class TestCustomHandlerMultipleInvocations(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            request_shape={"capacity_of_str_len": "`1024`"},
+            request_session_id_path="session_id",
             response_session_id_path="body.session_id",
+            additional_request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -578,9 +575,7 @@ class TestCustomHandlerMultipleInvocations(BaseCustomHandlerIntegrationTest):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            request_shape={
-                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
-            },
+            request_session_id_path="session_id",
             content_path="`successfully closed session.`",
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
@@ -671,8 +666,9 @@ class TestCustomHandlerWithSessionIdInjection(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            request_shape={"capacity_of_str_len": "`1024`"},
+            request_session_id_path="session_id",
             response_session_id_path="body.session_id",
+            additional_request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -680,9 +676,7 @@ class TestCustomHandlerWithSessionIdInjection(BaseCustomHandlerIntegrationTest):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            request_shape={
-                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
-            },
+            request_session_id_path="session_id",
             content_path="`successfully closed session.`",
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
@@ -759,8 +753,9 @@ class TestCustomHandlerSessionPersistence(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            request_shape={"capacity_of_str_len": "`1024`"},
+            request_session_id_path="session_id",
             response_session_id_path="body.session_id",
+            additional_request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -768,9 +763,7 @@ class TestCustomHandlerSessionPersistence(BaseCustomHandlerIntegrationTest):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            request_shape={
-                "session_id": f'headers."{SageMakerSessionHeader.SESSION_ID}"'
-            },
+            request_session_id_path="session_id",
             content_path="`successfully closed session.`",
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
