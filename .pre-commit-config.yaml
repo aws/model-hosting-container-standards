@@ -14,11 +14,13 @@ repos:
     hooks:
       - id: black
         language_version: python3
+        args: [--config=python/pyproject.toml]
 
   - repo: https://github.com/pycqa/isort
     rev: 5.13.2
     hooks:
       - id: isort
+        args: [--settings-path=python/pyproject.toml]
 
   - repo: https://github.com/pycqa/flake8
     rev: 7.0.0
@@ -31,4 +33,4 @@ repos:
     rev: v1.8.0
     hooks:
       - id: mypy
-        exclude: ^(tests/|examples/)
+        exclude: ^(python/tests/|examples/)

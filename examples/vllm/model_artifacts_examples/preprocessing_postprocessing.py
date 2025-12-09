@@ -41,8 +41,11 @@ import json
 import logging
 
 from fastapi import Request, Response
+
 from model_hosting_container_standards.common.fastapi.middleware import (
-    input_formatter, output_formatter)
+    input_formatter,
+    output_formatter,
+)
 
 logger = logging.getLogger(__name__)
 
