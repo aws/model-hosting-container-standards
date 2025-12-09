@@ -199,18 +199,22 @@ class TestSessionManager:
             "model_hosting_container_standards.sagemaker.sessions.manager.os.path.exists"
         ) as mock_exists:
             with patch(
-                "model_hosting_container_standards.sagemaker.sessions.manager.os.makedirs"
-            ):
+                "model_hosting_container_standards.sagemaker.sessions.manager.os.access"
+            ) as mock_access:
                 with patch(
-                    "model_hosting_container_standards.sagemaker.sessions.manager.os.listdir",
-                    return_value=[],
+                    "model_hosting_container_standards.sagemaker.sessions.manager.os.makedirs"
                 ):
-                    # Simulate /dev/shm exists initially, directory doesn't exist yet
-                    mock_exists.side_effect = lambda path: path == "/dev/shm"
+                    with patch(
+                        "model_hosting_container_standards.sagemaker.sessions.manager.os.listdir",
+                        return_value=[],
+                    ):
+                        # Simulate /dev/shm exists and is accessible
+                        mock_exists.side_effect = lambda path: path == "/dev/shm"
+                        mock_access.return_value = True
 
-                    manager = SessionManager({})
+                        manager = SessionManager({})
 
-                    assert manager.sessions_path == "/dev/shm/sagemaker_sessions"
+                        assert manager.sessions_path == "/dev/shm/sagemaker_sessions"
 
     def test_session_manager_falls_back_to_temp_when_dev_shm_missing(self):
         """Test SessionManager falls back to temp directory when /dev/shm doesn't exist."""
