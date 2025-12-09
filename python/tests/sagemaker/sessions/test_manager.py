@@ -620,3 +620,135 @@ class TestSessionManager:
         # Data should persist
         assert retrieved_session.get("key1") == "value1"
         assert retrieved_session.get("key2") == {"nested": "data"}
+
+    def test_session_manager_logs_path_selection(self, temp_session_storage):
+        """Test SessionManager logs which path is selected during auto-detection."""
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.manager.logger"
+        ) as mock_logger:
+            with patch(
+                "model_hosting_container_standards.sagemaker.sessions.manager.os.path.exists"
+            ) as mock_exists:
+                with patch(
+                    "model_hosting_container_standards.sagemaker.sessions.manager.os.access"
+                ) as mock_access:
+                    # Simulate /dev/shm is accessible
+                    mock_exists.side_effect = lambda path: path == "/dev/shm"
+                    mock_access.return_value = True
+
+                    SessionManager({})
+
+                    # Should log that shared memory is being used
+                    mock_logger.info.assert_any_call(
+                        "Sessions path not configured, using shared memory: /dev/shm/sagemaker_sessions"
+                    )
+
+    def test_session_manager_logs_successful_initialization(self, temp_session_storage):
+        """Test SessionManager logs successful initialization."""
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.manager.logger"
+        ) as mock_logger:
+            properties = {"sessions_path": temp_session_storage}
+            SessionManager(properties)
+
+            # Should log successful initialization
+            mock_logger.info.assert_any_call(
+                f"Session storage initialized at: {temp_session_storage}"
+            )
+
+    def test_session_manager_logs_fallback_warning(self):
+        """Test SessionManager logs warning when falling back to temp directory."""
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.manager.logger"
+        ) as mock_logger:
+            with patch(
+                "model_hosting_container_standards.sagemaker.sessions.manager.os.path.exists"
+            ) as mock_exists:
+                with patch(
+                    "model_hosting_container_standards.sagemaker.sessions.manager.os.access"
+                ) as mock_access:
+                    with patch(
+                        "model_hosting_container_standards.sagemaker.sessions.manager.os.makedirs"
+                    ) as mock_makedirs:
+                        with patch(
+                            "model_hosting_container_standards.sagemaker.sessions.manager.os.listdir"
+                        ) as mock_listdir:
+                            # Simulate /dev/shm is accessible
+                            mock_exists.side_effect = lambda path: path == "/dev/shm"
+                            mock_access.return_value = True
+
+                            # First makedirs call raises PermissionError
+                            error = PermissionError("Permission denied")
+                            mock_makedirs.side_effect = [error, None]
+                            mock_listdir.return_value = []
+
+                            SessionManager({})
+
+                            # Should log warning about fallback
+                            mock_logger.warning.assert_called_once()
+                            warning_call = mock_logger.warning.call_args[0][0]
+                            assert "Failed to initialize sessions at" in warning_call
+                            assert "Falling back to temp directory" in warning_call
+
+    def test_session_manager_checks_write_access_after_makedirs(
+        self, temp_session_storage
+    ):
+        """Test SessionManager verifies write access after creating directory."""
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.manager.os.makedirs"
+        ):
+            with patch(
+                "model_hosting_container_standards.sagemaker.sessions.manager.os.access"
+            ) as mock_access:
+                with patch(
+                    "model_hosting_container_standards.sagemaker.sessions.manager.os.listdir",
+                    return_value=[],
+                ):
+                    # Simulate directory creation succeeds but write access fails
+                    mock_access.return_value = False
+
+                    properties = {"sessions_path": temp_session_storage}
+                    manager = SessionManager(properties)
+
+                    # Should fall back to temp directory
+                    expected_path = os.path.join(
+                        tempfile.gettempdir(), "sagemaker_sessions"
+                    )
+                    assert manager.sessions_path == expected_path
+
+    def test_session_manager_falls_back_when_access_check_fails_after_makedirs(self):
+        """Test SessionManager falls back when os.access check fails after successful makedirs."""
+        with patch(
+            "model_hosting_container_standards.sagemaker.sessions.manager.os.path.exists"
+        ) as mock_exists:
+            with patch(
+                "model_hosting_container_standards.sagemaker.sessions.manager.os.makedirs"
+            ) as mock_makedirs:
+                with patch(
+                    "model_hosting_container_standards.sagemaker.sessions.manager.os.access"
+                ) as mock_access:
+                    with patch(
+                        "model_hosting_container_standards.sagemaker.sessions.manager.os.listdir"
+                    ) as mock_listdir:
+                        # Simulate /dev/shm exists
+                        mock_exists.side_effect = lambda path: path == "/dev/shm"
+
+                        # First makedirs succeeds, but access check fails
+                        # This simulates the case where directory is created but not writable
+                        def access_side_effect(path, mode):
+                            if "/dev/shm" in path and path != "/dev/shm":
+                                return False  # /dev/shm/sagemaker_sessions not writable
+                            return True  # /dev/shm itself is accessible
+
+                        mock_access.side_effect = access_side_effect
+                        mock_listdir.return_value = []
+
+                        manager = SessionManager({})
+
+                        # Should fall back to temp directory
+                        expected_path = os.path.join(
+                            tempfile.gettempdir(), "sagemaker_sessions"
+                        )
+                        assert manager.sessions_path == expected_path
+                        # makedirs should be called twice (once for /dev/shm, once for temp)
+                        assert mock_makedirs.call_count == 2
