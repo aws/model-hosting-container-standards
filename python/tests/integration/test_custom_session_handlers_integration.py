@@ -708,7 +708,8 @@ class TestCustomHandlerWithSessionIdInjection(BaseCustomHandlerIntegrationTest):
         Some ML engines expect the session ID to be in the request body rather than
         just in headers. The request_session_id_path parameter allows automatic
         injection of the session ID into a specified path in the request body
-        (e.g., metadata.session_id). This test validates that injection works correctly.
+        (e.g., metadata.session_id). This test validates that the session ID is
+        correctly injected when the metadata dict already exists.
         """
         # Create session
         session_id = self.create_session()
@@ -727,6 +728,33 @@ class TestCustomHandlerWithSessionIdInjection(BaseCustomHandlerIntegrationTest):
         assert data["body"]["metadata"]["session_id"] == session_id
         # Verify original metadata fields are preserved
         assert data["body"]["metadata"]["user"] == "test_user"
+
+    def test_session_id_injected_creates_missing_metadata_dict(self):
+        """Test that session ID injection creates missing parent structures.
+
+        When the request path expects metadata.session_id but the request doesn't
+        include a "metadata" dict, the set_value function should create the missing
+        parent structure and inject the session ID. This tests the create_parent=True
+        functionality in set_value.
+        """
+        # Create session
+        session_id = self.create_session()
+
+        # Make request with session - note we don't include "metadata" dict at all
+        # The framework should create the missing "metadata" dict and inject session_id
+        response = self.invoke_with_session(
+            session_id, {"prompt": "test", "user": "test_user"}
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.text)
+
+        # Verify session ID was automatically injected and metadata dict was created
+        assert data["session_id"] == session_id
+        assert data["body"]["metadata"]["session_id"] == session_id
+        # Verify original fields at root level are preserved
+        assert data["body"]["prompt"] == "test"
+        assert data["body"]["user"] == "test_user"
 
 
 class TestCustomHandlerSessionPersistence(BaseCustomHandlerIntegrationTest):

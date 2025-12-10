@@ -169,9 +169,10 @@ class SessionApiTransform(BaseApiTransform):
         # Inject session ID into request body if target key is specified
         if session_id and self._session_id_target_key:
             request_data = set_value(
-                request_data,
-                self._session_id_target_key,
-                session_id,
+                obj=request_data,
+                path=self._session_id_target_key,
+                value=session_id,
+                create_parent=True,
             )
             logger.debug(f"Updated request body: {request_data}")
             raw_request._body = json.dumps(request_data).encode("utf-8")
