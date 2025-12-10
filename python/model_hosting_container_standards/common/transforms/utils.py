@@ -96,12 +96,11 @@ def set_value(
     if max_create_depth is not None:
         full_depth = len(parent_parts) + 1  # +1 for the child key
         if full_depth > max_create_depth:
-            full_path = ".".join(parent_parts + [str(child)])
             logger.exception(
-                f"Path depth of {full_depth} exceeds maximum allowed depth of {max_create_depth}."
+                f"Path depth of {path} exceeds maximum allowed depth of {max_create_depth}."
             )
             raise KeyError(
-                f"Path '{full_path}' has depth {full_depth}, "
+                f"Path '{path}' has depth {full_depth}, "
                 f"which exceeds max depth of {max_create_depth}."
             )
 
