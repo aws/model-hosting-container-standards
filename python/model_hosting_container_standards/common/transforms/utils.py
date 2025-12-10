@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import jmespath
 
@@ -35,7 +35,11 @@ def set_value(
     create_parent: bool = False,
     max_create_depth: int = DEFAULT_MAX_DEPTH_TO_CREATE,
 ) -> dict:
-    """Set value in a nested dict using JMESPath for the parent path.
+    """Set value in a nested dict using dot-separated path traversal.
+
+    Note: This function assumes JMESPath-style dot notation but only supports simple
+    period-separated dictionary traversal. It does not use JMESPath directly and
+    does not support complex JMESPath expressions (filters, functions, etc.).
 
     Args:
         obj: The dictionary to modify
@@ -56,80 +60,62 @@ def set_value(
         return obj
 
     *parent_parts, child = path.split(".")
-
-    if create_parent:
-        return _set_value_with_parent_creation(
-            obj, parent_parts, child, value, max_create_depth
-        )
-
-    parent_expr = ".".join(parent_parts)
-
-    # Use JMESPath to find the parent node
-    parent = jmespath.search(parent_expr, obj)
-    if parent is None:
-        logger.exception(f"Parent path '{parent_expr}' not found in {obj}")
-        raise KeyError(f"Parent path '{parent_expr}' not found in {obj}")
-
-    # Assign directly (since parent is a dict)
-    parent[child] = value
-    return obj
-
-
-def _set_value_with_parent_creation(
-    obj: dict,
-    parent_parts: list[str],
-    child,
-    value,
-    max_create_depth: int = DEFAULT_MAX_DEPTH_TO_CREATE,
-    _full_depth: Optional[int] = None,
-):
-    """Set a value in a nested dict, creating parent structures as needed.
-
-    Args:
-        obj: The dictionary to modify
-        parent_parts: List of parent keys to traverse/create
-        child: The final child key to set
-        value: The value to set at the child key
-        max_create_depth: Maximum nesting depth of the full path when creating parents (None = unlimited). Defaults to DEFAULT_MAX_DEPTH_TO_CREATE.
-        _full_depth: Internal parameter tracking the total depth of the full path
-
-    Returns:
-        The modified obj dictionary
-
-    Raises:
-        KeyError: If max_create_depth is exceeded when creating parents
-    """
     if len(parent_parts) == 0:
         obj[child] = value
         return obj
 
-    parent_expr = ".".join(parent_parts)
-    parent = jmespath.search(parent_expr, obj)
+    # Find the deepest existing parent by manually traversing the dict
+    current = obj
+    existing_parent = {}
+    existing_depth = 0
 
-    if parent is None and len(parent_parts) > 0:
-        # Parent doesn't exist, we'll need to create it
-        # On first call where we need to create, check the depth limit
-        if _full_depth is None:
-            _full_depth = len(parent_parts) + 1  # +1 for the child key
+    for i, part in enumerate(parent_parts):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+            existing_parent = current
+            existing_depth = i + 1
+        else:
+            break
 
-            if max_create_depth is not None and _full_depth > max_create_depth:
-                logger.exception(
-                    f"Path depth of {_full_depth} exceeds maximum allowed depth of {max_create_depth}."
-                )
-                raise KeyError(
-                    f"Path '{'.'.join(parent_parts + [str(child)])}' has depth {_full_depth}, "
-                    f"which exceeds max depth of {max_create_depth}."
-                )
+    # If we found the complete parent path, just set the value
+    if existing_depth == len(parent_parts):
+        existing_parent[child] = value
+        return obj
 
-        return _set_value_with_parent_creation(
-            obj=obj,
-            parent_parts=parent_parts[:-1],
-            child=parent_parts[-1],
-            value={child: value},
-            max_create_depth=max_create_depth,
-            _full_depth=_full_depth,
-        )
+    # Parent doesn't exist completely, we need to create missing parts
+    if not create_parent:
+        parent_expr = ".".join(parent_parts)
+        logger.error(f"Parent path '{parent_expr}' not found in {obj}")
+        raise KeyError(f"Parent path '{parent_expr}' not found in {obj}")
 
-    parent[child] = value
+    # Check depth limit only when we need to create parents
+    if max_create_depth is not None:
+        full_depth = len(parent_parts) + 1  # +1 for the child key
+        if full_depth > max_create_depth:
+            full_path = ".".join(parent_parts + [str(child)])
+            logger.exception(
+                f"Path depth of {full_depth} exceeds maximum allowed depth of {max_create_depth}."
+            )
+            raise KeyError(
+                f"Path '{full_path}' has depth {full_depth}, "
+                f"which exceeds max depth of {max_create_depth}."
+            )
+
+    # Build the nested structure from the deepest level up
+    current_value = {child: value}
+
+    # Work backwards from the missing parts
+    for i in range(len(parent_parts) - 1, existing_depth - 1, -1):
+        current_value = {parent_parts[i]: current_value}
+
+    # Set the constructed structure at the appropriate location
+    if existing_depth == 0:
+        # No existing parent found, set at root
+        obj[parent_parts[0]] = current_value[parent_parts[0]]
+    else:
+        # Set at the existing parent level
+        existing_parent[parent_parts[existing_depth]] = current_value[
+            parent_parts[existing_depth]
+        ]
 
     return obj
