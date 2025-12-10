@@ -46,7 +46,7 @@ def serialize_response(response: Union[Response, JSONResponse]):
     :param Union[Response, JSONResponse] response: Response body data - can be:
         - FastAPI Response object
         - JSONResponse object
-    :return Dict[str, Any]: Structured data with body, headers, status_code, and media_type
+    :return Dict[str, Any]: Structured data with body, headers, and status_code
     """
     # Process response body based on type
     body = response.body.decode(response.charset)
@@ -54,10 +54,10 @@ def serialize_response(response: Union[Response, JSONResponse]):
         body = json.loads(body)
     except json.JSONDecodeError:
         # If body is not JSON, keep it as a string
-        # logger.warning(f"Response body is not JSON, keeping as string: {e}")
         pass
 
     return {
         "body": body,
         "headers": response.headers,
+        "status_code": response.status_code,
     }
