@@ -41,6 +41,10 @@ def set_value(
     period-separated dictionary traversal. It does not use JMESPath directly and
     does not support complex JMESPath expressions (filters, functions, etc.).
 
+    Limitations:
+        - Only supports dictionary containers. Lists and other container types are unsupported.
+        - When create_parent=True, only dictionary structures will be created for missing parents.
+
     Args:
         obj: The dictionary to modify
         path: Dot-separated path to the value (e.g., "parent.child.key")
