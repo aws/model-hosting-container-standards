@@ -5,6 +5,7 @@ from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import ValidationError
 
+from ....logging_config import logger
 from ..base_lora_api_transform import BaseLoRAApiTransform
 from ..constants import ResponseMessage
 from ..models import BaseLoRATransformRequestOutput, SageMakerRegisterLoRAAdapterRequest
@@ -48,11 +49,12 @@ class RegisterLoRAApiTransform(BaseLoRAApiTransform):
         """
         try:
             request_data = await raw_request.json()
-        except json.JSONDecodeError as e:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST.value,
-                detail=f"JSON decode error: {e}",
-            ) from e
+        except json.JSONDecodeError:
+            # if raw request does not have json body
+            # check if expected data is in the query parms
+            # and treat query params dict as body
+            logger.warning("No JSON body in the request. Using query parameters.")
+            request_data = raw_request.query_params
         request = validate_sagemaker_register_request(request_data)
         transformed_request = self._transform_request(request, raw_request)
         return BaseLoRATransformRequestOutput(
