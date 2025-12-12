@@ -108,10 +108,12 @@ For complete deployment code including concurrent requests, streaming responses,
 **Advanced Features:**
 - [Customize Handlers](02_customize_handlers.md) - Custom ping and invocation handlers
 - [Customize Pre/Post Processing](03_customize_pre_post_processing.md) - Custom middleware for request/response transformation
+- [Sticky Session Routing](04_sticky_session_routing.md) - Stateful sessions for multi-turn conversations
 
 **Resources:**
 - [Basic Endpoint Notebook](../../examples/vllm/notebooks/basic_endpoint.ipynb) - Complete deployment example
 - [Handler Customization Notebook](../../examples/vllm/notebooks/handler_customization_methods.ipynb) - Handler override examples
 - [Pre/Post Processing Notebook](../../examples/vllm/notebooks/preprocessing_postprocessing_methods.ipynb) - Middleware examples
+- [Sticky Session Notebook](../../examples/vllm/notebooks/sticky_session.ipynb) - Stateful session examples
 - [Python Package README](../../python/README.md) - Handler system documentation
 - [vLLM Documentation](https://docs.vllm.ai/) - vLLM engine details
