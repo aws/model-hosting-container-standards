@@ -24,15 +24,10 @@ sagemaker_client.create_model(
     ExecutionRoleArn='arn:aws:iam::123456789012:role/SageMakerExecutionRole',
     PrimaryContainer={
         'Image': f'{account_id}.dkr.ecr.{region}.amazonaws.com/vllm:latest',
-        'ModelDataSource': {
-            'S3DataSource': {
-                'S3Uri': 's3://my-bucket/my-model/',
-                'S3DataType': 'S3Prefix',
-                'CompressionType': 'None',
-            }
-        },
         'Environment': {
             'SM_VLLM_MODEL': 'meta-llama/Meta-Llama-3-8B-Instruct',
+            'HUGGING_FACE_HUB_TOKEN': 'hf_your_token_here',
+            # Enable sticky session routing
             'SAGEMAKER_ENABLE_STATEFUL_SESSIONS': 'true',
         }
     }
@@ -60,7 +55,9 @@ response = runtime.invoke_endpoint(
 )
 
 # Get session ID from response header
-session_id = response['ResponseMetadata']['HTTPHeaders']['x-amzn-sagemaker-new-session-id']
+# Header format: "<uuid>; Expires=<timestamp>"
+header_value = response['ResponseMetadata']['HTTPHeaders']['x-amzn-sagemaker-new-session-id']
+session_id = header_value.split(";")[0].strip()
 print(f"Session ID: {session_id}")
 ```
 
