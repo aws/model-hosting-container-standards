@@ -11,7 +11,7 @@ from ...common.handler import handler_registry
 from ...common.transforms.utils import set_value
 from ...logging_config import logger
 from .handlers import get_handler_for_request_type
-from .manager import SessionManager, get_session_manager
+from .manager import get_session_manager
 from .models import (
     SESSION_DISABLED_ERROR_DETAIL,
     SESSION_DISABLED_LOG_MESSAGE,
@@ -60,40 +60,26 @@ class SessionApiTransform(BaseApiTransform):
             for validation in this transform, as session requests use their own validation.
         """
         self._session_manager = get_session_manager()
-
-        # Hybrid caching strategy for _use_default_manager:
-        # - If custom handlers exist at init → cache False (fast path on every request)
-        # - If no custom handlers at init → cache True but check dynamically (allows late registration)
-        # This optimizes the common case while maintaining flexibility
-        self._use_default_manager_cached = not handler_registry.has_handler(
-            "create_session"
-        ) and not handler_registry.has_handler("close_session")
+        self._use_default_manager = None
 
         # Extract session_id_target_key before compiling JMESPath expressions
         self._session_id_target_key = self._get_session_id_target_key(request_shape)
         super().__init__(request_shape, response_shape)
 
-    def _use_default_manager(self) -> bool:
-        """Check if default session manager should be used.
-
-        Hybrid approach for performance:
-        - If custom handlers existed at init time (cached=False), return False immediately
-        - If no custom handlers at init (cached=True), check dynamically in case they were registered later
-
-        This optimizes the common case (custom handlers registered before transform creation)
-        while still supporting late registration for flexibility.
+    def _check_use_default_manager(self):
+        """Check if the default session manager should be used.
 
         Returns:
-            bool: True if default manager should be used, False if custom handlers exist
+            bool: True if the default session manager should be used, False otherwise
         """
-        # Fast path: if custom handlers existed at init, they still exist
-        if not self._use_default_manager_cached:
-            return False
-
-        # Slow path: no custom handlers at init, check if any were registered since
-        return not handler_registry.has_handler(
-            "create_session"
-        ) and not handler_registry.has_handler("close_session")
+        if self._use_default_manager is None:
+            # If unset, first call -> set cached value
+            logger.info("Checking if default session manager should be used.")
+            self._use_default_manager = not handler_registry.has_handler(
+                "create_session"
+            ) and not handler_registry.has_handler("close_session")
+            logger.info(f"Using default session manager: {self._use_default_manager}")
+        return self._use_default_manager
 
     def _get_session_id_target_key(self, request_shape: dict) -> Optional[str]:
         if not request_shape:
@@ -121,9 +107,7 @@ class SessionApiTransform(BaseApiTransform):
         """
         try:
             request_data = await raw_request.json()
-            return self._process_request(
-                request_data, raw_request, self._session_manager
-            )
+            return self._process_request(request_data, raw_request)
         except json.JSONDecodeError as e:
             raise HTTPException(
                 status_code=HTTPStatus.BAD_REQUEST.value,
@@ -161,7 +145,7 @@ class SessionApiTransform(BaseApiTransform):
         self, session_id: Optional[str], request_data: dict, raw_request: Request
     ):
         # If not a session request
-        if session_id and self._use_default_manager():
+        if session_id and self._check_use_default_manager():
             # but it has a session id header and we are using the default session manager,
             # then we need to validate that the session id exists in the session manager
             self._validate_session_id(session_id, raw_request)
@@ -184,7 +168,7 @@ class SessionApiTransform(BaseApiTransform):
 
     def _process_session_request(self, session_request, session_id, raw_request):
         # Validation
-        if self._use_default_manager() and not self._session_manager:
+        if self._check_use_default_manager() and not self._session_manager:
             # if no custom handlers are registered, but default session manager
             # does not exist -> then raise error that session management is disabled
             logger.error(SESSION_DISABLED_LOG_MESSAGE)
@@ -192,7 +176,7 @@ class SessionApiTransform(BaseApiTransform):
                 status_code=HTTPStatus.BAD_REQUEST.value,
                 detail=SESSION_DISABLED_ERROR_DETAIL,
             )
-        elif self._use_default_manager() and self._session_manager:
+        elif self._check_use_default_manager() and self._session_manager:
             if session_request.requestType == SessionRequestType.NEW_SESSION:
                 # Ignores any session id header in create session request
                 session_id = SessionRequestType.NEW_SESSION
@@ -205,9 +189,7 @@ class SessionApiTransform(BaseApiTransform):
             raw_request=raw_request, intercept_func=intercept_func
         )
 
-    def _process_request(
-        self, request_data, raw_request, session_manager: Optional[SessionManager]
-    ):
+    def _process_request(self, request_data, raw_request):
         session_request = _parse_session_request(request_data)
         session_id = get_session_id_from_request(raw_request)
         if not session_request:
