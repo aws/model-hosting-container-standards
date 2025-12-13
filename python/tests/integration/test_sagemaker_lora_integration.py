@@ -180,11 +180,25 @@ class BaseLoRAIntegrationTest:
 class TestLoRARouterRedirection(BaseLoRAIntegrationTest):
     """Test that bootstrap() correctly mounts LoRA routes from decorated handlers."""
 
-    def test_register_adapter_route_mounted(self):
+    @pytest.mark.parametrize(
+        "test_type",
+        [
+            ("body"),
+            ("query_params"),
+        ],
+        ids=[
+            "body",
+            "query_params",
+        ],
+    )
+    def test_register_adapter_route_mounted(self, test_type):
         """Test that POST /adapters route is mounted by bootstrap()."""
         # Call the SageMaker-standard route (not the engine's custom route)
+        lora_name = "test-adapter"
+        lora_path = "s3://bucket/adapter"
         response = self.client.post(
-            "/adapters", json={"name": "test-adapter", "src": "s3://bucket/adapter"}
+            f"/adapters{f'?name={lora_name}&src={lora_path}' if test_type == 'query_params' else ''}",
+            json={"name": lora_name, "src": lora_path} if test_type == "body" else None,
         )
 
         assert response.status_code == 200
@@ -500,15 +514,29 @@ class TestLoRAEndToEndFlow(BaseLoRAIntegrationTest):
     simulating how a user would interact with a LoRA-enabled SageMaker endpoint.
     """
 
-    def test_full_adapter_lifecycle(self):
+    @pytest.mark.parametrize(
+        "test_type",
+        [
+            ("body"),
+            ("query_params"),
+        ],
+        ids=[
+            "body",
+            "query_params",
+        ],
+    )
+    def test_full_adapter_lifecycle(self, test_type):
         """Test complete lifecycle: register -> invoke with adapter -> unregister.
 
         This is the primary happy path: load an adapter, use it for inference,
         then unload it. Verifies all three operations work together.
         """
+        lora_name = "lora-1"
+        lora_path = "s3://bucket/lora-1"
         # 1. Register an adapter
         register_response = self.client.post(
-            "/adapters", json={"name": "lora-1", "src": "s3://bucket/lora-1"}
+            f"/adapters{f'?name={lora_name}&src={lora_path}' if test_type == 'query_params' else ''}",
+            json={"name": lora_name, "src": lora_path} if test_type == "body" else None,
         )
         assert register_response.status_code == 200
 
@@ -516,20 +544,46 @@ class TestLoRAEndToEndFlow(BaseLoRAIntegrationTest):
         invoke_response = self.client.post(
             "/invocations",
             json={"prompt": "hello"},
-            headers={"X-Amzn-SageMaker-Adapter-Identifier": "lora-1"},
+            headers={"X-Amzn-SageMaker-Adapter-Identifier": lora_name},
         )
         assert invoke_response.status_code == 200
 
         # 3. Unregister the adapter
-        unregister_response = self.client.delete("/adapters/lora-1")
+        unregister_response = self.client.delete(f"/adapters/{lora_name}")
         assert unregister_response.status_code == 200
 
-    def test_multiple_adapters(self):
+    @pytest.mark.parametrize(
+        "test_type",
+        [
+            ("body"),
+            ("query_params"),
+        ],
+        ids=[
+            "body",
+            "query_params",
+        ],
+    )
+    def test_multiple_adapters(self, test_type):
         """Test managing multiple adapters simultaneously."""
         # Register multiple adapters
-        self.client.post("/adapters", json={"name": "adapter-a", "src": "s3://a"})
-        self.client.post("/adapters", json={"name": "adapter-b", "src": "s3://b"})
-        self.client.post("/adapters", json={"name": "adapter-c", "src": "s3://c"})
+        self.client.post(
+            f"/adapters{'?name=adapter_a&src=s3://a' if test_type == 'query_params' else ''}",
+            json=(
+                {"name": "adapter_a", "src": "s3://a"} if test_type == "body" else None
+            ),
+        )
+        self.client.post(
+            f"/adapters{'?name=adapter_b&src=s3://b' if test_type == 'query_params' else ''}",
+            json=(
+                {"name": "adapter_b", "src": "s3://b"} if test_type == "body" else None
+            ),
+        )
+        self.client.post(
+            f"/adapters{'?name=adapter_c&src=s3://c' if test_type == 'query_params' else ''}",
+            json=(
+                {"name": "adapter_c", "src": "s3://c"} if test_type == "body" else None
+            ),
+        )
 
         # Invoke with different adapters - each should route correctly
         response_a = self.client.post(
