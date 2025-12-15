@@ -53,6 +53,8 @@ class RegisterLoRAApiTransform(BaseLoRAApiTransform):
             # if raw request does not have json body
             # check if expected data is in the query parms
             # and treat query params dict as body
+            # TODO: remove this once dependencies don't expect
+            # fields to be in `body.<...>`
             logger.warning("No JSON body in the request. Using query parameters.")
             request_data = raw_request.query_params
         request = validate_sagemaker_register_request(request_data)
