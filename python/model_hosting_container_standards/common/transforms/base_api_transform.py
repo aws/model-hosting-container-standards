@@ -28,7 +28,10 @@ class BaseApiTransform(abc.ABC):
     """
 
     def __init__(
-        self, request_shape: Dict[str, Any], response_shape: Dict[str, Any] = {}
+        self,
+        request_shape: Dict[str, Any],
+        response_shape: Dict[str, Any] = {},
+        engine_request_model_cls: Optional[BaseModel] = None,
     ):
         """Initialize the transformer with request and response mapping shapes.
 
@@ -36,9 +39,11 @@ class BaseApiTransform(abc.ABC):
             that define how to extract and map data from incoming requests
         :param Dict[str, Any] response_shape: Dictionary containing JMESPath expressions
             that define how to transform response data (defaults to empty dict)
+        :param Optional[BaseModel] engine_request_model_cls: Pydantic model class for engine request
         """
         self._request_shape = _compile_jmespath_expressions(request_shape)
         self._response_shape = _compile_jmespath_expressions(response_shape)
+        self._transformed_request_model = engine_request_model_cls
 
     def _transform(
         self, source_data: Dict[str, Any], target_shape: Dict[str, Any]
@@ -66,6 +71,22 @@ class BaseApiTransform(abc.ABC):
                 )
         return transformed_request
 
+    def _convert_to_model(
+        self,
+        data: Dict[str, Any],
+        extra: Optional[str] = "ignore",
+    ) -> BaseModel | SimpleNamespace:
+        """Convert a dictionary to a Pydantic model instance.
+
+        :param Dict[str, Any] data: The data to convert
+        :param Optional[str] extra: Mode for pydantic to regard extra fields, defaults to 'ignore'
+        :return BaseModel: Pydantic model instance
+        """
+        if self._transformed_request_model:
+            return self._transformed_request_model.model_validate(data, extra=extra)
+        else:
+            return SimpleNamespace(**data)
+
     async def intercept(
         self,
         func: Callable[..., Any],
@@ -84,7 +105,7 @@ class BaseApiTransform(abc.ABC):
             # Pass both transformed data and original request for context
             # Convert dict to SimpleNamespace for attribute access
             transformed_request = (
-                SimpleNamespace(**transformed_request)
+                self._convert_to_model(transformed_request)
                 if isinstance(transformed_request, dict)
                 else transformed_request
             )

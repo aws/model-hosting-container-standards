@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import Request
 from fastapi.exceptions import HTTPException
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from ...common import BaseApiTransform, BaseTransformRequestOutput
 from ...logging_config import logger
@@ -123,7 +123,12 @@ class SessionApiTransform(BaseApiTransform):
     and routes them to appropriate handlers, while passing through regular API requests.
     """
 
-    def __init__(self, request_shape, response_shape={}):
+    def __init__(
+        self,
+        request_shape,
+        response_shape={},
+        engine_request_model_cls: Optional[BaseModel] = None,
+    ):
         """Initialize the SessionApiTransform.
 
         Args:
@@ -135,7 +140,11 @@ class SessionApiTransform(BaseApiTransform):
             for validation in this transform, as session requests use their own validation.
         """
         self._session_manager = get_session_manager()
-        super().__init__(request_shape, response_shape)
+        super().__init__(
+            request_shape,
+            response_shape=response_shape,
+            engine_request_model_cls=engine_request_model_cls,
+        )
 
     async def transform_request(self, raw_request):
         """Transform incoming request, intercepting session management operations.
