@@ -2,7 +2,7 @@
 
 LoRA (Low-Rank Adaptation) adapter management enables dynamic loading and unloading of fine-tuned adapters at runtime, allowing a single base model to serve multiple specialized use cases without redeployment.
 
-> ⚠️ **Required**: Set `VLLM_ALLOW_RUNTIME_LORA_UPDATING=True` to enable dynamic adapter loading with inference components. See [vLLM LoRA documentation](https://docs.vllm.ai/en/latest/features/lora.html) for details.
+> ⚠️ **Required**: Set `VLLM_ALLOW_RUNTIME_LORA_UPDATING=true` to enable dynamic adapter loading with inference components. See [vLLM LoRA documentation](https://docs.vllm.ai/en/latest/features/lora.html) for details.
 
 > 📓 **Working Example**: See the [LoRA Adapters Notebook](../../examples/vllm/notebooks/lora_adapters.ipynb) for a complete working example.
 
