@@ -43,7 +43,7 @@ class BaseApiTransform(abc.ABC):
         """
         self._request_shape = _compile_jmespath_expressions(request_shape)
         self._response_shape = _compile_jmespath_expressions(response_shape)
-        self._transformed_request_model = engine_request_model_cls
+        self.engine_request_model_cls = engine_request_model_cls
 
     def _transform(
         self, source_data: Dict[str, Any], target_shape: Dict[str, Any]
@@ -82,8 +82,8 @@ class BaseApiTransform(abc.ABC):
         :param Optional[str] extra: Mode for pydantic to regard extra fields, defaults to 'ignore'
         :return BaseModel: Pydantic model instance
         """
-        if self._transformed_request_model:
-            return self._transformed_request_model.model_validate(data, extra=extra)
+        if self.engine_request_model_cls:
+            return self.engine_request_model_cls.model_validate(data, extra=extra)
         else:
             return SimpleNamespace(**data)
 

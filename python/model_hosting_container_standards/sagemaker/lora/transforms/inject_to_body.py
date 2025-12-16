@@ -95,7 +95,7 @@ class InjectToBodyApiTransform(BaseLoRAApiTransform):
         raw_request._body = json.dumps(request_data).encode("utf-8")
         transformed_request = (
             None
-            if self._transformed_request_model is None
+            if self.engine_request_model_cls is None
             else self._convert_to_model(request_data)
         )
         return BaseLoRATransformRequestOutput(
