@@ -60,14 +60,13 @@ sm_client.create_endpoint(
 ```python
 env = {
     "SM_VLLM_MODEL": "/opt/ml/model",
-    "HF_TOKEN": "hf_your_token_here",
     "SM_VLLM_TENSOR_PARALLEL_SIZE": "2",
     "SM_VLLM_MAX_MODEL_LEN": "4096",
     # LoRA configuration
     "SM_VLLM_ENABLE_LORA": "true",
     "SM_VLLM_MAX_LORA_RANK": "64",
     "SM_VLLM_MAX_CPU_LORAS": "4",
-    "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "True"
+    "VLLM_ALLOW_RUNTIME_LORA_UPDATING": "true"
 }
 
 sm_client.create_model(
