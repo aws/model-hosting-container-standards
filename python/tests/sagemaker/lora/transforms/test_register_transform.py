@@ -1,6 +1,7 @@
 """Unit tests for RegisterLoRAApiTransform."""
 
 from http import HTTPStatus
+from json import JSONDecodeError
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -212,13 +213,53 @@ class TestRegisterLoRAApiTransform:
     @patch(
         "model_hosting_container_standards.sagemaker.lora.utils.get_adapter_alias_from_request_header"
     )
-    async def test_integration_transform_request_and_response(self, mock_get_alias):
+    async def test_integration_transform_request_and_response_json_body(
+        self, mock_get_alias
+    ):
         """Test integration between request and response transformation."""
         # Setup request transformation with mocked raw request
         mock_raw_request = Mock(spec=Request)
         mock_raw_request.json = AsyncMock(
             return_value={"name": "integration-test", "src": "s3://integration"}
         )
+        mock_get_alias.return_value = "integration-alias"
+
+        # Transform request - only pass raw_request
+        transform_output = await self.transformer.transform_request(mock_raw_request)
+
+        # Verify request transformation
+        assert transform_output.adapter_name == "integration-test"
+
+        # Transform successful response
+        mock_ok_response = Mock(spec=Response)
+        mock_ok_response.status_code = HTTPStatus.OK
+        mock_ok_response.headers = {}
+        mock_ok_response.media_type = "application/json"
+
+        ok_result = self.transformer.transform_response(
+            mock_ok_response, transform_output
+        )
+
+        assert ok_result.status_code == HTTPStatus.OK
+        assert "registered" in ok_result.body.decode()
+
+        # TODO: test error transformation once implemented
+
+    @pytest.mark.asyncio
+    @patch(
+        "model_hosting_container_standards.sagemaker.lora.utils.get_adapter_alias_from_request_header"
+    )
+    async def test_integration_transform_request_and_response_query_params(
+        self, mock_get_alias
+    ):
+        """Test integration between request and response transformation."""
+        # Setup request transformation with mocked raw request
+        mock_raw_request = Mock(spec=Request)
+        mock_raw_request.json.side_effect = JSONDecodeError("test error", doc="", pos=1)
+        mock_raw_request.query_params = {
+            "name": "integration-test",
+            "src": "s3://integration",
+        }
         mock_get_alias.return_value = "integration-alias"
 
         # Transform request - only pass raw_request
