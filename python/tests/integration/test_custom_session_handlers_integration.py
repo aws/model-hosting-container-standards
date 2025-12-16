@@ -141,9 +141,8 @@ class BaseCustomHandlerIntegrationTest:
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            engine_request_session_id_path="session_id",
             engine_response_session_id_path="body",
-            additional_request_shape={
+            request_shape={
                 "capacity_of_str_len": "`1024`",
             },
             content_path="`successfully created session.`",
@@ -327,7 +326,7 @@ class TestCustomSessionEndToEndFlow(BaseCustomHandlerIntegrationTest):
 
     def custom_create_session(self, obj: CreateSessionRequest, request: Request):
         self.handler_calls["create"] += 1
-        if not obj.session_id:
+        if not getattr(obj, "session_id", None):
             obj.session_id = str(uuid.uuid4())
         if obj.session_id in self.sessions:
             return Response(status_code=400)
@@ -345,9 +344,8 @@ class TestCustomSessionEndToEndFlow(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            engine_request_session_id_path="session_id",
             engine_response_session_id_path="body.session_id",  # Nested
-            additional_request_shape={
+            request_shape={
                 "capacity_of_str_len": "`1024`",
             },
             content_path="`successfully created session.`",
@@ -371,21 +369,6 @@ class TestCustomSessionEndToEndFlow(BaseCustomHandlerIntegrationTest):
         )
         async def invocations(request: Request):
             return await self.custom_invocations(request)
-
-    def test_create_existing_session_error_handling(self):
-        """Test that attempting to create a session with existing ID fails.
-
-        This validates that the custom handler properly rejects attempts to create
-        a session with a duplicate ID. This prevents session ID collisions and ensures
-        session uniqueness.
-        """
-        # Create initial session
-        session_id = self.create_session()
-
-        # Try to create another session with the same ID by passing it in the header
-        # Custom handler checks if session_id already exists and returns 400 if it does
-        header_response = self.create_session_with_id(session_id)
-        assert header_response.status_code == 400
 
     def test_end_to_end_simple(self):
         """Test complete session lifecycle: create -> use -> close.
@@ -494,9 +477,8 @@ class TestCustomHandlerResponseFormats(BaseCustomHandlerIntegrationTest):
         response_path = "body.session_id" if self.response_format == "dict" else "body"
 
         @sagemaker_standards.register_create_session_handler(
-            engine_request_session_id_path="session_id",
             engine_response_session_id_path=response_path,
-            additional_request_shape={"capacity_of_str_len": "`1024`"},
+            request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -565,9 +547,8 @@ class TestCustomHandlerMultipleInvocations(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            engine_request_session_id_path="session_id",
             engine_response_session_id_path="body.session_id",
-            additional_request_shape={"capacity_of_str_len": "`1024`"},
+            request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -666,9 +647,8 @@ class TestCustomHandlerWithSessionIdInjection(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            engine_request_session_id_path="session_id",
             engine_response_session_id_path="body.session_id",
-            additional_request_shape={"capacity_of_str_len": "`1024`"},
+            request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
@@ -781,9 +761,8 @@ class TestCustomHandlerSessionPersistence(BaseCustomHandlerIntegrationTest):
 
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
-            engine_request_session_id_path="session_id",
             engine_response_session_id_path="body.session_id",
-            additional_request_shape={"capacity_of_str_len": "`1024`"},
+            request_shape={"capacity_of_str_len": "`1024`"},
             content_path="`successfully created session.`",
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])

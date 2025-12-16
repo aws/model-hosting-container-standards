@@ -57,8 +57,7 @@ class CreateSessionResponse(BaseModel):
 # Register custom create session handler
 @register_create_session_handler(
     engine_response_session_id_path="body.session_id",  # Extract session ID from response
-    engine_request_session_id_path="session_id",  # Where to inject session ID in engine request
-    additional_request_shape={
+    request_shape={
         "capacity": "`1024`"  # Additional fields to include
     },
     content_path="body.message"  # Extract content for logging
@@ -72,8 +71,7 @@ async def create_session(obj: CreateSessionRequest, request: Request):
 # Alternative: If your engine manages session IDs internally
 @register_create_session_handler(
     engine_response_session_id_path="body.session_id",  # Extract session ID from response
-    # No engine_request_session_id_path - engine generates its own session ID
-    additional_request_shape={
+    request_shape={
         "capacity": "`1024`"
     }
 )
@@ -111,15 +109,14 @@ bootstrap(app)
 ```python
 @register_create_session_handler(
     engine_response_session_id_path: str,          # Required: Where to extract session ID from engine response
-    engine_request_session_id_path: str = None,    # Optional: Where to inject session ID in engine request
-    additional_request_shape: dict = None,         # Optional: Additional JMESPath mappings
+    request_shape: dict = None,                    # Optional: Additional JMESPath mappings
     content_path: str = None                       # Optional: JMESPath to extract content for logging
 )
 ```
 
 - **`engine_response_session_id_path`**: JMESPath expression to extract the session ID from your engine's response. Must include prefix (`body.` or `headers.`). This is **required** because the framework needs to return the session ID to the client.
 - **`engine_request_session_id_path`**: Optional target path in the engine request body where the session ID will be injected. The session ID is extracted from the SageMaker session header and placed at this path. Example: `"session_id"` or `"metadata.session_id"`. If None, the session ID is not injected (useful when the engine manages sessions internally)
-- **`additional_request_shape`**: Optional dict mapping target keys to source JMESPath expressions for additional fields to include in the engine request.
+- **`request_shape`**: Optional dict mapping target keys to source JMESPath expressions for additional fields to include in the engine request.
 - **`content_path`**: Optional JMESPath expression to extract a message for logging. Defaults to a generic success message.
 
 ### `@register_close_session_handler`
@@ -156,18 +153,33 @@ The parameters use JMESPath expressions to transform data:
 
 ### Request Transformation
 
+#### For Create Session Handlers
+
+The `request_shape` parameter maps target keys to source expressions:
+
+```python
+# register_create_session_handler only
+request_shape={
+    "capacity": "`1024`",  # Literal value
+}
+```
+
+#### For Close Session Handlers
+
 The `engine_request_session_id_path` specifies where to inject the session ID (always relative to request body):
 
 ```python
+# register_close_session_handler only
 engine_request_session_id_path="session_id"  # Inject at root level
 engine_request_session_id_path="metadata.session_id"  # Inject in nested path
 ```
 
-The `additional_request_shape` maps target keys to source expressions:
+The `additional_request_shape` parameter maps target keys to source expressions:
 
 ```python
+# register_close_session_handler only
 additional_request_shape={
-    "capacity": "`1024`",  # Literal value
+    "timeout": "`30`",  # Literal value
 }
 ```
 
@@ -267,9 +279,8 @@ class CreateSessionRequest(BaseModel):
     session_id: Optional[str] = None
 
 @register_create_session_handler(
-    engine_request_session_id_path="session_id",
     engine_response_session_id_path="body.session_id",
-    additional_request_shape={
+    request_shape={
         "capacity": "`1024`"
     },
     content_path="body.message"

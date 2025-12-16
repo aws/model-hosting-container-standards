@@ -155,8 +155,7 @@ def stateful_session_manager(engine_request_session_id_path: Optional[str] = Non
 
 def register_create_session_handler(
     engine_response_session_id_path: str,
-    engine_request_session_id_path: Optional[str] = None,
-    additional_request_shape: Optional[Dict[str, str]] = None,
+    request_shape: Optional[Dict[str, str]] = None,
     content_path: str = "`successfully created session.`",
 ):
     """Register a handler for session creation with custom request/response transformations.
@@ -175,39 +174,17 @@ def register_create_session_handler(
                                          The extracted session ID is placed in the SageMaker
                                          response body for the client.
 
-        engine_request_session_id_path: Optional target path in the engine request body
-                                        where the session ID will be injected. The session
-                                        ID is extracted from the SageMaker session header
-                                        and placed at this path in the request sent to the
-                                        engine.
-
-                                        Examples: "session_id", "metadata.session_id"
-
-                                        If None, the session ID is not injected into the
-                                        engine request body. This is useful when the engine
-                                        manages session IDs internally and doesn't need them
-                                        in the request.
-
-                                        Limitation: Currently only supports injection into
-                                        the request body, not headers.
-
-        additional_request_shape: Optional dict of additional JMESPath transformations
-                                  to apply to the request. Keys are target paths in the
-                                  request body, values are source expressions. Defaults to None.
+        request_shape: Optional dict of JMESPath transformations
+                       to apply to the request. Keys are target paths in the
+                       request body, values are source expressions. Defaults to None.
 
         content_path: JMESPath expression for the success message in the response.
                       Defaults to a literal success message.
 
     Returns:
         A decorator that can be applied to engine-specific session creation handlers.
-
-    Note:
-        If engine_request_session_id_path appears in additional_request_shape, it will be
-        overwritten to ensure the session ID is properly injected.
     """
-    request_shape = build_session_request_shape(
-        engine_request_session_id_path, additional_request_shape
-    )
+    request_shape = build_session_request_shape(None, request_shape)
 
     return register_engine_session_handler(
         "create_session",
