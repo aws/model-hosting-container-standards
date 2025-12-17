@@ -109,6 +109,7 @@ For complete deployment code including concurrent requests, streaming responses,
 - [Customize Handlers](02_customize_handlers.md) - Custom ping and invocation handlers
 - [Customize Pre/Post Processing](03_customize_pre_post_processing.md) - Custom middleware for request/response transformation
 - [Sticky Session Routing](04_sticky_session_routing.md) - Stateful sessions for multi-turn conversations
+- [LoRA Adapter Management](05_lora_adapter_management.md) - Dynamic loading/unloading of fine-tuned adapters
 
 **Resources:**
 - [Basic Endpoint Notebook](../../examples/vllm/notebooks/basic_endpoint.ipynb) - Complete deployment example
