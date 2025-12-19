@@ -124,6 +124,8 @@ class BaseLoRAApiTransform(ABC):
             raw_request.query_params = transformed_request.get("query_params")
         if transformed_request.get("body"):
             raw_request._body = transformed_request.get("body")
+        if transformed_request.get("path_params"):
+            raw_request.path_params = transformed_request.get("path_params")
         return raw_request
 
     def transform_request(
@@ -133,10 +135,11 @@ class BaseLoRAApiTransform(ABC):
             f"Starting request transformation for adapter: {validated_request.name}"
         )
 
-        transformed_request = {
+        transformed_request: Dict[str, Any] = {
             "body": {},
             "headers": {},
             "query_params": {},
+            "path_params": {},
         }
         transformed_request = self._transform_sagemaker_request_to_engine(
             transformed_request, validated_request.model_dump()
