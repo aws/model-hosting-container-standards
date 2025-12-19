@@ -1,8 +1,9 @@
 """SageMaker integration decorators."""
 
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig, safe_include_router
@@ -19,6 +20,7 @@ from .lora import (
     create_lora_transform_decorator,
 )
 from .lora.models import AppendOperation
+from .lora2 import lora_factory as lora2_factory
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
 from .sessions import create_session_transform_decorator
@@ -34,22 +36,67 @@ custom_invocation_handler = override_handler("invoke")
 
 # Transform decorators - for LoRA handling
 def register_load_adapter_handler(
-    request_shape: dict, response_shape: Optional[dict] = None
+    engine_request_lora_name_path: Optional[str] = None,
+    engine_request_lora_src_path: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
+    engine_request_defaults: Optional[Dict[str, Any]] = None,
+    request_shape: Optional[dict] = None,
+    response_shape: Optional[dict] = None,
 ):
-    # TODO: validate and preprocess request shape
-    # TODO: validate and preprocess response shape
-    return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
-        request_shape, response_shape
+    if request_shape:
+        logger.warning(
+            "The `request_shape` argument is deprecated and will be removed in a future release. "
+            "Please use `engine_request_lora_name_path` and `engine_request_lora_src_path` instead."
+        )
+        # TODO: validate and preprocess request shape
+        # TODO: validate and preprocess response shape
+        return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
+            request_shape, response_shape
+        )
+    if (not engine_request_lora_name_path or not engine_request_lora_src_path) and not request_shape:
+        logger.error(
+            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
+        )
+        raise ValueError(
+            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
+        )
+    return lora2_factory.register_load_adapter_handler(
+        engine_request_lora_name_path=engine_request_lora_name_path,
+        engine_request_lora_src_path=engine_request_lora_src_path,
+        engine_request_model_cls=engine_request_model_cls,
+        engine_request_defaults=engine_request_defaults,
     )
+    
 
 
 def register_unload_adapter_handler(
-    request_shape: dict, response_shape: Optional[dict] = None
+    engine_request_lora_name_path: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
+    engine_request_defaults: Optional[Dict[str, Any]] = None,
+    request_shape: Optional[dict] = None,
+    response_shape: Optional[dict] = None,
 ):
-    # TODO: validate and preprocess request shape
-    # TODO: validate and preprocess response shape
-    return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
-        request_shape, response_shape
+    if request_shape:
+        logger.warning(
+            "The `request_shape` argument is deprecated and will be removed in a future release. "
+            "Please use `engine_request_lora_name_path` instead."
+        )
+        # TODO: validate and preprocess request shape
+        # TODO: validate and preprocess response shape
+        return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
+            request_shape, response_shape
+        )
+    if not engine_request_lora_name_path and not request_shape:
+        logger.error(
+            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
+        )
+        raise ValueError(
+            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
+        )
+    return lora2_factory.register_unload_adapter_handler(
+        engine_request_lora_name_path=engine_request_lora_name_path,
+        engine_request_model_cls=engine_request_model_cls,
+        engine_request_defaults=engine_request_defaults,
     )
 
 

@@ -147,7 +147,11 @@ class BaseLoRAIntegrationTest:
         # The decorator transforms based on test_type:
         # - body: {"name": "x", "src": "y"} -> {"lora_name": "x", "lora_path": "y"}
         # - query_params: ?name=x&src=y -> {"lora_name": "x", "lora_path": "y"}
-        @sagemaker_standards.register_load_adapter_handler(request_shape=request_shape)
+        decorator_args = dict(request_shape=request_shape) if test_type == "body" else \
+            dict(engine_request_lora_name_path="body.lora_name",
+                engine_request_lora_src_path="body.lora_path",
+                engine_request_model_cls=EngineLoadLoRAAdapterRequest)
+        @sagemaker_standards.register_load_adapter_handler(**decorator_args)
         @self.router.post("/v1/load_lora_adapter")
         async def load_lora_adapter(
             request: EngineLoadLoRAAdapterRequest, raw_request: Request
@@ -165,7 +169,9 @@ class BaseLoRAIntegrationTest:
         # Handler 2: Unload adapter
         # The decorator extracts path param: /adapters/{adapter_name} -> {"lora_name": adapter_name}
         @sagemaker_standards.register_unload_adapter_handler(
-            request_shape={"lora_name": "path_params.adapter_name"}
+            **dict(request_shape={"lora_name": "path_params.adapter_name"}) if test_type == "body" else \
+                dict(engine_request_lora_name_path="body.lora_name",
+                    engine_request_model_cls=EngineUnloadLoRAAdapterRequest)
         )
         @self.router.post("/v1/unload_lora_adapter")
         async def unload_lora_adapter(
@@ -457,7 +463,12 @@ class TestLoRARequestResponseTransformation(BaseLoRAIntegrationTest):
         }
 
         @sagemaker_standards.register_load_adapter_handler(
-            request_shape=nested_request_shape
+            **dict(request_shape=nested_request_shape) if test_type == "body" else 
+            dict(
+                engine_request_lora_name_path="body.adapter_config.name",
+                engine_request_lora_src_path="body.source_path",
+                engine_request_model_cls=NestedLoadLoRAAdapterRequest,
+            )
         )
         @self.router.post("/v1/nested_load")
         async def nested_load(
