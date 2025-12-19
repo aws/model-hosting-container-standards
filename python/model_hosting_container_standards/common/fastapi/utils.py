@@ -1,6 +1,8 @@
+import json
 from typing import Any, Dict, Optional, Union
 
-from fastapi import Request
+from fastapi import Request, Response
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 
@@ -32,4 +34,30 @@ def serialize_request(
         "headers": raw_request.headers,
         "query_params": raw_request.query_params,
         "path_params": raw_request.path_params,
+    }
+
+
+def serialize_response(response: Union[Response, JSONResponse]):
+    """Create a structured data dictionary for JMESPath transformations.
+
+    Extracts and organizes response data into a standardized format that can be used
+    with JMESPath expressions to transform and extract specific data elements.
+
+    :param Union[Response, JSONResponse] response: Response body data - can be:
+        - FastAPI Response object
+        - JSONResponse object
+    :return Dict[str, Any]: Structured data with body, headers, and status_code
+    """
+    # Process response body based on type
+    body = response.body.decode(response.charset)
+    try:
+        body = json.loads(body)
+    except json.JSONDecodeError:
+        # If body is not JSON, keep it as a string
+        pass
+
+    return {
+        "body": body,
+        "headers": response.headers,
+        "status_code": response.status_code,
     }
