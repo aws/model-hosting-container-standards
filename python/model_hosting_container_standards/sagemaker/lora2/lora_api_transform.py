@@ -11,12 +11,6 @@ from ...logging_config import logger
 from ..lora.utils import get_adapter_alias_from_request_header
 
 
-class TransformedRequest(TypedDict):
-    body: NotRequired[Dict[str, Any]]
-    headers: NotRequired[Dict[str, Any]]
-    query_params: NotRequired[Dict[str, Any]]
-
-
 class LoRAAdditionalFields(TypedDict):
     adapter_name: NotRequired[str]
     adapter_alias: NotRequired[Optional[str]]
@@ -79,9 +73,9 @@ class BaseLoRAApiTransform(ABC):
 
     def _transform_sagemaker_request_to_engine(
         self,
-        transformed_request: TransformedRequest,
+        transformed_request: Dict[str, Any],
         sagemaker_request_dict: Dict[str, Any],
-    ) -> TransformedRequest:
+    ) -> Dict[str, Any]:
         logger.debug(
             f"Transforming SageMaker request to engine format. Input: {sagemaker_request_dict}"
         )
@@ -93,7 +87,7 @@ class BaseLoRAApiTransform(ABC):
                     f"Mapping {sagemaker_param}={value} to engine path: {engine_path}"
                 )
                 transformed_request = set_value(
-                    dict(transformed_request),
+                    transformed_request,
                     engine_path,
                     value,
                     create_parent=True,
@@ -104,14 +98,14 @@ class BaseLoRAApiTransform(ABC):
         return transformed_request
 
     def _transform_request_defaults(
-        self, transformed_request: TransformedRequest
-    ) -> TransformedRequest:
+        self, transformed_request: Dict[str, Any]
+    ) -> Dict[str, Any]:
         if self.engine_request_defaults:
             logger.debug(f"Applying request defaults: {self.engine_request_defaults}")
             for engine_path, engine_default in self.engine_request_defaults.items():
                 logger.debug(f"Setting default {engine_path}={engine_default}")
                 transformed_request = set_value(
-                    dict(transformed_request),
+                    transformed_request,
                     engine_path,
                     engine_default,
                     create_parent=True,
@@ -122,7 +116,7 @@ class BaseLoRAApiTransform(ABC):
         return transformed_request
 
     def _apply_to_raw_request(
-        self, raw_request: Request, transformed_request: TransformedRequest
+        self, raw_request: Request, transformed_request: Dict[str, Any]
     ) -> Request:
         if transformed_request.get("headers"):
             raw_request.headers = transformed_request.get("headers")
@@ -139,7 +133,11 @@ class BaseLoRAApiTransform(ABC):
             f"Starting request transformation for adapter: {validated_request.name}"
         )
 
-        transformed_request = TransformedRequest()
+        transformed_request = {
+            "body": {},
+            "headers": {},
+            "query_params": {},
+        }
         transformed_request = self._transform_sagemaker_request_to_engine(
             transformed_request, validated_request.model_dump()
         )
