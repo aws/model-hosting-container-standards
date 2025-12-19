@@ -19,8 +19,8 @@ from .lora import (
     SageMakerLoRAApiHeader,
     create_lora_transform_decorator,
 )
-from .lora.models import AppendOperation
 from .lora2 import lora_factory as lora2_factory
+from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
 from .sessions import create_session_transform_decorator
@@ -53,7 +53,9 @@ def register_load_adapter_handler(
         return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
             request_shape, response_shape
         )
-    if (not engine_request_lora_name_path or not engine_request_lora_src_path) and not request_shape:
+    if (
+        not engine_request_lora_name_path or not engine_request_lora_src_path
+    ) and not request_shape:
         logger.error(
             "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
         )
@@ -66,7 +68,6 @@ def register_load_adapter_handler(
         engine_request_model_cls=engine_request_model_cls,
         engine_request_defaults=engine_request_defaults,
     )
-    
 
 
 def register_unload_adapter_handler(
