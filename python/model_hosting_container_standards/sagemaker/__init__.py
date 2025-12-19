@@ -43,7 +43,19 @@ def register_load_adapter_handler(
     request_shape: Optional[dict] = None,
     response_shape: Optional[dict] = None,
 ):
-    if request_shape:
+    if (
+        not (engine_request_lora_name_path and engine_request_lora_src_path)
+        and not request_shape
+    ):
+        logger.error(
+            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
+        )
+        raise ValueError(
+            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
+        )
+    elif request_shape and not (
+        engine_request_lora_name_path and engine_request_lora_src_path
+    ):
         logger.warning(
             "The `request_shape` argument is deprecated and will be removed in a future release. "
             "Please use `engine_request_lora_name_path` and `engine_request_lora_src_path` instead."
@@ -53,21 +65,17 @@ def register_load_adapter_handler(
         return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
             request_shape, response_shape
         )
-    if (
-        not engine_request_lora_name_path or not engine_request_lora_src_path
-    ) and not request_shape:
+    elif engine_request_lora_name_path and engine_request_lora_src_path:
+        return lora2_factory.register_load_adapter_handler(
+            engine_request_lora_name_path=engine_request_lora_name_path,
+            engine_request_lora_src_path=engine_request_lora_src_path,
+            engine_request_model_cls=engine_request_model_cls,
+            engine_request_defaults=engine_request_defaults,
+        )
+    else:
         logger.error(
             "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
         )
-        raise ValueError(
-            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
-        )
-    return lora2_factory.register_load_adapter_handler(
-        engine_request_lora_name_path=engine_request_lora_name_path,
-        engine_request_lora_src_path=engine_request_lora_src_path,
-        engine_request_model_cls=engine_request_model_cls,
-        engine_request_defaults=engine_request_defaults,
-    )
 
 
 def register_unload_adapter_handler(
@@ -77,7 +85,14 @@ def register_unload_adapter_handler(
     request_shape: Optional[dict] = None,
     response_shape: Optional[dict] = None,
 ):
-    if request_shape:
+    if not engine_request_lora_name_path and not request_shape:
+        logger.error(
+            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
+        )
+        raise ValueError(
+            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
+        )
+    elif request_shape and not engine_request_lora_name_path:
         logger.warning(
             "The `request_shape` argument is deprecated and will be removed in a future release. "
             "Please use `engine_request_lora_name_path` instead."
@@ -87,18 +102,12 @@ def register_unload_adapter_handler(
         return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
             request_shape, response_shape
         )
-    if not engine_request_lora_name_path and not request_shape:
-        logger.error(
-            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
+    elif engine_request_lora_name_path:
+        return lora2_factory.register_unload_adapter_handler(
+            engine_request_lora_name_path=engine_request_lora_name_path,
+            engine_request_model_cls=engine_request_model_cls,
+            engine_request_defaults=engine_request_defaults,
         )
-        raise ValueError(
-            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
-        )
-    return lora2_factory.register_unload_adapter_handler(
-        engine_request_lora_name_path=engine_request_lora_name_path,
-        engine_request_model_cls=engine_request_model_cls,
-        engine_request_defaults=engine_request_defaults,
-    )
 
 
 def inject_adapter_id(

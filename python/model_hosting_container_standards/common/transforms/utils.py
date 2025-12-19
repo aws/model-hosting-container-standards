@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import jmespath
 
@@ -13,7 +13,7 @@ def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
     :param Dict[str, Any] shape: Dictionary containing JMESPath expressions to compile
     :return Dict[str, Any]: Dictionary with compiled JMESPath expressions
     """
-    compiled_shape = {}
+    compiled_shape: Dict[str, Any] = {}
     for key, value in shape.items():
         if isinstance(value, str):
             # Compile the JMESPath expression
@@ -29,12 +29,12 @@ def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def set_value(
-    obj: dict,
+    obj: Dict[str, Any],
     path: str,
     value: Any,
     create_parent: bool = False,
-    max_create_depth: int = DEFAULT_MAX_DEPTH_TO_CREATE,
-) -> dict:
+    max_create_depth: Optional[int] = DEFAULT_MAX_DEPTH_TO_CREATE,
+) -> Dict:
     """Set value in a nested dict using dot-separated path traversal.
 
     Note: This function assumes JMESPath-style dot notation but only supports simple

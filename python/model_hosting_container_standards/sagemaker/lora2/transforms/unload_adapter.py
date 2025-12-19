@@ -1,5 +1,5 @@
 from http import HTTPStatus
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
@@ -24,7 +24,7 @@ class UnloadLoraApiTransform(BaseLoRAApiTransform):
         original_function,
         engine_request_paths: Dict[str, Any],
         engine_request_model_cls: BaseModel,
-        engine_request_defaults: Dict[str, Any] = None,
+        engine_request_defaults: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             original_function,

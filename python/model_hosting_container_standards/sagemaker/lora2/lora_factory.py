@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, NotRequired, Optional, TypedDict
 
 from fastapi import Request
 from pydantic import BaseModel
@@ -13,8 +13,8 @@ from .transforms.unload_adapter import UnloadLoraApiTransform
 class SageMakerLoadLoRAEngineRequestPaths(TypedDict):
     name: str
     src: str
-    preload: Optional[str] = None
-    pinned: Optional[str] = None
+    preload: NotRequired[Optional[str]]
+    pinned: NotRequired[Optional[str]]
 
 
 def resolve_lora_transform(
@@ -22,7 +22,7 @@ def resolve_lora_transform(
     original_func,
     engine_request_paths: Dict[str, Any],
     engine_request_model_cls: BaseModel,
-    engine_request_defaults: Dict[str, Any] = None,
+    engine_request_defaults: Optional[Dict[str, Any]] = None,
 ):
     logger.debug(f"Resolving LoRA transform for handler_type: {handler_type}")
 
@@ -49,9 +49,9 @@ def resolve_lora_transform(
 
 def create_lora_decorator(handler_type: str):
     def lora_decorator_with_params(
-        engine_request_paths: Dict[str, Any] = None,
+        engine_request_paths: Optional[Dict[str, Any]] = None,
         engine_request_model_cls: BaseModel = None,
-        engine_request_defaults: Dict[str, Any] = None,
+        engine_request_defaults: Optional[Dict[str, Any]] = None,
     ):
         def lora_decorator(original_func):
             lora_transform = resolve_lora_transform(

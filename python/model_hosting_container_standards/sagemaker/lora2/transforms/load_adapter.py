@@ -27,7 +27,7 @@ class LoadLoraApiTransform(BaseLoRAApiTransform):
         original_function,
         engine_request_paths: Dict[str, Any],
         engine_request_model_cls: BaseModel,
-        engine_request_defaults: Dict[str, Any] = None,
+        engine_request_defaults: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             original_function,

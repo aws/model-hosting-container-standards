@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from http import HTTPStatus
-from typing import Any, Callable, Dict, Optional, TypedDict
+from typing import Any, Callable, Dict, NotRequired, Optional, TypedDict
 
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
@@ -12,14 +12,14 @@ from ..lora.utils import get_adapter_alias_from_request_header
 
 
 class TransformedRequest(TypedDict):
-    body: Optional[Dict[str, Any]] = {}
-    headers: Optional[Dict[str, Any]] = {}
-    query_params: Optional[Dict[str, Any]] = {}
+    body: NotRequired[Dict[str, Any]]
+    headers: NotRequired[Dict[str, Any]]
+    query_params: NotRequired[Dict[str, Any]]
 
 
 class LoRAAdditionalFields(TypedDict):
-    adapter_name: str
-    adapter_alias: Optional[str] = None
+    adapter_name: NotRequired[str]
+    adapter_alias: NotRequired[Optional[str]]
 
 
 class BaseLoRATransformRequestOutput(BaseModel):
@@ -38,7 +38,7 @@ class BaseLoRAApiTransform(ABC):
         original_function,
         engine_request_paths: Dict[str, Any],
         engine_request_model_cls: BaseModel,
-        engine_request_defaults: Dict[str, Any] = None,
+        engine_request_defaults: Optional[Dict[str, Any]] = None,
     ):
         self.original_function = original_function
         self.engine_request_paths = engine_request_paths
@@ -93,7 +93,7 @@ class BaseLoRAApiTransform(ABC):
                     f"Mapping {sagemaker_param}={value} to engine path: {engine_path}"
                 )
                 transformed_request = set_value(
-                    transformed_request,
+                    dict(transformed_request),
                     engine_path,
                     value,
                     create_parent=True,
@@ -111,7 +111,7 @@ class BaseLoRAApiTransform(ABC):
             for engine_path, engine_default in self.engine_request_defaults.items():
                 logger.debug(f"Setting default {engine_path}={engine_default}")
                 transformed_request = set_value(
-                    transformed_request,
+                    dict(transformed_request),
                     engine_path,
                     engine_default,
                     create_parent=True,
@@ -176,7 +176,7 @@ class BaseLoRAApiTransform(ABC):
 
         logger.debug(f"Calling engine function for adapter: {adapter_name}")
 
-        if request_model_cls is not None:
+        if transformed_request and request_model_cls is not None:
             try:
                 body = transformed_request.get("body", {})
                 logger.debug(
