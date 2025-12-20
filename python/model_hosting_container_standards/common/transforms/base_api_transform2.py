@@ -41,8 +41,7 @@ class BaseApiTransform2(ABC):
     @abstractmethod
     def _extract_additional_fields(
         self, validated_request: BaseModel, raw_request: Request
-    ) -> Dict[str, Any]:
-        ...
+    ) -> Dict[str, Any]: ...
 
     def _generate_successful_response_content(
         self,
@@ -165,9 +164,7 @@ class BaseApiTransform2(ABC):
                 logger.debug("Request body validation successful")
                 return await func(transformed_request_body, raw_request)
             except ValidationError as e:
-                logger.error(
-                    f"Request validation failed: {e}"
-                )
+                logger.error(f"Request validation failed: {e}")
                 raise HTTPException(
                     status_code=HTTPStatus.FAILED_DEPENDENCY.value,
                     detail=e.json(include_url=False),
@@ -185,9 +182,7 @@ class BaseApiTransform2(ABC):
     ):
         if hasattr(raw_response, "status_code"):
             status_code = raw_response.status_code
-            logger.debug(
-                f"Processing response with status code: {status_code}"
-            )
+            logger.debug(f"Processing response with status code: {status_code}")
 
             if status_code == HTTPStatus.OK.value:
                 return Response(
@@ -199,9 +194,7 @@ class BaseApiTransform2(ABC):
             else:
                 return raw_response
         else:
-            logger.debug(
-                f"Response has no status_code attribute."
-            )
+            logger.debug("Response has no status_code attribute.")
             return raw_response
 
     async def transform(self, raw_request):
@@ -237,4 +230,3 @@ class BaseApiTransform2(ABC):
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
                 detail="Unexpected error during transformation",
             )
-

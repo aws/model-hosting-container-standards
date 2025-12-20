@@ -5,13 +5,10 @@ from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel, ValidationError
 
+from ....common.transforms.base_api_transform2 import BaseTransformRequestOutput
 from ....logging_config import logger
 from ...lora.constants import ResponseMessage
-from ..base_lora_api_transform import (
-    BaseLoRAApiTransform,
-    LoRATransformRequestOutput,
-    LoRARequestBaseModel,
-)
+from ..base_lora_api_transform import BaseLoRAApiTransform, LoRARequestBaseModel
 
 
 class SageMakerLoadAdapterRequest(LoRARequestBaseModel):
@@ -73,7 +70,7 @@ class LoadLoraApiTransform(BaseLoRAApiTransform):
     def _generate_successful_response_content(
         self,
         raw_response: Response,
-        transform_request_output: LoRATransformRequestOutput,
+        transform_request_output: BaseTransformRequestOutput,
     ) -> str:
         adapter_alias = transform_request_output.additional_fields.get("adapter_alias")
         adapter_name = transform_request_output.additional_fields.get("adapter_name")
