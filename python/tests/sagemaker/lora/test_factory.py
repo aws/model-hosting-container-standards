@@ -40,7 +40,7 @@ class TestResolveTransforms:
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
-        mock_transform_cls.assert_called_once_with(request_shape, response_shape)
+        mock_transform_cls.assert_called_once_with(request_shape, response_shape, None)
         assert result == mock_transformer_instance
 
     @patch(
@@ -65,7 +65,7 @@ class TestResolveTransforms:
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
-        mock_transform_cls.assert_called_once_with(request_shape, response_shape)
+        mock_transform_cls.assert_called_once_with(request_shape, response_shape, None)
         assert result == mock_transformer_instance
 
     @patch(
@@ -90,7 +90,7 @@ class TestResolveTransforms:
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
-        mock_transform_cls.assert_called_once_with(request_shape, response_shape)
+        mock_transform_cls.assert_called_once_with(request_shape, response_shape, None)
         assert result == mock_transformer_instance
 
     @patch(
@@ -115,7 +115,7 @@ class TestResolveTransforms:
 
         # Assert
         mock_get_transform_cls.assert_called_once_with(handler_type)
-        mock_transform_cls.assert_called_once_with(request_shape, response_shape)
+        mock_transform_cls.assert_called_once_with(request_shape, response_shape, None)
         assert result == mock_transformer_instance
 
     @patch(
@@ -223,7 +223,7 @@ class TestCreateTransformDecorator:
 
         # Assert
         mock_resolve_transforms.assert_called_once_with(
-            handler_type, mock_lora_transform, request_shape, response_shape
+            handler_type, mock_lora_transform, request_shape, response_shape, None
         )
         mock_logger.info.assert_any_call(
             f"[{handler_type.upper()}] Transform decorator applied to: {mock_func.__name__}"
@@ -493,7 +493,7 @@ class TestIntegration:
         # Assert
         # Verify transformer was created correctly
         mock_get_transform_cls.assert_called_once_with(handler_type)
-        mock_transform_cls.assert_called_once_with(request_shape, response_shape)
+        mock_transform_cls.assert_called_once_with(request_shape, response_shape, None)
 
         # Verify transformation flow
         mock_transformer.transform_request.assert_called_once_with(mock_raw_request)

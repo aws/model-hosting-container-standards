@@ -1,6 +1,7 @@
 from typing import Any, Callable, Dict, Optional
 
 from fastapi import Request
+from pydantic import BaseModel
 
 from model_hosting_container_standards.common import BaseApiTransform
 from model_hosting_container_standards.common.handler import handler_registry
@@ -12,6 +13,7 @@ def _resolve_transforms(
     transform_resolver: Callable[..., Any],
     request_shape: Dict[str, Any],
     response_shape: Dict[str, Any],
+    engine_request_model_cls: Optional[BaseModel] = None,
 ) -> BaseApiTransform:
     """Resolve and instantiate the appropriate transformer class for the given handler type.
 
@@ -29,7 +31,7 @@ def _resolve_transforms(
     logger.debug(
         f"Creating transformer instance: {getattr(_transformer_cls, '__name__', str(_transformer_cls))}"
     )
-    return _transformer_cls(request_shape, response_shape)
+    return _transformer_cls(request_shape, response_shape, engine_request_model_cls)
 
 
 def create_transform_decorator(
@@ -49,6 +51,7 @@ def create_transform_decorator(
     def decorator_with_params(
         request_shape: Optional[Dict[str, Any]] = None,
         response_shape: Optional[Dict[str, Any]] = None,
+        engine_request_model_cls: Optional[BaseModel] = None,
     ):
         """Configure the transformation shapes for the decorator.
 
@@ -82,6 +85,7 @@ def create_transform_decorator(
                 transform_resolver,
                 request_shape if request_shape is not None else {},
                 response_shape if response_shape is not None else {},
+                engine_request_model_cls,
             )
 
             # Create wrapped function that applies transforms

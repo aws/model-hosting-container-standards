@@ -1,9 +1,10 @@
 import json
 from http import HTTPStatus
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import jmespath
 from fastapi import HTTPException, Request, Response
+from pydantic import BaseModel
 
 from ....common.fastapi.utils import serialize_request
 from ....common.transforms.utils import set_value
@@ -16,7 +17,10 @@ class InjectToBodyApiTransform(BaseLoRAApiTransform):
     """Transformer that injects adapter information to request body."""
 
     def __init__(
-        self, request_shape: Dict[str, Any], response_shape: Dict[str, Any] = {}
+        self,
+        request_shape: Dict[str, Any],
+        response_shape: Dict[str, Any] = {},
+        engine_request_model_cls: Optional[BaseModel] = None,
     ):
         # Validate and extract AppendOperation instances before passing to parent
         self._append_operations: Dict[str, AppendOperation] = {}
@@ -40,7 +44,11 @@ class InjectToBodyApiTransform(BaseLoRAApiTransform):
             )
 
         # Pass cleaned request_shape to parent for JMESPath compilation
-        super().__init__(cleaned_request_shape, response_shape)
+        super().__init__(
+            cleaned_request_shape,
+            response_shape=response_shape,
+            engine_request_model_cls=engine_request_model_cls,
+        )
 
     async def transform_request(
         self, raw_request: Request
@@ -85,8 +93,13 @@ class InjectToBodyApiTransform(BaseLoRAApiTransform):
 
         logger.debug(f"Updated request body: {request_data}")
         raw_request._body = json.dumps(request_data).encode("utf-8")
+        transformed_request = (
+            None
+            if self.engine_request_model_cls is None
+            else self._convert_to_model(request_data)
+        )
         return BaseLoRATransformRequestOutput(
-            request=None,
+            request=transformed_request,
             raw_request=raw_request,
         )
 

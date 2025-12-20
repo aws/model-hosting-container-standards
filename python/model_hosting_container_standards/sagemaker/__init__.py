@@ -3,6 +3,7 @@
 from typing import Dict, List, Optional, Union
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig, safe_include_router
@@ -34,27 +35,36 @@ custom_invocation_handler = override_handler("invoke")
 
 # Transform decorators - for LoRA handling
 def register_load_adapter_handler(
-    request_shape: dict, response_shape: Optional[dict] = None
+    request_shape: dict,
+    response_shape: Optional[dict] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
 ):
     # TODO: validate and preprocess request shape
     # TODO: validate and preprocess response shape
     return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
-        request_shape, response_shape
+        request_shape, response_shape, engine_request_model_cls=engine_request_model_cls
     )
 
 
 def register_unload_adapter_handler(
-    request_shape: dict, response_shape: Optional[dict] = None
+    request_shape: dict,
+    response_shape: Optional[dict] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
 ):
     # TODO: validate and preprocess request shape
     # TODO: validate and preprocess response shape
     return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
-        request_shape, response_shape
+        request_shape,
+        response_shape,
+        engine_request_model_cls=engine_request_model_cls,
     )
 
 
 def inject_adapter_id(
-    adapter_path: str, append: bool = False, separator: Optional[str] = None
+    adapter_path: str,
+    append: bool = False,
+    separator: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
 ):
     """Create a decorator that injects adapter ID from SageMaker headers into request body.
 
@@ -114,11 +124,15 @@ def inject_adapter_id(
         request_shape[adapter_path] = header_expr
 
     return create_lora_transform_decorator(LoRAHandlerType.INJECT_ADAPTER_ID)(
-        request_shape=request_shape, response_shape=None
+        request_shape=request_shape,
+        response_shape=None,
+        engine_request_model_cls=engine_request_model_cls,
     )
 
 
-def stateful_session_manager():
+def stateful_session_manager(
+    engine_request_model_cls: Optional[BaseModel] = None,
+):
     """Create a decorator for session-based sticky routing.
 
     This decorator enables stateful session management without JMESPath transformations.
@@ -128,7 +142,11 @@ def stateful_session_manager():
     Returns:
         A decorator that can be applied to route handlers to enable session management
     """
-    return create_session_transform_decorator()(request_shape={}, response_shape={})
+    return create_session_transform_decorator()(
+        request_shape={},
+        response_shape={},
+        engine_request_model_cls=engine_request_model_cls,
+    )
 
 
 def bootstrap(app: FastAPI) -> FastAPI:

@@ -34,6 +34,11 @@ class EngineUnloadLoRAAdapterRequest(BaseModel):
     lora_name: str
 
 
+class EngineInvocationsRequest(BaseModel):
+    prompt: str
+    model: str
+
+
 class TransformationCapture:
     """Helper to capture transformed requests in tests.
 
@@ -677,6 +682,109 @@ class TestLoRAEndToEndFlow(BaseLoRAIntegrationTest):
         assert response.status_code == 200
         # Should use base model or empty string when no adapter specified
         assert "base-model" in response.text or "Response from:" in response.text
+
+
+class TestLoraRequestResponseTransformationWithEngineRequestModelCls(
+    BaseLoRAIntegrationTest
+):
+    def setup_handlers(self):
+        """Define handlers for end-to-end lifecycle tests.
+
+        Sets up three handlers that simulate a LoRA-enabled inference engine:
+        1. load_lora_adapter - Loads adapters into the registry
+        2. unload_lora_adapter - Removes adapters from the registry
+        3. invocations - Handles inference with optional adapter selection
+        """
+        # Simulate a simple adapter registry
+        self.adapters = {}
+
+        # Handler 1: Load adapter
+        # The decorator transforms: {"name": "x", "src": "y"} -> {"lora_name": "x", "lora_path": "y"}
+        @sagemaker_standards.register_load_adapter_handler(
+            request_shape={"lora_name": "body.name", "lora_path": "body.src"},
+            engine_request_model_cls=EngineLoadLoRAAdapterRequest,
+        )
+        @self.router.post("/v1/load_lora_adapter")
+        async def load_lora_adapter(
+            request: EngineLoadLoRAAdapterRequest, raw_request: Request
+        ):
+            # Capture the transformed request for test verification
+            self.capture.capture("load_adapter", request, raw_request)
+
+            # Business logic: register the adapter
+            self.adapters[request.lora_name] = request.lora_path
+            return Response(
+                status_code=200,
+                content=f"Adapter {request.lora_name} registered",
+            )
+
+        # Handler 2: Unload adapter
+        # The decorator extracts path param: /adapters/{adapter_name} -> {"lora_name": adapter_name}
+        @sagemaker_standards.register_unload_adapter_handler(
+            request_shape={"lora_name": "path_params.adapter_name"},
+            engine_request_model_cls=EngineUnloadLoRAAdapterRequest,
+        )
+        @self.router.post("/v1/unload_lora_adapter")
+        async def unload_lora_adapter(
+            request: EngineUnloadLoRAAdapterRequest, raw_request: Request
+        ):
+            # Capture the transformed request for test verification
+            self.capture.capture("unload_adapter", request, raw_request)
+
+            # Business logic: unregister the adapter
+            if request.lora_name in self.adapters:
+                del self.adapters[request.lora_name]
+                return Response(
+                    status_code=200,
+                    content=f"Adapter {request.lora_name} unregistered",
+                )
+            return Response(status_code=404, content="Adapter not found")
+
+        # Handler 3: Invocations with adapter injection
+        # The decorator injects adapter ID from header into body: header -> body["model"]
+        @self.router.post("/invocations")
+        @sagemaker_standards.inject_adapter_id(
+            "model", engine_request_model_cls=EngineInvocationsRequest
+        )
+        async def invocations(request: EngineInvocationsRequest, raw_request: Request):
+            body = request.model_dump(exclude_none=True)
+
+            # Capture the transformed body for test verification
+            self.capture.capture("invocations", body, raw_request)
+
+            # Business logic: use the adapter if specified
+            adapter_id = body.get("model", "base-model")
+
+            if adapter_id in self.adapters:
+                return Response(
+                    status_code=200,
+                    content=f"Response from adapter: {adapter_id}",
+                )
+            return Response(status_code=200, content=f"Response from: {adapter_id}")
+
+    def test_full_adapter_lifecycle_with_engine_request_model_cls(self):
+        """Test complete lifecycle: register -> invoke with adapter -> unregister.
+
+        This is the primary happy path: load an adapter, use it for inference,
+        then unload it. Verifies all three operations work together.
+        """
+        # 1. Register an adapter
+        register_response = self.client.post(
+            "/adapters", json={"name": "lora-1", "src": "s3://bucket/lora-1"}
+        )
+        assert register_response.status_code == 200
+
+        # 2. Invoke with the adapter
+        invoke_response = self.client.post(
+            "/invocations",
+            json={"prompt": "hello"},
+            headers={"X-Amzn-SageMaker-Adapter-Identifier": "lora-1"},
+        )
+        assert invoke_response.status_code == 200
+
+        # 3. Unregister the adapter
+        unregister_response = self.client.delete("/adapters/lora-1")
+        assert unregister_response.status_code == 200
 
 
 if __name__ == "__main__":
