@@ -20,6 +20,7 @@ jmespath = "*"
 httpx = "*"
 setuptools = "*"
 supervisor = ">=4.2.0"
+typing-extensions = "*"
 
 # Console scripts for easy access
 [tool.poetry.scripts]

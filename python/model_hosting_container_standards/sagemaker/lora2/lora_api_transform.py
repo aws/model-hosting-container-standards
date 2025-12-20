@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 from http import HTTPStatus
-from typing import Any, Callable, Dict, NotRequired, Optional, TypedDict
+from typing import Any, Callable, Dict, Optional, TypedDict
 
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel, ValidationError
+from typing_extensions import NotRequired
 
 from ...common.transforms.utils import set_value
 from ...logging_config import logger
