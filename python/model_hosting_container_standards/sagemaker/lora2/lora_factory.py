@@ -1,8 +1,8 @@
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Optional
 
 from fastapi import Request
 from pydantic import BaseModel
-from typing_extensions import NotRequired
+from typing_extensions import TypedDict, NotRequired
 
 from ...common.handler import handler_registry
 from ...logging_config import logger
