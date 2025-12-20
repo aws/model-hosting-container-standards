@@ -1,33 +1,22 @@
 from abc import ABC, abstractmethod
 from http import HTTPStatus
-from typing import Any, Callable, Dict, Optional, TypedDict
+from typing import Any, Callable, Dict, Optional
 
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel, ValidationError
-from typing_extensions import NotRequired
 
-from ...common.transforms.utils import set_value
 from ...logging_config import logger
-from ..lora.utils import get_adapter_alias_from_request_header
+from .utils import set_value
 
 
-class LoRAAdditionalFields(TypedDict):
-    adapter_name: NotRequired[str]
-    adapter_alias: NotRequired[Optional[str]]
-
-
-class BaseLoRATransformRequestOutput(BaseModel):
+class BaseTransformRequestOutput(BaseModel):
     raw_request: Any
     transformed_request: Optional[Dict] = None
-    additional_fields: LoRAAdditionalFields = {}
+    additional_fields: Dict[str, Any] = {}
 
 
-class LoRARequestBaseModel(BaseModel):
-    name: str
-
-
-class BaseLoRAApiTransform(ABC):
+class BaseApiTransform2(ABC):
     def __init__(
         self,
         original_function,
@@ -47,30 +36,21 @@ class BaseLoRAApiTransform(ABC):
             logger.debug(f"Using request defaults: {engine_request_defaults}")
 
     @abstractmethod
-    async def validate_request(self, raw_request: Request) -> LoRARequestBaseModel: ...
+    async def validate_request(self, raw_request: Request) -> BaseModel: ...
+
+    @abstractmethod
+    def _extract_additional_fields(
+        self, validated_request: BaseModel, raw_request: Request
+    ) -> Dict[str, Any]:
+        ...
 
     def _generate_successful_response_content(
         self,
         raw_response: Response,
-        transform_request_output: BaseLoRATransformRequestOutput,
+        transform_request_output: BaseTransformRequestOutput,
     ) -> str:
         """Generic success message"""
         return raw_response.body.decode("utf-8")
-
-    def _extract_additional_fields(
-        self, validated_request: LoRARequestBaseModel, raw_request: Request
-    ) -> LoRAAdditionalFields:
-        adapter_name = validated_request.name
-        adapter_alias = get_adapter_alias_from_request_header(raw_request)
-
-        logger.debug(
-            f"Extracted adapter fields - name: {adapter_name}, alias: {adapter_alias}"
-        )
-
-        return LoRAAdditionalFields(
-            adapter_name=adapter_name,
-            adapter_alias=adapter_alias,
-        )
 
     def _transform_sagemaker_request_to_engine(
         self,
@@ -130,10 +110,10 @@ class BaseLoRAApiTransform(ABC):
         return raw_request
 
     def transform_request(
-        self, validated_request: LoRARequestBaseModel, raw_request: Request
-    ) -> BaseLoRATransformRequestOutput:
+        self, validated_request: BaseModel, raw_request: Request
+    ) -> BaseTransformRequestOutput:
         logger.debug(
-            f"Starting request transformation for adapter: {validated_request.name}"
+            f"Starting request transformation for request: {validated_request}"
         )
 
         transformed_request: Dict[str, Any] = {
@@ -148,7 +128,7 @@ class BaseLoRAApiTransform(ABC):
         transformed_request = self._transform_request_defaults(transformed_request)
         raw_request = self._apply_to_raw_request(raw_request, transformed_request)
 
-        result = BaseLoRATransformRequestOutput(
+        result = BaseTransformRequestOutput(
             transformed_request=transformed_request,
             raw_request=raw_request,
             additional_fields=self._extract_additional_fields(
@@ -161,7 +141,7 @@ class BaseLoRAApiTransform(ABC):
 
     async def call(
         self,
-        transform_request_output: BaseLoRATransformRequestOutput,
+        transform_request_output: BaseTransformRequestOutput,
         func: Optional[Callable] = None,
         request_model_cls: Optional[BaseModel] = None,
     ):
@@ -172,11 +152,6 @@ class BaseLoRAApiTransform(ABC):
 
         transformed_request = transform_request_output.transformed_request
         raw_request = transform_request_output.raw_request
-        adapter_name = transform_request_output.additional_fields.get(
-            "adapter_name", "unknown"
-        )
-
-        logger.debug(f"Calling engine function for adapter: {adapter_name}")
 
         if transformed_request and request_model_cls is not None:
             try:
@@ -191,7 +166,7 @@ class BaseLoRAApiTransform(ABC):
                 return await func(transformed_request_body, raw_request)
             except ValidationError as e:
                 logger.error(
-                    f"Request validation failed for adapter {adapter_name}: {e}"
+                    f"Request validation failed: {e}"
                 )
                 raise HTTPException(
                     status_code=HTTPStatus.FAILED_DEPENDENCY.value,
@@ -206,22 +181,15 @@ class BaseLoRAApiTransform(ABC):
     def transform_response(
         self,
         raw_response: Response,
-        transform_request_output: BaseLoRATransformRequestOutput,
+        transform_request_output: BaseTransformRequestOutput,
     ):
-        adapter_name = transform_request_output.additional_fields.get(
-            "adapter_name", "unknown"
-        )
-
         if hasattr(raw_response, "status_code"):
             status_code = raw_response.status_code
             logger.debug(
-                f"Processing response for adapter {adapter_name} with status code: {status_code}"
+                f"Processing response with status code: {status_code}"
             )
 
             if status_code == HTTPStatus.OK.value:
-                logger.info(
-                    f"Successfully processed request for adapter: {adapter_name}"
-                )
                 return Response(
                     status_code=HTTPStatus.OK.value,
                     content=self._generate_successful_response_content(
@@ -229,23 +197,20 @@ class BaseLoRAApiTransform(ABC):
                     ),
                 )
             else:
-                logger.warning(
-                    f"Non-OK response for adapter {adapter_name}: {status_code}"
-                )
                 return raw_response
         else:
             logger.debug(
-                f"Response has no status_code attribute for adapter: {adapter_name}"
+                f"Response has no status_code attribute."
             )
             return raw_response
 
     async def transform(self, raw_request):
-        logger.debug("Starting LoRA API transformation")
+        logger.debug("Starting  API transformation")
 
         try:
             validated_request = await self.validate_request(raw_request)
             logger.debug(
-                f"Request validation successful for adapter: {validated_request.name}"
+                f"Request validation successful for request: {validated_request}"
             )
 
             transform_request_output = self.transform_request(
@@ -268,4 +233,8 @@ class BaseLoRAApiTransform(ABC):
             raise
         except Exception as e:
             logger.error(f"Unexpected error during transformation: {str(e)}")
-            raise
+            raise HTTPException(
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
+                detail="Unexpected error during transformation",
+            )
+

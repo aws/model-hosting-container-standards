@@ -8,9 +8,9 @@ from pydantic import BaseModel, ValidationError
 from ....logging_config import logger
 from ...lora.constants import ResponseMessage
 from ...lora.utils import get_adapter_name_from_request_path
-from ..lora_api_transform import (
+from ..base_lora_api_transform import (
     BaseLoRAApiTransform,
-    BaseLoRATransformRequestOutput,
+    LoRATransformRequestOutput,
     LoRARequestBaseModel,
 )
 
@@ -64,7 +64,7 @@ class UnloadLoraApiTransform(BaseLoRAApiTransform):
     def _generate_successful_response_content(
         self,
         raw_response: Response,
-        transform_request_output: BaseLoRATransformRequestOutput,
+        transform_request_output: LoRATransformRequestOutput,
     ) -> str:
         adapter_alias = transform_request_output.additional_fields.get("adapter_alias")
         adapter_name = transform_request_output.additional_fields.get("adapter_name")
