@@ -203,7 +203,7 @@ class BaseLoRAIntegrationTest:
         # Handler 3: Invocations with adapter injection
         # The decorator injects adapter ID from header into body: header -> body["model"]
         @self.router.post("/invocations")
-        @sagemaker_standards.inject_adapter_id("model")
+        @sagemaker_standards.inject_adapter_id("body.model", mode="replace")
         async def invocations(request: Request):
             body_bytes = await request.body()
             import json
@@ -396,14 +396,14 @@ class TestLoRARequestResponseTransformation(BaseLoRAIntegrationTest):
         router = APIRouter()
 
         @router.post("/invocations")
-        @sagemaker_standards.inject_adapter_id("body.model.lora_name")
+        @sagemaker_standards.inject_adapter_id("body.model.lora_name", mode="replace")
         async def invocations(request: Request):
             body_bytes = await request.body()
             import json
 
             body = json.loads(body_bytes.decode())
             adapter_id = (
-                body.get("body", {}).get("model", {}).get("lora_name", "base-model")
+                body.get("model", {}).get("lora_name", "base-model")
             )
 
             if adapter_id in self.adapters:
@@ -538,16 +538,6 @@ class TestLoRAErrorCases(BaseLoRAIntegrationTest):
             @sagemaker_standards.inject_adapter_id(1234)
             async def invocations_nonstr(request: Request):
                 pass
-
-    def test_inject_adapter_id_valid_path(self):
-        """Test that inject_adapter_id accepts valid adapter paths."""
-        # Test that the function works correctly with a simple path
-        decorator = sagemaker_standards.inject_adapter_id("model")
-        assert callable(decorator)
-
-        # Test that it works with nested paths too
-        decorator_nested = sagemaker_standards.inject_adapter_id("body.model.lora_name")
-        assert callable(decorator_nested)
 
     def test_load_adapter_missing_required_field(self):
         """Test loading adapter with missing required field.

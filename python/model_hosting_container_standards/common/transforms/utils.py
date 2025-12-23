@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 import jmespath
 
@@ -28,12 +28,24 @@ def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
     return compiled_shape
 
 
+def _set(new_value, original_value, mode, separator):
+    if mode == "replace":
+        return new_value
+    elif original_value is None:
+        return new_value
+    elif mode == "append":
+        return f"{original_value}{separator}{new_value}"
+    elif mode == "prepend":
+        return f"{new_value}{separator}{original_value}"
+
 def set_value(
     obj: Dict[str, Any],
     path: str,
     value: Any,
     create_parent: bool = False,
     max_create_depth: Optional[int] = DEFAULT_MAX_DEPTH_TO_CREATE,
+    mode: Literal["append", "prepend", "replace"] = "replace",
+    separator: Optional[str] = None,
 ) -> Dict:
     """Set value in a nested dict using dot-separated path traversal.
 
@@ -60,12 +72,12 @@ def set_value(
     """
     # Split "parent.child" into ('parent', 'child')
     if "." not in path:
-        obj[path] = value
+        obj[path] = _set(value, obj.get(path), mode, separator)
         return obj
 
     *parent_parts, child = path.split(".")
     if len(parent_parts) == 0:
-        obj[child] = value
+        obj[child] = _set(value, obj.get(child), mode, separator)
         return obj
 
     # Find the deepest existing parent by manually traversing the dict
@@ -83,7 +95,7 @@ def set_value(
 
     # If we found the complete parent path, just set the value
     if existing_depth == len(parent_parts):
-        existing_parent[child] = value
+        existing_parent[child] = _set(value, existing_parent.get(child), mode, separator)
         return obj
 
     # Parent doesn't exist completely, we need to create missing parts

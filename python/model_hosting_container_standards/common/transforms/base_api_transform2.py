@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import Any, Callable, Dict, Optional
 
+import json
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel, ValidationError
@@ -99,11 +100,11 @@ class BaseApiTransform2(ABC):
         self, raw_request: Request, transformed_request: Dict[str, Any]
     ) -> Request:
         if transformed_request.get("headers"):
-            raw_request.headers = transformed_request.get("headers")
+            raw_request._headers = transformed_request.get("headers")
         if transformed_request.get("query_params"):
             raw_request.query_params = transformed_request.get("query_params")
         if transformed_request.get("body"):
-            raw_request._body = transformed_request.get("body")
+            raw_request._body = json.dumps(transformed_request.get("body")).encode()
         if transformed_request.get("path_params"):
             raw_request.path_params = transformed_request.get("path_params")
         return raw_request

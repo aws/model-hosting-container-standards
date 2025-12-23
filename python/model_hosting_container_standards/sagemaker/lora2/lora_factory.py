@@ -7,8 +7,8 @@ from typing_extensions import NotRequired, TypedDict
 from ...common.handler import handler_registry
 from ...logging_config import logger
 from ..lora.constants import LoRAHandlerType
-from .transforms.load_adapter import LoadLoraApiTransform
-from .transforms.unload_adapter import UnloadLoraApiTransform
+from .api_transforms.load_adapter import LoadLoraApiTransform
+from .api_transforms.unload_adapter import UnloadLoraApiTransform
 
 
 class SageMakerLoadLoRAEngineRequestPaths(TypedDict):

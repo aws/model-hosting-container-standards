@@ -1,6 +1,6 @@
 """SageMaker integration decorators."""
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -20,6 +20,7 @@ from .lora import (
     create_lora_transform_decorator,
 )
 from .lora2 import lora_factory as lora2_factory
+from .lora2.lora_api_inject import create_lora_inject
 from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
@@ -111,7 +112,7 @@ def register_unload_adapter_handler(
 
 
 def inject_adapter_id(
-    adapter_path: str, append: bool = False, separator: Optional[str] = None
+    adapter_path: str, mode: Optional[Literal["append", "prepend", "replace"]] = None, append: bool = False, separator: Optional[str] = None
 ):
     """Create a decorator that injects adapter ID from SageMaker headers into request body.
 
@@ -144,6 +145,14 @@ def inject_adapter_id(
         It must be applied to existing route handlers.
     """
     # validate and preprocess
+    if mode:
+        if mode != "replace" and not separator:
+            logger.error(f"separator must be provided when {mode=}")
+            raise ValueError(f"separator must be provided when {mode=}")
+        if mode == "replace" and separator:
+            logger.error(f"separator is specified {separator} but {mode=}")
+            raise ValueError(f"separator is specified {separator} but {mode=}")
+        return create_lora_inject(adapter_path, mode, separator)
     if not adapter_path:
         logger.error("adapter_path cannot be empty")
         raise ValueError("adapter_path cannot be empty")
