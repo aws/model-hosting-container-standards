@@ -1,8 +1,9 @@
 """SageMaker integration decorators."""
 
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig, safe_include_router
@@ -18,6 +19,8 @@ from .lora import (
     SageMakerLoRAApiHeader,
     create_lora_transform_decorator,
 )
+from .lora2 import lora_factory as lora2_factory
+from .lora2.lora_api_inject import create_lora_inject
 from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
@@ -34,27 +37,82 @@ custom_invocation_handler = override_handler("invoke")
 
 # Transform decorators - for LoRA handling
 def register_load_adapter_handler(
-    request_shape: dict, response_shape: Optional[dict] = None
+    engine_request_lora_name_path: Optional[str] = None,
+    engine_request_lora_src_path: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
+    engine_request_defaults: Optional[Dict[str, Any]] = None,
+    request_shape: Optional[dict] = None,
+    response_shape: Optional[dict] = None,
 ):
-    # TODO: validate and preprocess request shape
-    # TODO: validate and preprocess response shape
-    return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
-        request_shape, response_shape
-    )
+    if (
+        not (engine_request_lora_name_path and engine_request_lora_src_path)
+        and not request_shape
+    ):
+        logger.error(
+            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
+        )
+        raise ValueError(
+            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
+        )
+    elif request_shape and not (
+        engine_request_lora_name_path and engine_request_lora_src_path
+    ):
+        logger.warning(
+            "The `request_shape` argument is deprecated and will be removed in a future release. "
+            "Please use `engine_request_lora_name_path` and `engine_request_lora_src_path` instead."
+        )
+        # TODO: validate and preprocess request shape
+        # TODO: validate and preprocess response shape
+        return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
+            request_shape, response_shape
+        )
+    elif engine_request_lora_name_path and engine_request_lora_src_path:
+        return lora2_factory.register_load_adapter_handler(
+            engine_request_lora_name_path=engine_request_lora_name_path,
+            engine_request_lora_src_path=engine_request_lora_src_path,
+            engine_request_model_cls=engine_request_model_cls,
+            engine_request_defaults=engine_request_defaults,
+        )
+    else:
+        logger.error(
+            "Either `engine_request_lora_name_path` and `engine_request_lora_src_path` or `request_shape` must be provided."
+        )
 
 
 def register_unload_adapter_handler(
-    request_shape: dict, response_shape: Optional[dict] = None
+    engine_request_lora_name_path: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
+    engine_request_defaults: Optional[Dict[str, Any]] = None,
+    request_shape: Optional[dict] = None,
+    response_shape: Optional[dict] = None,
 ):
-    # TODO: validate and preprocess request shape
-    # TODO: validate and preprocess response shape
-    return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
-        request_shape, response_shape
-    )
+    if not engine_request_lora_name_path and not request_shape:
+        logger.error(
+            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
+        )
+        raise ValueError(
+            "Either `engine_request_lora_name_path` or `request_shape` must be provided."
+        )
+    elif request_shape and not engine_request_lora_name_path:
+        logger.warning(
+            "The `request_shape` argument is deprecated and will be removed in a future release. "
+            "Please use `engine_request_lora_name_path` instead."
+        )
+        # TODO: validate and preprocess request shape
+        # TODO: validate and preprocess response shape
+        return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
+            request_shape, response_shape
+        )
+    elif engine_request_lora_name_path:
+        return lora2_factory.register_unload_adapter_handler(
+            engine_request_lora_name_path=engine_request_lora_name_path,
+            engine_request_model_cls=engine_request_model_cls,
+            engine_request_defaults=engine_request_defaults,
+        )
 
 
 def inject_adapter_id(
-    adapter_path: str, append: bool = False, separator: Optional[str] = None
+    adapter_path: str, mode: Optional[Literal["append", "prepend", "replace"]] = None, append: bool = False, separator: Optional[str] = None
 ):
     """Create a decorator that injects adapter ID from SageMaker headers into request body.
 
@@ -87,6 +145,14 @@ def inject_adapter_id(
         It must be applied to existing route handlers.
     """
     # validate and preprocess
+    if mode:
+        if mode != "replace" and not separator:
+            logger.error(f"separator must be provided when {mode=}")
+            raise ValueError(f"separator must be provided when {mode=}")
+        if mode == "replace" and separator:
+            logger.error(f"separator is specified {separator} but {mode=}")
+            raise ValueError(f"separator is specified {separator} but {mode=}")
+        return create_lora_inject(adapter_path, mode, separator)
     if not adapter_path:
         logger.error("adapter_path cannot be empty")
         raise ValueError("adapter_path cannot be empty")

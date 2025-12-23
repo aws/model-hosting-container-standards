@@ -147,7 +147,17 @@ class BaseLoRAIntegrationTest:
         # The decorator transforms based on test_type:
         # - body: {"name": "x", "src": "y"} -> {"lora_name": "x", "lora_path": "y"}
         # - query_params: ?name=x&src=y -> {"lora_name": "x", "lora_path": "y"}
-        @sagemaker_standards.register_load_adapter_handler(request_shape=request_shape)
+        decorator_args = (
+            dict(request_shape=request_shape)
+            if test_type == "body"
+            else dict(
+                engine_request_lora_name_path="body.lora_name",
+                engine_request_lora_src_path="body.lora_path",
+                engine_request_model_cls=EngineLoadLoRAAdapterRequest,
+            )
+        )
+
+        @sagemaker_standards.register_load_adapter_handler(**decorator_args)
         @self.router.post("/v1/load_lora_adapter")
         async def load_lora_adapter(
             request: EngineLoadLoRAAdapterRequest, raw_request: Request
@@ -165,7 +175,14 @@ class BaseLoRAIntegrationTest:
         # Handler 2: Unload adapter
         # The decorator extracts path param: /adapters/{adapter_name} -> {"lora_name": adapter_name}
         @sagemaker_standards.register_unload_adapter_handler(
-            request_shape={"lora_name": "path_params.adapter_name"}
+            **(
+                dict(request_shape={"lora_name": "path_params.adapter_name"})
+                if test_type == "body"
+                else dict(
+                    engine_request_lora_name_path="body.lora_name",
+                    engine_request_model_cls=EngineUnloadLoRAAdapterRequest,
+                )
+            )
         )
         @self.router.post("/v1/unload_lora_adapter")
         async def unload_lora_adapter(
@@ -186,7 +203,7 @@ class BaseLoRAIntegrationTest:
         # Handler 3: Invocations with adapter injection
         # The decorator injects adapter ID from header into body: header -> body["model"]
         @self.router.post("/invocations")
-        @sagemaker_standards.inject_adapter_id("model")
+        @sagemaker_standards.inject_adapter_id("body.model", mode="replace")
         async def invocations(request: Request):
             body_bytes = await request.body()
             import json
@@ -379,14 +396,14 @@ class TestLoRARequestResponseTransformation(BaseLoRAIntegrationTest):
         router = APIRouter()
 
         @router.post("/invocations")
-        @sagemaker_standards.inject_adapter_id("body.model.lora_name")
+        @sagemaker_standards.inject_adapter_id("body.model.lora_name", mode="replace")
         async def invocations(request: Request):
             body_bytes = await request.body()
             import json
 
             body = json.loads(body_bytes.decode())
             adapter_id = (
-                body.get("body", {}).get("model", {}).get("lora_name", "base-model")
+                body.get("model", {}).get("lora_name", "base-model")
             )
 
             if adapter_id in self.adapters:
@@ -457,7 +474,15 @@ class TestLoRARequestResponseTransformation(BaseLoRAIntegrationTest):
         }
 
         @sagemaker_standards.register_load_adapter_handler(
-            request_shape=nested_request_shape
+            **(
+                dict(request_shape=nested_request_shape)
+                if test_type == "body"
+                else dict(
+                    engine_request_lora_name_path="body.adapter_config.name",
+                    engine_request_lora_src_path="body.source_path",
+                    engine_request_model_cls=NestedLoadLoRAAdapterRequest,
+                )
+            )
         )
         @self.router.post("/v1/nested_load")
         async def nested_load(
@@ -513,16 +538,6 @@ class TestLoRAErrorCases(BaseLoRAIntegrationTest):
             @sagemaker_standards.inject_adapter_id(1234)
             async def invocations_nonstr(request: Request):
                 pass
-
-    def test_inject_adapter_id_valid_path(self):
-        """Test that inject_adapter_id accepts valid adapter paths."""
-        # Test that the function works correctly with a simple path
-        decorator = sagemaker_standards.inject_adapter_id("model")
-        assert callable(decorator)
-
-        # Test that it works with nested paths too
-        decorator_nested = sagemaker_standards.inject_adapter_id("body.model.lora_name")
-        assert callable(decorator_nested)
 
     def test_load_adapter_missing_required_field(self):
         """Test loading adapter with missing required field.
