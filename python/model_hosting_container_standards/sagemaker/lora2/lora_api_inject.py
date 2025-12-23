@@ -90,7 +90,6 @@ def inject(engine_request_paths: SageMakerLoRAInjectEngineRequestPaths, raw_requ
                 mode=inject_definition.mode,
                 separator=inject_definition.separator
             )
-    logger.info(transformed_request)
     return transformed_request
 
 
@@ -105,7 +104,6 @@ def lora_inject_decorator_with_params(
             if raw_request.headers.get(SageMakerLoRAApiHeader.ADAPTER_IDENTIFIER):
                 # only transform request if sagemaker adapter id header is present
                 transformed_request = inject(engine_request_paths, raw_request, request_dict)
-                logger.info(f"{transformed_request=}")
                 raw_request = _apply_to_raw_request(raw_request, transformed_request)
             if engine_request_model_cls:
                 raw_response = await func(
@@ -122,8 +120,26 @@ def lora_inject_decorator_with_params(
         return lora_inject
     return lora_inject_decorator
 
+def validate_request_prefix_to_path(path: str, default: Optional[str] = "body.") -> str:
+    valid_prefixes = ["body.", "headers.", "query_params.", "path_params."]
+    if not any(path.startswith(prefix) for prefix in valid_prefixes):
+        logger.warning(f"Invalid path prefix. Must be one of {valid_prefixes}. Got: {path}")
+        if default:
+            logger.debug(f"Using default path prefix: {default + path}")
+            return default + path
+        else:
+            logger.debug("No default path prefix provided. Raising ValueError.")
+            raise ValueError(
+                f"Invalid path prefix. Must be one of {valid_prefixes}. Got: {path}"
+            )
+    return path
+
 def create_lora_inject(adapter_path: str, mode: str = "replace", separator: str = None, engine_request_model_cls: Optional[BaseModel] = None):
-    inject_definition = InjectDefinition(path=adapter_path, mode=mode, separator=separator)
+    inject_definition = InjectDefinition(
+        path=validate_request_prefix_to_path(adapter_path),
+        mode=mode,
+        separator=separator,
+    )
     engine_request_paths = {
         "adapter_id": inject_definition
     }
