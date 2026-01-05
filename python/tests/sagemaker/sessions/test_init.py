@@ -190,7 +190,6 @@ class TestRegisterCloseSessionHandler:
         ):
             register_close_session_handler(
                 engine_request_session_id_path=None,
-                content_path="`Session closed`",
             )
 
     def test_raises_error_when_engine_request_session_id_path_is_empty(self):
@@ -204,5 +203,4 @@ class TestRegisterCloseSessionHandler:
         ):
             register_close_session_handler(
                 engine_request_session_id_path="",
-                content_path="`Session closed`",
             )
