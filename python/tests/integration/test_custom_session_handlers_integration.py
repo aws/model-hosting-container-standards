@@ -35,6 +35,9 @@ from pydantic import BaseModel
 
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 from model_hosting_container_standards.common.handler.registry import handler_registry
+from model_hosting_container_standards.common.transforms.defaults_config import (
+    _transform_defaults_config,
+)
 from model_hosting_container_standards.sagemaker.sessions.manager import (
     init_session_manager_from_env,
 )
@@ -62,8 +65,13 @@ def enable_sessions_for_integration(monkeypatch):
     monkeypatch.setenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", "true")
     monkeypatch.setenv("SAGEMAKER_SESSIONS_PATH", temp_dir)
     monkeypatch.setenv("SAGEMAKER_SESSIONS_EXPIRATION", "600")
+    monkeypatch.setenv(
+        "SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS",
+        json.dumps({"body.capacity_of_str_len": 1024}),
+    )
 
     init_session_manager_from_env()
+    _transform_defaults_config.update_from_env_vars()
 
     yield
 
@@ -72,7 +80,9 @@ def enable_sessions_for_integration(monkeypatch):
     monkeypatch.delenv("SAGEMAKER_ENABLE_STATEFUL_SESSIONS", raising=False)
     monkeypatch.delenv("SAGEMAKER_SESSIONS_PATH", raising=False)
     monkeypatch.delenv("SAGEMAKER_SESSIONS_EXPIRATION", raising=False)
+    monkeypatch.delenv("SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS", raising=False)
     init_session_manager_from_env()
+    _transform_defaults_config.update_from_env_vars()
 
 
 @pytest.fixture(autouse=True)
@@ -142,18 +152,15 @@ class BaseCustomHandlerIntegrationTest:
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
             engine_response_session_id_path="body",
-            request_shape={
-                "capacity_of_str_len": "`1024`",
-            },
-            content_path="`successfully created session.`",
+            engine_request_model_cls=CreateSessionRequest,
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
         async def create_session(obj: CreateSessionRequest, request: Request):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            engine_request_session_id_path="session_id",
-            content_path="`successfully closed session.`",
+            engine_request_session_id_path="body.session_id",
+            engine_request_model_cls=CloseSessionRequest,
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
         async def close_session(obj: CloseSessionRequest, request: Request):
@@ -345,18 +352,15 @@ class TestCustomSessionEndToEndFlow(BaseCustomHandlerIntegrationTest):
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
             engine_response_session_id_path="body.session_id",  # Nested
-            request_shape={
-                "capacity_of_str_len": "`1024`",
-            },
-            content_path="`successfully created session.`",
+            engine_request_model_cls=CreateSessionRequest,
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
         async def create_session(obj: CreateSessionRequest, request: Request):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            engine_request_session_id_path="session_id",
-            content_path="`successfully closed session.`",
+            engine_request_session_id_path="body.session_id",
+            engine_request_model_cls=CloseSessionRequest,
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
         async def close_session(obj: CloseSessionRequest, request: Request):
@@ -478,16 +482,15 @@ class TestCustomHandlerResponseFormats(BaseCustomHandlerIntegrationTest):
 
         @sagemaker_standards.register_create_session_handler(
             engine_response_session_id_path=response_path,
-            request_shape={"capacity_of_str_len": "`1024`"},
-            content_path="`successfully created session.`",
+            engine_request_model_cls=CreateSessionRequest,
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
         async def create_session(obj: CreateSessionRequest, request: Request):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            engine_request_session_id_path="session_id",
-            content_path="`successfully closed session.`",
+            engine_request_session_id_path="body.session_id",
+            engine_request_model_cls=CloseSessionRequest,
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
         async def close_session(obj: CloseSessionRequest, request: Request):
@@ -548,16 +551,15 @@ class TestCustomHandlerMultipleInvocations(BaseCustomHandlerIntegrationTest):
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
             engine_response_session_id_path="body.session_id",
-            request_shape={"capacity_of_str_len": "`1024`"},
-            content_path="`successfully created session.`",
+            engine_request_model_cls=CreateSessionRequest,
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
         async def create_session(obj: CreateSessionRequest, request: Request):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            engine_request_session_id_path="session_id",
-            content_path="`successfully closed session.`",
+            engine_request_session_id_path="body.session_id",
+            engine_request_model_cls=CloseSessionRequest,
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
         async def close_session(obj: CloseSessionRequest, request: Request):
@@ -648,16 +650,15 @@ class TestCustomHandlerWithSessionIdInjection(BaseCustomHandlerIntegrationTest):
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
             engine_response_session_id_path="body.session_id",
-            request_shape={"capacity_of_str_len": "`1024`"},
-            content_path="`successfully created session.`",
+            engine_request_model_cls=CreateSessionRequest,
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
         async def create_session(obj: CreateSessionRequest, request: Request):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            engine_request_session_id_path="session_id",
-            content_path="`successfully closed session.`",
+            engine_request_session_id_path="body.session_id",
+            engine_request_model_cls=CloseSessionRequest,
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
         async def close_session(obj: CloseSessionRequest, request: Request):
@@ -762,16 +763,15 @@ class TestCustomHandlerSessionPersistence(BaseCustomHandlerIntegrationTest):
     def setup_common_handlers(self):
         @sagemaker_standards.register_create_session_handler(
             engine_response_session_id_path="body.session_id",
-            request_shape={"capacity_of_str_len": "`1024`"},
-            content_path="`successfully created session.`",
+            engine_request_model_cls=CreateSessionRequest,
         )
         @self.app.api_route("/open_session", methods=["GET", "POST"])
         async def create_session(obj: CreateSessionRequest, request: Request):
             return self.custom_create_session(obj, request)
 
         @sagemaker_standards.register_close_session_handler(
-            engine_request_session_id_path="session_id",
-            content_path="`successfully closed session.`",
+            engine_request_session_id_path="body.session_id",
+            engine_request_model_cls=CloseSessionRequest,
         )
         @self.app.api_route("/close_session", methods=["GET", "POST"])
         async def close_session(obj: CloseSessionRequest, request: Request):
