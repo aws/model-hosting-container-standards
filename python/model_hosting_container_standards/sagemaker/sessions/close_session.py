@@ -14,6 +14,8 @@ from ...common.transforms.defaults_config import _transform_defaults_config
 from ...logging_config import logger
 from .models import SageMakerSessionHeader
 
+SAGEMAKER_HEADER_PREFIX = "X-Amzn-SageMaker-"
+
 
 def to_hyphens(field_name: str) -> str:
     return field_name.replace("_", "-")
@@ -21,7 +23,7 @@ def to_hyphens(field_name: str) -> str:
 
 def to_sagemaker_headers(field_name: str) -> str:
     field_name = to_hyphens(field_name)
-    field_name = "X-Amzn-SageMaker-" + field_name.title()
+    field_name = SAGEMAKER_HEADER_PREFIX + field_name.title()
     return field_name
 
 

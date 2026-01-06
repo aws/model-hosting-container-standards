@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from http import HTTPStatus
 from typing import Any, Callable, Dict, Optional
 
+import jmespath
 from fastapi import Request, Response
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel, ValidationError
@@ -18,23 +19,69 @@ class BaseTransformRequestOutput(BaseModel):
 
 
 class BaseApiTransform2(ABC):
+    """
+    Base class for API transforms.
+
+    Only supports transforms for requests (SageMaker -> Engine).
+    """
+
     def __init__(
         self,
         original_function,
         engine_request_paths: Dict[str, Any],
-        engine_request_model_cls: BaseModel,
+        engine_request_model_cls: Optional[BaseModel] = None,
         engine_request_defaults: Optional[Dict[str, Any]] = None,
     ):
-        self.original_function = original_function
-        self.engine_request_paths = engine_request_paths
-        self.engine_request_model_cls = engine_request_model_cls
-        self.engine_request_defaults = engine_request_defaults
+        self._init_validate(
+            original_function,
+            engine_request_paths,
+            engine_request_model_cls,
+            engine_request_defaults,
+        )
 
         logger.debug(
             f"Initialized {self.__class__.__name__} with paths: {engine_request_paths}"
         )
         if engine_request_defaults:
             logger.debug(f"Using request defaults: {engine_request_defaults}")
+
+    def _init_validate(
+        self,
+        original_function,
+        engine_request_paths: Dict[str, Any],
+        engine_request_model_cls: Optional[BaseModel],
+        engine_request_defaults: Optional[Dict[str, Any]],
+    ):
+        self.original_function = original_function
+
+        self.engine_request_paths = engine_request_paths or {}
+        self.engine_request_model_cls = engine_request_model_cls
+        self.engine_request_defaults = engine_request_defaults or {}
+
+        for sagemaker_param, engine_path in self.engine_request_paths.items():
+            if engine_path is None:
+                raise ValueError(
+                    f"Engine path for {sagemaker_param} is None. This is not allowed."
+                )
+            elif engine_path == "":
+                raise ValueError(
+                    f"Engine path for {sagemaker_param} is an empty string. This is not allowed."
+                )
+            elif not isinstance(engine_path, str):
+                raise ValueError(
+                    f"Engine path for {sagemaker_param} is not a string: {engine_path}"
+                )
+            else:
+                try:
+                    jmespath.compile(engine_path)
+                except jmespath.exceptions.ParseError as e:
+                    raise ValueError(
+                        f"Engine path for {sagemaker_param} is not a valid JMESPath expression: {engine_path}"
+                    ) from e
+            self._init_validate_sagemaker_params(sagemaker_param)
+
+    @abstractmethod
+    def _init_validate_sagemaker_params(self, sagemaker_param: str) -> None: ...
 
     @abstractmethod
     async def validate_request(self, raw_request: Request) -> BaseModel: ...
@@ -104,7 +151,9 @@ class BaseApiTransform2(ABC):
         if transformed_request.get("query_params"):
             raw_request.query_params = transformed_request.get("query_params")
         if transformed_request.get("body"):
-            raw_request._body = json.dumps(transformed_request.get("body")).encode()
+            raw_request._body = json.dumps(
+                transformed_request.get("body"), sort_keys=True
+            ).encode()
         if transformed_request.get("path_params"):
             raw_request.path_params = transformed_request.get("path_params")
         return raw_request
@@ -172,10 +221,11 @@ class BaseApiTransform2(ABC):
                 logger.debug("Request body validation successful")
                 return await func(transformed_request_body, raw_request)
             except ValidationError as e:
-                logger.error(f"Request validation failed: {e}")
+                error_content = e.json(include_url=False)
+                logger.error(f"Request validation failed: {error_content}")
                 raise HTTPException(
                     status_code=HTTPStatus.FAILED_DEPENDENCY.value,
-                    detail=e.json(include_url=False),
+                    detail=error_content,
                 )
         else:
             logger.debug(
@@ -246,8 +296,13 @@ class BaseApiTransform2(ABC):
                 raw_response, transform_request_output
             )
 
-    async def transform(self, raw_request):
-        logger.debug("Starting  API transformation")
+    async def transform(self, raw_request: Request):
+        """
+        Transforms the incoming raw FastAPI Request object,
+        invokes the original function,
+        and naively transforms the response.
+        """
+        logger.debug("Starting API transformation")
 
         try:
             validated_request = await self.validate_request(raw_request)
