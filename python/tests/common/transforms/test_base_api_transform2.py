@@ -110,7 +110,6 @@ class TestBaseTransformRequestOutput:
         """
         Test field validation for BaseTransformRequestOutput.
         """
-        # TODO: Test various invalid inputs and verify ValidationError is raised
         bad_test_dict_0 = {}
         with pytest.raises(ValidationError) as e_0:
             # Missing required field `raw_request`
@@ -355,8 +354,47 @@ class TestBaseApiTransform2RequestTransformation:
         - Parent structures are created automatically
         - Multiple nested mappings don't interfere with each other
         """
-        # TODO: Test complex nested path transformations
-        pass
+
+        # Test complex nested path transformations
+        def _dummy_init_validate(*args, **kwargs):
+            pass
+
+        ConcreteApiTransform._init_validate_sagemaker_params = MagicMock(
+            wraps=_dummy_init_validate
+        )
+        api_transform = ConcreteApiTransform(
+            original_function=dummy_original_function_with_model,
+            engine_request_paths={
+                "param1": "body.config.model.parameters.param1",
+                "param2": "body.config.inference.param2",
+                "param3": "body.metadata.param3",
+            },
+        )
+
+        test_sagemaker_request_dict = {
+            "param1": "value1",
+            "param2": "value2",
+            "param3": "value3",
+        }
+
+        test_transformed_request = {"body": {}}
+
+        expected = {
+            "body": {
+                "config": {
+                    "model": {"parameters": {"param1": "value1"}},
+                    "inference": {"param2": "value2"},
+                },
+                "metadata": {"param3": "value3"},
+            }
+        }
+
+        actual = api_transform._transform_sagemaker_request_to_engine(
+            transformed_request=test_transformed_request,
+            sagemaker_request_dict=test_sagemaker_request_dict,
+        )
+
+        assert actual == expected
 
     @patch(
         "model_hosting_container_standards.common.transforms.base_api_transform2.logger"
@@ -393,14 +431,32 @@ class TestBaseApiTransform2RequestTransformation:
     def test_transform_sagemaker_request_to_engine_missing_params(self):
         """
         Test transformation when SageMaker request is missing expected parameters.
-
-        Should verify:
-        - Missing parameters result in None values being set
-        - No exceptions are raised for missing keys
-        - Logger handles missing parameters gracefully
         """
-        # TODO: Test with incomplete SageMaker request data
-        pass
+        # Test with incomplete SageMaker request data
+        test_sagemaker_request_dict = {}  # Missing param1
+        test_transformed_request = {"body": {}}
+        expected = {"body": {"engine_param1": None}}
+
+        actual = self.api_transform._transform_sagemaker_request_to_engine(
+            transformed_request=test_transformed_request,
+            sagemaker_request_dict=test_sagemaker_request_dict,
+        )
+
+        assert actual == expected
+
+        # Test with partially missing parameters
+        test_sagemaker_request_dict_partial = {
+            "param1": "value1"
+        }  # param2 missing but has default
+        test_transformed_request_partial = {"body": {}}
+        expected_partial = {"body": {"engine_param1": "value1"}}
+
+        actual_partial = self.api_transform._transform_sagemaker_request_to_engine(
+            transformed_request=test_transformed_request_partial,
+            sagemaker_request_dict=test_sagemaker_request_dict_partial,
+        )
+
+        assert actual_partial == expected_partial
 
     @patch(
         "model_hosting_container_standards.common.transforms.base_api_transform2.set_value",
@@ -546,7 +602,6 @@ class TestBaseApiTransform2RequestTransformation:
         - Additional fields are extracted and included
         - Logger debug messages for start and completion
         """
-        # TODO: Test end-to-end request transformation
         validated_request = {"param1": "value1"}
         if validated_request_type == "model":
             validated_request = MockValidatedRequest.model_validate(validated_request)
@@ -1126,26 +1181,26 @@ class TestBaseApiTransform2IntegrationFlow:
 class TestBaseApiTransform2AbstractMethods:
     """Test suite for abstract method implementations and contracts."""
 
-    def test_validate_request_abstract_method(self):
+    def test_cannot_instantiate_base_class_directly(self):
         """
-        Test that validate_request is properly abstract.
+        Test that BaseApiTransform2 cannot be instantiated directly.
 
         Should verify:
-        - Cannot instantiate BaseApiTransform2 directly
-        - Subclasses must implement validate_request
-        - Method signature is enforced
+        - TypeError is raised when trying to instantiate BaseApiTransform2
+        - Error message mentions abstract methods
+        - All three abstract methods are listed in the error
         """
-        # TODO: Test abstract method enforcement
-        pass
+        # Test direct instantiation failure
+        with pytest.raises(TypeError) as exc_info:
+            BaseApiTransform2(
+                original_function=dummy_original_function_with_model,
+                engine_request_paths={"param1": "body.engine_param1"},
+            )
 
-    def test_extract_additional_fields_abstract_method(self):
-        """
-        Test that _extract_additional_fields is properly abstract.
+        error_message = str(exc_info.value)
+        assert "Can't instantiate abstract class BaseApiTransform2" in error_message
 
-        Should verify:
-        - Cannot instantiate BaseApiTransform2 directly
-        - Subclasses must implement _extract_additional_fields
-        - Method signature is enforced
-        """
-        # TODO: Test abstract method enforcement
-        pass
+        # Check that all three abstract methods are mentioned
+        assert "validate_request" in error_message
+        assert "_extract_additional_fields" in error_message
+        assert "_init_validate_sagemaker_params" in error_message
