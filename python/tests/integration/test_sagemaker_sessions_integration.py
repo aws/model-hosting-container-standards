@@ -635,5 +635,225 @@ class TestSessionsDisabled:
         assert SESSION_DISABLED_ERROR_DETAIL in response.text
 
 
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+class TestSessionIdPathInjection(BaseSessionIntegrationTest):
+    """Test request_session_id_path parameter for injecting session ID into request body."""
+
+    def setup_handlers(self):
+        """Define handlers with request_session_id_path parameter."""
+
+        @self.router.post("/invocations-with-path")
+        @sagemaker_standards.stateful_session_manager(
+            engine_request_session_id_path="session_id"
+        )
+        async def invocations_with_path(request: Request):
+            """Handler that injects session ID into request body at 'session_id' key."""
+            body_bytes = await request.body()
+            body = json.loads(body_bytes.decode())
+
+            # Capture for test verification
+            self.capture.capture(
+                "invocation_with_path", body.get("session_id"), {"body": body}
+            )
+
+            return Response(
+                status_code=200,
+                content=json.dumps(
+                    {
+                        "message": "success",
+                        "session_id_from_body": body.get("session_id"),
+                        "echo": body,
+                    }
+                ),
+            )
+
+        @self.router.post("/invocations-nested-path")
+        @sagemaker_standards.stateful_session_manager(
+            engine_request_session_id_path="metadata.session_id"
+        )
+        async def invocations_nested_path(request: Request):
+            """Handler that injects session ID into nested path in request body."""
+            body_bytes = await request.body()
+            body = json.loads(body_bytes.decode())
+
+            # Capture for test verification
+            session_id = (
+                body.get("metadata", {}).get("session_id")
+                if isinstance(body.get("metadata"), dict)
+                else None
+            )
+            self.capture.capture("invocation_nested_path", session_id, {"body": body})
+
+            return Response(
+                status_code=200,
+                content=json.dumps(
+                    {
+                        "message": "success",
+                        "session_id_from_body": session_id,
+                        "echo": body,
+                    }
+                ),
+            )
+
+    def test_session_id_injected_into_body(self):
+        """Test that session ID from header is injected into request body."""
+        # Create a session
+        create_response = self.client.post(
+            "/invocations-with-path", json={"requestType": "NEW_SESSION"}
+        )
+        session_id = extract_session_id_from_header(
+            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
+        )
+
+        # Make request with session ID in header
+        self.capture.clear()
+        response = self.client.post(
+            "/invocations-with-path",
+            json={"prompt": "test request"},
+            headers={SageMakerSessionHeader.SESSION_ID: session_id},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.text)
+
+        # Verify session ID was injected into body
+        assert data["session_id_from_body"] == session_id
+        assert data["echo"]["session_id"] == session_id
+        assert data["echo"]["prompt"] == "test request"
+
+    def test_session_id_injected_into_nested_path(self):
+        """Test that session ID is injected into nested path in request body."""
+        # Create a session
+        create_response = self.client.post(
+            "/invocations-nested-path", json={"requestType": "NEW_SESSION"}
+        )
+        session_id = extract_session_id_from_header(
+            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
+        )
+
+        # Make request with session ID in header
+        self.capture.clear()
+        response = self.client.post(
+            "/invocations-nested-path",
+            json={"prompt": "test request", "metadata": {"user": "test"}},
+            headers={SageMakerSessionHeader.SESSION_ID: session_id},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.text)
+
+        # Verify session ID was injected into nested path
+        assert data["session_id_from_body"] == session_id
+        assert data["echo"]["metadata"]["session_id"] == session_id
+        assert data["echo"]["metadata"]["user"] == "test"
+        assert data["echo"]["prompt"] == "test request"
+
+    def test_session_id_not_injected_without_header(self):
+        """Test that session ID is not injected when header is not present."""
+        response = self.client.post(
+            "/invocations-with-path",
+            json={"prompt": "test request"},
+            # No session header
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.text)
+
+        # Verify session ID was not injected
+        assert data["session_id_from_body"] is None
+        assert "session_id" not in data["echo"] or data["echo"]["session_id"] is None
+
+    def test_session_id_injection_with_multiple_requests(self):
+        """Test that session ID injection works across multiple requests."""
+        # Create a session
+        create_response = self.client.post(
+            "/invocations-with-path", json={"requestType": "NEW_SESSION"}
+        )
+        session_id = extract_session_id_from_header(
+            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
+        )
+
+        # Make multiple requests with the same session ID
+        for i in range(3):
+            response = self.client.post(
+                "/invocations-with-path",
+                json={"prompt": f"request {i+1}"},
+                headers={SageMakerSessionHeader.SESSION_ID: session_id},
+            )
+
+            assert response.status_code == 200
+            data = json.loads(response.text)
+            assert data["session_id_from_body"] == session_id
+
+    def test_different_sessions_inject_different_ids(self):
+        """Test that different sessions inject their respective IDs."""
+        # Create two sessions
+        create1 = self.client.post(
+            "/invocations-with-path", json={"requestType": "NEW_SESSION"}
+        )
+        session1_id = extract_session_id_from_header(
+            create1.headers[SageMakerSessionHeader.NEW_SESSION_ID]
+        )
+
+        create2 = self.client.post(
+            "/invocations-with-path", json={"requestType": "NEW_SESSION"}
+        )
+        session2_id = extract_session_id_from_header(
+            create2.headers[SageMakerSessionHeader.NEW_SESSION_ID]
+        )
+
+        # Make requests with each session
+        response1 = self.client.post(
+            "/invocations-with-path",
+            json={"prompt": "session 1"},
+            headers={SageMakerSessionHeader.SESSION_ID: session1_id},
+        )
+        response2 = self.client.post(
+            "/invocations-with-path",
+            json={"prompt": "session 2"},
+            headers={SageMakerSessionHeader.SESSION_ID: session2_id},
+        )
+
+        # Verify each request got the correct session ID
+        data1 = json.loads(response1.text)
+        data2 = json.loads(response2.text)
+
+        assert data1["session_id_from_body"] == session1_id
+        assert data2["session_id_from_body"] == session2_id
+        assert session1_id != session2_id
+
+    def test_session_id_injection_preserves_existing_body_fields(self):
+        """Test that session ID injection doesn't overwrite other body fields."""
+        # Create a session
+        create_response = self.client.post(
+            "/invocations-with-path", json={"requestType": "NEW_SESSION"}
+        )
+        session_id = extract_session_id_from_header(
+            create_response.headers[SageMakerSessionHeader.NEW_SESSION_ID]
+        )
+
+        # Make request with multiple body fields
+        original_body = {
+            "prompt": "test",
+            "temperature": 0.7,
+            "max_tokens": 100,
+            "metadata": {"user": "test_user", "request_id": "123"},
+        }
+
+        response = self.client.post(
+            "/invocations-with-path",
+            json=original_body,
+            headers={SageMakerSessionHeader.SESSION_ID: session_id},
+        )
+
+        assert response.status_code == 200
+        data = json.loads(response.text)
+
+        # Verify session ID was added
+        assert data["echo"]["session_id"] == session_id
+
+        # Verify all original fields are preserved
+        assert data["echo"]["prompt"] == "test"
+        assert data["echo"]["temperature"] == 0.7
+        assert data["echo"]["max_tokens"] == 100
+        assert data["echo"]["metadata"]["user"] == "test_user"
+        assert data["echo"]["metadata"]["request_id"] == "123"
