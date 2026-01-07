@@ -39,6 +39,10 @@ class CreateSessionApiTransform(BaseApiTransform2):
     async def validate_request(self, raw_request):
         return {}
 
+    def _init_validate_sagemaker_params(self, sagemaker_param):
+        # TODO: fill out what valid sagemaker params can be
+        pass
+
     def _extract_additional_fields(self, validated_request, raw_request: Request):
         # no additional fields needed
         return {}
@@ -86,36 +90,33 @@ class CreateSessionApiTransform(BaseApiTransform2):
         )
 
 
-def create_create_session_transform():
+def create_create_session_transform(
+    engine_request_paths: Dict[str, Any],
+    engine_response_session_id_path: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
+    engine_request_defaults: Optional[Dict[str, Any]] = None,
+):
     handler_type = "create_session"
 
-    def create_session_decorator_with_params(
-        engine_request_paths: Dict[str, Any],
-        engine_response_session_id_path: Optional[str] = None,
-        engine_request_model_cls: Optional[BaseModel] = None,
-        engine_request_defaults: Optional[Dict[str, Any]] = None,
-    ):
-        def create_session_decorator(original_func):
-            create_session_transform = CreateSessionApiTransform(
-                original_func,
-                engine_request_paths,
-                engine_response_session_id_path,
-                engine_request_model_cls,
-                engine_request_defaults=engine_request_defaults,
-            )
+    def create_session_decorator(original_func):
+        create_session_transform = CreateSessionApiTransform(
+            original_func,
+            engine_request_paths,
+            engine_response_session_id_path,
+            engine_request_model_cls,
+            engine_request_defaults=engine_request_defaults,
+        )
 
-            async def create_session_transform_wrapper(raw_request: Request):
-                return await create_session_transform.transform(raw_request)
+        async def create_session_transform_wrapper(raw_request: Request):
+            return await create_session_transform.transform(raw_request)
 
-            handler_registry.set_handler(handler_type, create_session_transform_wrapper)
-            logger.info(
-                f"[{handler_type.upper()}] Registered transform handler for {original_func.__name__}"
-            )
-            return create_session_transform_wrapper
+        handler_registry.set_handler(handler_type, create_session_transform_wrapper)
+        logger.info(
+            f"[{handler_type.upper()}] Registered transform handler for {original_func.__name__}"
+        )
+        return create_session_transform_wrapper
 
-        return create_session_decorator
-
-    return create_session_decorator_with_params
+    return create_session_decorator
 
 
 def _register_create_session_handler(
@@ -126,7 +127,7 @@ def _register_create_session_handler(
     logger.debug(
         f"Handler parameters - response_session_id_path: {engine_response_session_id_path}"
     )
-    return create_create_session_transform()(
+    return create_create_session_transform(
         engine_request_paths={},
         engine_response_session_id_path=engine_response_session_id_path,
         engine_request_model_cls=engine_request_model_cls,
