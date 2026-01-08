@@ -36,22 +36,27 @@ class CreateSessionApiTransform(BaseApiTransform2):
             engine_response_session_id_path
         )
 
-    async def validate_request(self, raw_request):
+    async def validate_request(self, raw_request) -> dict:
         return {}
 
-    def _init_validate_sagemaker_params(self, sagemaker_param):
+    def _init_validate_sagemaker_params(self, sagemaker_param) -> None:
         # TODO: fill out what valid sagemaker params can be
         pass
 
-    def _extract_additional_fields(self, validated_request, raw_request: Request):
-        # no additional fields needed
+    def _extract_additional_fields(
+        self, validated_request, raw_request: Request
+    ) -> dict:
+        """
+        CreateSessionApiTransform does not need to extract any additional fields from the validated request
+        nor the raw request.
+        """
         return {}
 
     def _generate_successful_response_content(
         self,
         raw_response: Response,
         transform_request_output: BaseTransformRequestOutput,
-    ):
+    ) -> str:
         session_id = transform_request_output.additional_fields.get("session_id")
         content_prefix = "Successfully created session"
         if session_id:
@@ -63,12 +68,13 @@ class CreateSessionApiTransform(BaseApiTransform2):
         self,
         raw_response: Response,
         transform_request_output: BaseTransformRequestOutput,
-    ):
+    ) -> Response:
         # Overwrite base class method _transform_ok_response
         serialized_response = serialize_response(raw_response)
         logger.debug(
             f"Transforming engine response to SageMaker format. Input: {serialized_response}"
         )
+        # Use compiled JMESPath expression to search serialized response for engine data
         session_id = self.engine_response_session_id_jmesexpr.search(
             serialized_response
         )
@@ -78,6 +84,7 @@ class CreateSessionApiTransform(BaseApiTransform2):
                 status_code=HTTPStatus.INTERNAL_SERVER_ERROR.value,
                 detail="Session ID not found in response",
             )
+        # Set additional fields to include "session_id" value
         transform_request_output.additional_fields["session_id"] = session_id
         return Response(
             status_code=HTTPStatus.OK.value,
@@ -125,7 +132,7 @@ def _register_create_session_handler(
 ):
     logger.info("Registering create session handler")
     logger.debug(
-        f"Handler parameters - response_session_id_path: {engine_response_session_id_path}"
+        f"Handler parameter - engine_response_session_id_path: {engine_response_session_id_path}"
     )
     return create_create_session_transform(
         engine_request_paths={},

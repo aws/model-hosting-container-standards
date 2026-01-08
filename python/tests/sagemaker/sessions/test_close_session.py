@@ -360,6 +360,7 @@ class TestCreateCloseSessionTransform:
         handler_registry.clear()
 
     def teardown_method(self):
+        """Clean up test fixtures after each test method."""
         handler_registry.clear()
 
     @pytest.mark.asyncio
@@ -422,6 +423,7 @@ class TestRegisterCloseSessionHandler:
         handler_registry.clear()
 
     def teardown_method(self):
+        """Clean up test fixtures after each test method."""
         handler_registry.clear()
 
     @pytest.mark.asyncio
@@ -446,15 +448,6 @@ class TestRegisterCloseSessionHandler:
     ):
         """
         Test _register_close_session_handler comprehensive functionality.
-
-        Should verify:
-        - Function accepts engine_request_session_id_path parameter
-        - Optional engine_request_model_cls parameter works
-        - session_id is mapped to provided path correctly
-        - close_session_defaults from config are used
-        - Info and debug log messages are generated
-        - Function returns decorator result
-        - Registration completes successfully
         """
         mock_transform_defaults_config.close_session_defaults = {
             "body.additional_param": "value"
