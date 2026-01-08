@@ -43,7 +43,7 @@ Configure supervisor behavior using the unified `SUPERVISOR_*` environment varia
 
 ### Default Behavior
 - **Config file**: `/tmp/supervisord.conf` (generated automatically)
-- **Auto-recovery**: Disabled by default (enable with `PROCESS_AUTO_RECOVERY=true`)
+- **Auto-recovery**: Enabled by default (disable with `PROCESS_AUTO_RECOVERY=false`)
 - **Max retries**: 3 attempts (when auto-recovery is enabled)
 - **Log level**: info
 
@@ -54,7 +54,7 @@ Use these simple environment variables for common settings:
 
 ```bash
 # Basic application behavior
-export PROCESS_AUTO_RECOVERY=true                   # Auto-restart on failure (default: false)
+export PROCESS_AUTO_RECOVERY=false                  # Auto-restart on failure (default: true)
 export PROCESS_MAX_START_RETRIES=3                  # Max restart attempts (default: 3, only applies when auto-recovery is enabled)
 export LOG_LEVEL=info                               # Log level (default: info, options: debug, info, warn, error, critical)
 ```
@@ -242,8 +242,8 @@ pip install supervisor
 
 **Process keeps restarting**
 ```bash
-# Note: Auto-recovery is disabled by default
-# If you enabled it and want to see the actual error, disable it:
+# Note: Auto-recovery is enabled by default
+# If you want to see the actual error without restarts, disable it:
 export PROCESS_AUTO_RECOVERY=false
 ```
 

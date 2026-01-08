@@ -292,8 +292,8 @@ class TestHelperFunctions:
         env = {k: v for k, v in os.environ.items() if k != "PROCESS_AUTO_RECOVERY"}
         with patch.dict(os.environ, env, clear=True):
             assert (
-                _is_supervisor_enabled() is False
-            ), "Default should be False when PROCESS_AUTO_RECOVERY is not set"
+                _is_supervisor_enabled() is True
+            ), "Default should be True when PROCESS_AUTO_RECOVERY is not set"
 
     def test_launch_command_directly_no_args(self):
         """Test _launch_command_directly with no arguments."""

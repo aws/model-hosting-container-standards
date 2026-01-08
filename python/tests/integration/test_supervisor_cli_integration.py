@@ -466,8 +466,9 @@ exit(1)
         )
 
     def test_direct_launch_without_supervisor(self, clean_env):
-        """Test direct launch mode when PROCESS_AUTO_RECOVERY is false (default)."""
-        # No PROCESS_AUTO_RECOVERY set, should launch directly
+        """Test direct launch mode when PROCESS_AUTO_RECOVERY is explicitly false."""
+        # Explicitly set PROCESS_AUTO_RECOVERY=false to launch directly (default is now true)
+        env = {"PROCESS_AUTO_RECOVERY": "false"}
         result = subprocess.run(
             [
                 sys.executable,
@@ -477,7 +478,7 @@ exit(1)
                 "-c",
                 "print('Direct launch success'); import sys; sys.exit(0)",
             ],
-            env=os.environ,
+            env={**os.environ, **env},
             capture_output=True,
             text=True,
             timeout=10,

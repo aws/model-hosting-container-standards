@@ -1,7 +1,7 @@
 # MHCS Integration Runbook
 
 **Version**: 1.0  container
-**Last Updated**: November 16, 2025  
+**Last Updated**: November 16, 2025
 **Target Audience**: ML framework developers integrating with Amazon SageMaker
 
 ---
@@ -94,7 +94,7 @@
 
 ## 1. Introduction
 
-### 1.1 What is MHCS? 
+### 1.1 What is MHCS?
 
 Model Hosting Container Standards (MHCS) is a Python library that acts as a bridge between model hosting platforms and ML inference engines with rapidly evolving APIs. It standardizes how ML frameworks integrate with hosting platforms while maintaining backwards compatibility and adapting to changing engine interfaces.
 
@@ -276,10 +276,10 @@ async def invocations(request: Request) -> dict:
     """Model inference endpoint for SageMaker."""
     body = await request.json()
     prompt = body.get("prompt", "")
-    
+
     # Your framework's inference logic here
     result = f"Processed: {prompt}"
-    
+
     return {"predictions": [result]}
 
 # Bootstrap MHCS - must be called after handler definitions
@@ -354,10 +354,10 @@ async def invocations(request: Request) -> dict:
     body = await request.json()
     prompt = body.get("prompt", "")
     adapter_id = body.get("model", "base-model")  # Injected by decorator
-    
+
     # Your framework's inference logic with adapter
     result = f"[{adapter_id}] Processed: {prompt}"
-    
+
     return {"predictions": [result], "adapter_used": adapter_id}
 
 @sagemaker_standards.register_load_adapter_handler(
@@ -369,10 +369,10 @@ async def load_adapter(request: Request) -> dict:
     body = await request.json()
     adapter_name = body["adapter_name"]
     adapter_path = body.get("adapter_path", "")
-    
+
     # Your framework's adapter loading logic
     loaded_adapters[adapter_name] = {"path": adapter_path, "loaded": True}
-    
+
     return {"status": "success", "adapter_name": adapter_name}
 
 @sagemaker_standards.register_unload_adapter_handler(
@@ -382,12 +382,12 @@ async def load_adapter(request: Request) -> dict:
 async def unload_adapter(request: Request) -> dict:
     """Unload a LoRA adapter."""
     adapter_name = request.path_params.get("adapter_name")
-    
+
     # Your framework's adapter unloading logic
     if adapter_name in loaded_adapters:
         del loaded_adapters[adapter_name]
         return {"status": "success", "adapter_name": adapter_name}
-    
+
     return {"status": "not_found", "adapter_name": adapter_name}
 
 sagemaker_standards.bootstrap(app)
@@ -399,7 +399,7 @@ if __name__ == "__main__":
 
 **How it works**:
 - The LoRA decorators use the transform decorator system under the hood (see [Section 4: Transform Decorators](#4-transform-decorators) for details).
-- `@inject_adapter_id("model")` - Extracts adapter ID from `X-Amzn-SageMaker-Adapter-Identifier` header and injects it into the `model` field of the request body. 
+- `@inject_adapter_id("model")` - Extracts adapter ID from `X-Amzn-SageMaker-Adapter-Identifier` header and injects it into the `model` field of the request body.
 - `@register_load_adapter_handler` - Creates `POST /adapters` endpoint for loading adapters
 - `@register_unload_adapter_handler` - Creates `DELETE /adapters/{adapter_name}` endpoint for unloading adapters
 
@@ -471,16 +471,16 @@ async def invocations(request: Request) -> dict:
     """Inference with session management."""
     body = await request.json()
     prompt = body.get("prompt", "")
-    
+
     # Access session data if available
     session_id = request.headers.get("X-Amzn-SageMaker-Session-Id")
-    
+
     # Your framework's inference logic with session context
     if session_id:
         result = f"[Session {session_id}] Processed: {prompt}"
     else:
         result = f"Processed: {prompt}"
-    
+
     return {"predictions": [result]}
 
 sagemaker_standards.bootstrap(app)
@@ -726,10 +726,10 @@ The `bootstrap(app)` function is the central integration point that connects you
 ```python
 def bootstrap(app: FastAPI) -> FastAPI:
     """Configure a FastAPI application with SageMaker functionality.
-    
+
     Args:
         app: The FastAPI application instance to configure
-    
+
     Returns:
         The configured FastAPI app
     """
@@ -832,7 +832,7 @@ sequenceDiagram
     participant SageMaker Router
     participant Handler Registry
     participant Your Handler
-    
+
     Client->>FastAPI App: GET /ping
     FastAPI App->>Middleware: Process request
     Middleware->>SageMaker Router: Route to /ping
@@ -893,10 +893,10 @@ from fastapi import Request, Response
 @sagemaker_standards.register_ping_handler
 async def ping(request: Request) -> Response:
     """Health check handler for SageMaker.
-    
+
     Args:
         request: FastAPI Request object containing headers, body, etc.
-    
+
     Returns:
         Response: FastAPI Response object with status code and content
     """
@@ -912,19 +912,19 @@ from typing import Dict, Any
 @sagemaker_standards.register_invocation_handler
 async def invocations(request: Request) -> Dict[str, Any]:
     """Model inference handler for SageMaker.
-    
+
     Args:
         request: FastAPI Request object containing the inference request
-    
+
     Returns:
         Dict: JSON-serializable dictionary with predictions
     """
     body = await request.json()
     prompt = body.get("prompt", "")
-    
+
     # Your framework's inference logic
     result = your_model.generate(prompt)
-    
+
     return {"predictions": [result]}
 ```
 
@@ -948,11 +948,11 @@ sequenceDiagram
     participant MHCS Router
     participant Handler Registry
     participant Your Handler
-    
+
     Note over Client,Your Handler: Registration Phase (at startup)
     Your Handler->>Handler Registry: @register_ping_handler decorator
     Handler Registry->>Handler Registry: Store handler as "ping" type
-    
+
     Note over Client,Your Handler: Request Phase (at runtime)
     Client->>FastAPI: GET /ping
     FastAPI->>MHCS Router: Route to /ping endpoint
@@ -1028,13 +1028,13 @@ graph TD
     F -->|No| H{Register Decorator?}
     H -->|Yes| I[Use Framework Default Handler]
     H -->|No| J[No Handler Found]
-    
+
     C --> K[Handler Resolved]
     E --> K
     G --> K
     I --> K
     J --> L[Skip Route Creation]
-    
+
     style C fill:#ff6b6b
     style E fill:#ffa500
     style G fill:#ffd93d
@@ -1271,12 +1271,12 @@ This step-by-step checklist guides you through a complete MHCS integration. Foll
   @sagemaker_standards.register_ping_handler
   async def ping(request: Request) -> Response:
       return Response(status_code=200, content="Healthy")
-  
+
   @sagemaker_standards.register_invocation_handler
   async def invocations(request: Request) -> dict:
       # Your inference logic here
       ...
-  
+
   # Call bootstrap() last
   sagemaker_standards.bootstrap(app)
   ```
@@ -1364,13 +1364,13 @@ If your framework supports LoRA adapters, add these handlers:
   curl -X POST http://localhost:8000/adapters \
     -H "Content-Type: application/json" \
     -d '{"name": "my-adapter", "src": "/path/to/adapter"}'
-  
+
   # Use adapter
   curl -X POST http://localhost:8000/invocations \
     -H "Content-Type: application/json" \
     -H "X-Amzn-SageMaker-Adapter-Identifier: my-adapter" \
     -d '{"prompt": "test"}'
-  
+
   # Unload adapter
   curl -X DELETE http://localhost:8000/adapters/my-adapter
   ```
@@ -1411,13 +1411,13 @@ If your framework needs stateful sessions:
   curl -X POST http://localhost:8000/invocations \
     -H "Content-Type: application/json" \
     -d '{"requestType": "NEW_SESSION"}'
-  
+
   # Use session (replace <session-id> with actual ID)
   curl -X POST http://localhost:8000/invocations \
     -H "Content-Type: application/json" \
     -H "X-Amzn-SageMaker-Session-Id: <session-id>" \
     -d '{"prompt": "test"}'
-  
+
   # Close session
   curl -X POST http://localhost:8000/invocations \
     -H "Content-Type: application/json" \
@@ -1568,15 +1568,15 @@ graph TD
     B -->|used by| C[create_transform_decorator Factory]
     C -->|creates| D[Decorator Functions]
     D -->|applied to| E[Your Handler Functions]
-    
+
     B1[RegisterLoRAApiTransform] -.->|example| B
     B2[InjectToBodyApiTransform] -.->|example| B
     B3[SessionApiTransform] -.->|example| B
-    
+
     D1[inject_adapter_id decorator] -.->|example| D
     D2[register_load_adapter_handler decorator] -.->|example| D
     D3[stateful_session_manager decorator] -.->|example| D
-    
+
     style A fill:#e1f5ff
     style C fill:#fff4e1
     style D fill:#e8f5e9
@@ -1592,15 +1592,15 @@ class BaseApiTransform:
         # Compiles JMESPath expressions for efficient execution
         self._request_shape = _compile_jmespath_expressions(request_shape)
         self._response_shape = _compile_jmespath_expressions(response_shape)
-    
+
     def _transform(self, source_data: Dict, target_shape: Dict) -> Dict:
         # Applies JMESPath expressions to extract and transform data
         pass
-    
+
     async def transform_request(self, raw_request: Request):
         # Subclasses implement specific request transformation logic
         raise NotImplementedError()
-    
+
     def transform_response(self, response: Response, transform_request_output):
         # Subclasses implement specific response transformation logic
         raise NotImplementedError()
@@ -1624,26 +1624,26 @@ A factory function that creates decorators dynamically:
 ```python
 def create_transform_decorator(handler_type: str, transform_resolver: Callable):
     """Creates a decorator factory for a specific handler type."""
-    
+
     def decorator_with_params(request_shape: Dict = None, response_shape: Dict = None):
         """Configures the transformation shapes."""
-        
+
         def decorator(func: Callable):
             """The actual decorator that wraps your handler."""
             # Resolves the appropriate transform class
-            transformer = _resolve_transforms(handler_type, transform_resolver, 
+            transformer = _resolve_transforms(handler_type, transform_resolver,
                                              request_shape, response_shape)
-            
+
             async def decorated_func(raw_request: Request):
                 # Apply request transformation
                 transform_output = await transformer.transform_request(raw_request)
-                
+
                 # Call your handler with transformed data
                 response = await transformer.intercept(func, transform_output)
-                
+
                 # Apply response transformation
                 return transformer.transform_response(response, transform_output)
-            
+
             return decorated_func
         return decorator
     return decorator_with_params
@@ -1705,7 +1705,7 @@ sequenceDiagram
     participant FastAPI
     participant Transform
     participant Handler
-    
+
     Client->>FastAPI: POST /invocations<br/>Header: X-Amzn-SageMaker-Adapter-Identifier: my-adapter<br/>Body: {"prompt": "..."}
     FastAPI->>Transform: Raw Request
     Transform->>Transform: Extract adapter ID from header
@@ -1738,7 +1738,7 @@ sequenceDiagram
    }
    ```
 
-4. **Transform vs Passthrough**: 
+4. **Transform vs Passthrough**:
    - Pass `request_shape=None` for no transformation (passthrough mode)
    - Pass `request_shape={}` for transform infrastructure without JMESPath
    - Pass `request_shape={...}` for full transformation
@@ -1937,7 +1937,7 @@ def create_transform_decorator(
     Args:
         handler_type: Identifier for the handler (e.g., 'register_adapter')
         transform_resolver: Function that maps handler_type to transform class
-    
+
     Returns:
         Decorator factory that accepts request_shape and response_shape
     """
@@ -1957,15 +1957,15 @@ def decorator(func):
     async def wrapped_func(raw_request: Request):
         # 1. Transform request
         transform_output = await transformer.transform_request(raw_request)
-        
+
         # 2. Call your handler
         response = await transformer.intercept(func, transform_output)
-        
+
         # 3. Transform response
         final_response = transformer.transform_response(response, transform_output)
-        
+
         return final_response
-    
+
     return wrapped_func
 ```
 
@@ -1997,7 +1997,7 @@ def get_sagemaker_route_config(handler_type: str) -> Optional[RouteConfig]:
         return RouteConfig(path="/ping", method="GET", ...)
     elif handler_type == "invoke":
         return RouteConfig(path="/invocations", method="POST", ...)
-    
+
     # Delegate to LoRA routes for adapter handlers
     return get_lora_route_config(handler_type)
 ```
@@ -2056,28 +2056,28 @@ from model_hosting_container_standards.common import BaseApiTransform, BaseTrans
 
 class MyCustomTransform(BaseApiTransform):
     """Custom transform for my specific use case."""
-    
+
     def __init__(self, request_shape, response_shape={}):
         """Initialize with request and response shapes.
-        
+
         Args:
             request_shape: JMESPath expressions for extracting request data
             response_shape: JMESPath expressions for transforming responses
         """
         super().__init__(request_shape, response_shape)
         # Add any custom initialization here
-    
+
     async def transform_request(self, raw_request: Request):
         """Transform incoming request.
-        
+
         This method is called before your handler executes.
         Extract and validate data, then return a BaseTransformRequestOutput.
         """
         raise NotImplementedError()
-    
+
     def transform_response(self, response: Response, transform_request_output):
         """Transform outgoing response.
-        
+
         This method is called after your handler executes.
         Modify the response based on the request transformation output.
         """
@@ -2117,7 +2117,7 @@ class MyCustomTransform(BaseApiTransform):
                 status_code=HTTPStatus.BAD_REQUEST.value,
                 detail=f"JSON decode error: {e}",
             )
-        
+
         # Step 2: Validate using Pydantic model
         try:
             validated_request = MyRequestModel.model_validate(request_data)
@@ -2126,10 +2126,10 @@ class MyCustomTransform(BaseApiTransform):
                 status_code=HTTPStatus.BAD_REQUEST.value,
                 detail=e.json(include_url=False),
             )
-        
+
         # Step 3: Apply JMESPath transformations (if request_shape provided)
         transformed_data = self._transform_request(validated_request, raw_request)
-        
+
         # Step 4: Return BaseTransformRequestOutput
         return BaseTransformRequestOutput(
             request=transformed_data,  # Transformed data passed to handler
@@ -2163,24 +2163,24 @@ class MyCustomTransform(BaseApiTransform):
         """Transform the response based on request processing."""
         # Option 1: Simple passthrough (no transformation)
         return response
-        
+
         # Option 2: Route based on status code
         if response.status_code == HTTPStatus.OK:
             return self._transform_ok_response(response, transform_request_output)
         else:
             return self._transform_error_response(response, transform_request_output)
-    
+
     def _transform_ok_response(self, response: Response, transform_request_output):
         """Transform successful responses."""
         # Extract data from request transformation
         adapter_name = transform_request_output.request.get("adapter_name")
-        
+
         # Create custom response
         return Response(
             status_code=HTTPStatus.OK.value,
             content=f"Success: Processed {adapter_name}",
         )
-    
+
     def _transform_error_response(self, response: Response, transform_request_output):
         """Transform error responses."""
         # Pass through or customize error responses
@@ -2249,7 +2249,7 @@ from fastapi import Request
 )
 async def my_handler(transformed_data, raw_request: Request):
     """Handler receives transformed data as first argument.
-    
+
     Args:
         transformed_data: SimpleNamespace with attributes from request_shape
         raw_request: Original FastAPI Request for additional context
@@ -2258,10 +2258,10 @@ async def my_handler(transformed_data, raw_request: Request):
     adapter_name = transformed_data.adapter_name
     adapter_path = transformed_data.adapter_path
     custom_header = transformed_data.custom_header
-    
+
     # Your handler logic here
     result = f"Processing {adapter_name} from {adapter_path}"
-    
+
     return {"status": "success", "message": result}
 ```
 
@@ -2295,13 +2295,13 @@ If your custom transform needs its own HTTP endpoint (not just transforming exis
 ```python
 def get_sagemaker_route_config(handler_type: str) -> Optional[RouteConfig]:
     """Map handler types to their route configurations."""
-    
+
     # Core SageMaker routes
     if handler_type == "ping":
         return RouteConfig(path="/ping", method="GET", ...)
     elif handler_type == "invoke":
         return RouteConfig(path="/invocations", method="POST", ...)
-    
+
     # Your custom route
     elif handler_type == "my_custom_operation":
         return RouteConfig(
@@ -2310,7 +2310,7 @@ def get_sagemaker_route_config(handler_type: str) -> Optional[RouteConfig]:
             response_model=None,
             status_code=200
         )
-    
+
     # Delegate to LoRA routes for adapter handlers
     return get_lora_route_config(handler_type)
 ```
@@ -2418,14 +2418,14 @@ async def invocations(request: Request):
     body = await request.json()
     adapter_id = body.get("model")  # Automatically injected from header
     # Your inference logic with adapter_id
-    
+
 # 2. Implement adapter loading
 @register_load_adapter_handler(
     request_shape={"adapter_name": "body.name", "adapter_path": "body.src"}
 )
 async def load_adapter(data, request):
     # Your framework's adapter loading logic
-    
+
 # 3. Implement adapter unloading
 @register_unload_adapter_handler(
     request_shape={"adapter_name": "path_params.adapter_name"}
@@ -2515,7 +2515,7 @@ import model_hosting_container_standards.sagemaker as sagemaker_standards
 async def invocations(request: Request) -> dict:
     body = await request.json()
     adapter_id = body.get("model")  # Adapter ID is now in body["model"]
-    
+
     # Your framework's inference logic
     result = f"Using adapter: {adapter_id}"
     return {"predictions": [result]}
@@ -2557,10 +2557,10 @@ Append mode concatenates the adapter ID to an existing value using a separator. 
 async def invocations(request: Request) -> dict:
     body = await request.json()
     model_with_adapter = body.get("model")  # "base-model:my-adapter"
-    
+
     # Parse the composite identifier
     base_model, adapter_id = model_with_adapter.split(":", 1)
-    
+
     return {"predictions": [f"Base: {base_model}, Adapter: {adapter_id}"]}
 ```
 
@@ -2570,7 +2570,7 @@ async def invocations(request: Request) -> dict:
 # Incoming request body:
 {"prompt": "Hello", "model": "base-model"}
 
-# After @inject_adapter_id("model", append=True, separator=":") 
+# After @inject_adapter_id("model", append=True, separator=":")
 # with header X-Amzn-SageMaker-Adapter-Identifier: my-adapter
 # Transformed request body:
 {"prompt": "Hello", "model": "base-model:my-adapter"}
@@ -2832,11 +2832,11 @@ class MyFramework:
     def load_adapter(self, name: str, path: str, **kwargs):
         """Load adapter from path with given name."""
         pass
-    
+
     def unload_adapter(self, name: str):
         """Unload adapter by name."""
         pass
-    
+
     def has_adapter(self, name: str) -> bool:
         """Check if adapter is loaded."""
         pass
@@ -2962,7 +2962,7 @@ graph LR
     D -->|Response| A
     A -->|CLOSE + Session ID| E[Close Session]
     E -->|Delete Data| F[Session Removed]
-    
+
     C -->|TTL Expired| G[Auto Cleanup]
     G -->|Delete Data| F
 ```
@@ -3302,13 +3302,13 @@ async def invocations(request: Request) -> dict:
     """Inference handler with session support."""
     body = await request.json()
     prompt = body.get("prompt", "")
-    
+
     # Access session ID if present
     session_id = request.headers.get("X-Amzn-SageMaker-Session-Id")
-    
+
     # Your inference logic here
     result = f"Processed: {prompt}"
-    
+
     return {"predictions": [result]}
 ```
 
@@ -3333,7 +3333,7 @@ The decorator order follows Python's decorator application rules: decorators are
 **What the Decorator Does:**
 
 1. **Intercepts Session Requests**: Detects `requestType` field in request body
-2. **Routes to Default Session Handlers**: 
+2. **Routes to Default Session Handlers**:
    - `NEW_SESSION` → `create_session()` handler
    - `CLOSE` → `close_session()` handler
 3. **Validates Session IDs**: Checks session existence and expiration
@@ -3549,15 +3549,15 @@ def get_session(self, session_id: str) -> Optional[Session]:
     with self._lock:
         if session_id not in self.sessions:
             raise ValueError(f"session not found: {session_id}")
-        
+
         session = self.sessions[session_id]
-        
+
         # Check expiration
         if session.expiration_ts is not None and time.time() > session.expiration_ts:
             logging.info(f"Session expired: {session_id}")
             self.close_session(session_id)  # Automatic cleanup
             return None
-        
+
         return session
 ```
 
@@ -3644,7 +3644,7 @@ graph TD
 
 **Default Behavior:**
 
-- **Auto-recovery**: Disabled by default (enable with `PROCESS_AUTO_RECOVERY=true`)
+- **Auto-recovery**: Enabled by default (disable with `PROCESS_AUTO_RECOVERY=false`)
 - **Max retries**: 3 attempts (when auto-recovery is enabled)
 - **Log level**: info
 - **Config file**: `/tmp/supervisord.conf` (generated automatically)
@@ -3652,8 +3652,8 @@ graph TD
 **Expected Service Behavior:**
 
 LLM services should run indefinitely. Any exit is treated as an error. If your service exits for any reason (crash, OOM, etc.):
-1. With auto-recovery disabled (default): Container exits immediately with code 1
-2. With auto-recovery enabled: Service is automatically restarted up to `PROCESS_MAX_START_RETRIES` times
+1. With auto-recovery enabled (default): Service is automatically restarted up to `PROCESS_MAX_START_RETRIES` times
+2. With auto-recovery disabled: Container exits immediately with code 1
 3. If restart limit is exceeded: Container exits with code 1, signaling failure to orchestrators
 
 **Configuration:**
@@ -3661,8 +3661,8 @@ LLM services should run indefinitely. Any exit is treated as an error. If your s
 Configure supervisor behavior using environment variables:
 
 ```bash
-# Enable auto-recovery for production
-export PROCESS_AUTO_RECOVERY=true
+# Disable auto-recovery if needed (enabled by default)
+export PROCESS_AUTO_RECOVERY=false
 
 # Set max restart attempts (default: 3, only applies when auto-recovery is enabled)
 export PROCESS_MAX_START_RETRIES=5
@@ -3679,8 +3679,7 @@ FROM vllm/vllm-openai:latest
 # Install model hosting container standards (includes supervisor)
 RUN pip install model-hosting-container-standards
 
-# Configure supervisor for production
-ENV PROCESS_AUTO_RECOVERY=true
+# Configure supervisor for production (auto-recovery is already enabled by default)
 ENV PROCESS_MAX_START_RETRIES=3
 ENV LOG_LEVEL=info
 
@@ -3818,18 +3817,17 @@ These environment variables control the `standard-supervisor` process management
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `PROCESS_AUTO_RECOVERY` | Enable automatic process restart on failure. Set to `true` to enable. | `false` |
+| `PROCESS_AUTO_RECOVERY` | Enable automatic process restart on failure. Set to `false` to disable. | `true` |
 | `PROCESS_MAX_START_RETRIES` | Maximum number of restart attempts when auto-recovery is enabled. Valid range: 0-100. | `3` |
 | `LOG_LEVEL` | Log level for supervisor. Valid values: `debug`, `info`, `warn`, `error`, `critical` | `info` |
 
 **Example Usage:**
 
 ```bash
-# Enable auto-recovery with default 3 retry attempts
-export PROCESS_AUTO_RECOVERY=true
+# Disable auto-recovery (enabled by default)
+export PROCESS_AUTO_RECOVERY=false
 
-# Enable auto-recovery with 5 retry attempts
-export PROCESS_AUTO_RECOVERY=true
+# Set custom retry attempts (auto-recovery is enabled by default)
 export PROCESS_MAX_START_RETRIES=5
 
 # Enable debug logging for supervisor
@@ -3838,7 +3836,7 @@ export LOG_LEVEL=debug
 
 **Important Notes:**
 
-- Auto-recovery is **disabled by default** - container exits immediately on process failure
+- Auto-recovery is **enabled by default** - supervisor attempts to restart failed processes
 - When auto-recovery is enabled, supervisor attempts to restart the process up to `PROCESS_MAX_START_RETRIES` times
 - After max retries are exhausted, container exits with code 1 to signal failure to orchestrators
 - See [Section 7: Supervisor Process Management](#7-supervisor-process-management) for complete details
@@ -3896,7 +3894,7 @@ graph TD
     F -->|No| H{Register decorator?}
     H -->|Yes| I[Use register decorator handler]
     H -->|No| J[Error: No handler found]
-    
+
     C --> K[Create route with handler]
     E --> K
     G --> K
