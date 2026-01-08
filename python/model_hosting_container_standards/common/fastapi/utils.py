@@ -49,13 +49,18 @@ def serialize_response(response: Union[Response, JSONResponse]):
     :return Dict[str, Any]: Structured data with body, headers, and status_code
     """
     # Process response body based on type
-    body = response.body.decode(response.charset)
-    try:
-        body = json.loads(body)
-    except json.JSONDecodeError:
-        # If body is not JSON, keep it as a string
-        pass
-
+    charset = "utf-8"
+    if hasattr(response, "charset") and response.charset:
+        charset = response.charset
+    if hasattr(response, "body") and response.body:
+        body = response.body.decode(charset)
+        try:
+            body = json.loads(body)
+        except json.JSONDecodeError:
+            # If body is not JSON, keep it as a string
+            pass
+    else:
+        body = {}
     return {
         "body": body,
         "headers": response.headers,
