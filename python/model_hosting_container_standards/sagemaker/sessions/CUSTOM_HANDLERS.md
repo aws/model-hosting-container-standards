@@ -37,6 +37,7 @@ Use the `@register_create_session_handler` and `@register_close_session_handler`
 ```python
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
+from typing import Optional
 from model_hosting_container_standards.sagemaker import (
     register_create_session_handler,
     register_close_session_handler,
@@ -46,50 +47,32 @@ from model_hosting_container_standards.sagemaker import (
 
 app = FastAPI()
 
-# Define your engine's request/response models
+# Define your engine's request models using Pydantic
 class CreateSessionRequest(BaseModel):
     capacity: int
+    session_id: Optional[str] = None
 
-class CreateSessionResponse(BaseModel):
+class CloseSessionRequest(BaseModel):
     session_id: str
-    message: str
 
 # Register custom create session handler
 @register_create_session_handler(
-    engine_response_session_id_path="body.session_id",  # Extract session ID from response
-    request_shape={
-        "capacity": "`1024`"  # Additional fields to include
-    },
-    content_path="body.message"  # Extract content for logging
+    engine_response_session_id_path="body"  # Extract session ID from response body
 )
 @app.post("/engine/create_session")
 async def create_session(obj: CreateSessionRequest, request: Request):
     # Call your engine's session creation API
     session_id = await my_engine.create_session(capacity=obj.capacity)
-    return CreateSessionResponse(session_id=session_id, message="Session created")
-
-# Alternative: If your engine manages session IDs internally
-@register_create_session_handler(
-    engine_response_session_id_path="body.session_id",  # Extract session ID from response
-    request_shape={
-        "capacity": "`1024`"
-    }
-)
-@app.post("/engine/create_session")
-async def create_session_auto(obj: CreateSessionRequest, request: Request):
-    # Engine generates and returns its own session ID
-    session_id = await my_engine.create_session_auto(capacity=obj.capacity)
-    return CreateSessionResponse(session_id=session_id, message="Session created")
+    return session_id  # Return session ID directly
 
 # Register custom close session handler
 @register_close_session_handler(
-    engine_request_session_id_path="session_id",  # Where to inject session ID in engine request
-    content_path="`Session closed successfully`"  # Static message
+    engine_request_session_id_path="body.session_id"  # Inject session ID into request body
 )
 @app.post("/engine/close_session")
-async def close_session(session_id: str, request: Request):
+async def close_session(obj: CloseSessionRequest, request: Request):
     # Call your engine's session closure API
-    await my_engine.close_session(session_id)
+    await my_engine.close_session(obj.session_id)
     return {"status": "closed"}
 
 # Your main invocations endpoint
@@ -108,32 +91,40 @@ bootstrap(app)
 
 ```python
 @register_create_session_handler(
-    engine_response_session_id_path: str,          # Required: Where to extract session ID from engine response
-    request_shape: dict = None,                    # Optional: Additional JMESPath mappings
-    content_path: str = None                       # Optional: JMESPath to extract content for logging
+    engine_response_session_id_path: str,
+    engine_request_model_cls: Optional[BaseModel] = None
 )
 ```
 
-- **`engine_response_session_id_path`**: JMESPath expression to extract the session ID from your engine's response. Must include prefix (`body.` or `headers.`). This is **required** because the framework needs to return the session ID to the client.
-- **`engine_request_session_id_path`**: Optional target path in the engine request body where the session ID will be injected. The session ID is extracted from the SageMaker session header and placed at this path. Example: `"session_id"` or `"metadata.session_id"`. If None, the session ID is not injected (useful when the engine manages sessions internally)
-- **`request_shape`**: Optional dict mapping target keys to source JMESPath expressions for additional fields to include in the engine request.
-- **`content_path`**: Optional JMESPath expression to extract a message for logging. Defaults to a generic success message.
+**Parameters:**
+
+- **`engine_response_session_id_path`** (required): JMESPath expression to extract the session ID from your engine's response. This is **required** because the framework needs to return the session ID to the client.
+  - Common values:
+    - `"body"` - if your handler returns just the session ID string
+    - `"body.session_id"` - if your handler returns `{"session_id": "..."}`
+    - `"body.data.id"` - for nested response structures
+    - `"headers.X-Session-Id"` - to extract from response headers
+
+- **`engine_request_model_cls`** (optional): A Pydantic BaseModel class defining the expected request schema for your engine endpoint. If provided, FastAPI will validate incoming requests against this model and provide the validated object to your handler.
 
 ### `@register_close_session_handler`
 
 ```python
 @register_close_session_handler(
-    engine_request_session_id_path: str,           # Required: Where to inject session ID in engine request
-    additional_request_shape: dict = None,         # Optional: Additional JMESPath mappings
-    content_path: str = None                       # Optional: JMESPath to extract content for logging
+    engine_request_session_id_path: str,
+    engine_request_model_cls: Optional[BaseModel] = None
 )
 ```
 
-- **`engine_request_session_id_path`**: **Required.** Target path in the engine request body where the session ID will be injected. The session ID is extracted from the SageMaker session header and placed at this path. This is required because the engine needs to know which session to close. Example: `"session_id"` or `"metadata.session_id"`
-- **`additional_request_shape`**: Optional dict mapping target keys to source JMESPath expressions for additional fields to include in the engine request.
-- **`content_path`**: Optional JMESPath expression to extract a message for logging. Defaults to a generic success message.
+**Parameters:**
 
-**Note**: `engine_response_session_id_path` is not needed for close handlers because the session ID comes from the request header, not the response.
+- **`engine_request_session_id_path`** (required): Target path in the engine request body where the session ID will be injected. The session ID is extracted from the SageMaker session header (`X-Amzn-SageMaker-Session-Id`) and placed at this path. This is **required** because the engine needs to know which session to close.
+  - Common values:
+    - `"body.session_id"` - injects at root level: `{"session_id": "..."}`
+    - `"body.metadata.session_id"` - for nested paths
+    - `"body.id"` - if your engine expects `{"id": "..."}`
+
+- **`engine_request_model_cls`** (optional): A Pydantic BaseModel class defining the expected request schema for your engine endpoint.
 
 ## How It Works
 
@@ -142,93 +133,111 @@ When you register custom handlers:
 1. **Client sends session request** to `/invocations` with `{"requestType": "NEW_SESSION"}` or `{"requestType": "CLOSE"}`
 2. **SessionApiTransform intercepts** the request and checks the handler registry
 3. **If custom handler registered**: Request is routed to your custom endpoint (e.g., `/engine/create_session`)
-4. **Transform applies**: Request/response shapes are transformed using JMESPath
+4. **Session ID handling**:
+   - For **create**: Session ID is extracted from your handler's response using `engine_response_session_id_path`
+   - For **close**: Session ID is injected into your handler's request at `engine_request_session_id_path`
 5. **Response returned**: With appropriate SageMaker session headers (`X-Amzn-SageMaker-New-Session-Id` or `X-Amzn-SageMaker-Closed-Session-Id`)
 
 The key benefit: Your `/invocations` endpoint stays clean, and session management is handled transparently.
 
-## JMESPath Expressions
+## Default Values Configuration
 
-The parameters use JMESPath expressions to transform data:
+You can configure default values for your custom session handlers using environment variables. This is useful for providing default capacity, timeouts, or other parameters without hardcoding them in your handler.
 
-### Request Transformation
+### Environment Variables
 
-#### For Create Session Handlers
+Set defaults using JSON-formatted environment variables:
 
-The `request_shape` parameter maps target keys to source expressions:
+```bash
+# Default values for create_session requests
+export SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS='{"body.capacity": 1024, "body.timeout": 30}'
 
-```python
-# register_create_session_handler only
-request_shape={
-    "capacity": "`1024`",  # Literal value
-}
+# Default values for close_session requests
+export SAGEMAKER_TRANSFORMS_CLOSE_SESSION_DEFAULTS='{"body.force": false}'
 ```
 
-#### For Close Session Handlers
+**Format**: The keys use JMESPath notation to specify where in the request body the default values should be injected:
+- `"body.capacity"` → `{"capacity": 1024}`
+- `"body.metadata.size"` → `{"metadata": {"size": 100}}`
 
-The `engine_request_session_id_path` specifies where to inject the session ID (always relative to request body):
+These defaults are merged with the actual request data. Values explicitly provided in the request take precedence over defaults.
 
-```python
-# register_close_session_handler only
-engine_request_session_id_path="session_id"  # Inject at root level
-engine_request_session_id_path="metadata.session_id"  # Inject in nested path
-```
+### Using Defaults in Handlers
 
-The `additional_request_shape` parameter maps target keys to source expressions:
+The framework automatically merges default values before calling your handler:
 
 ```python
-# register_close_session_handler only
-additional_request_shape={
-    "timeout": "`30`",  # Literal value
-}
+class CreateSessionRequest(BaseModel):
+    capacity: int = 1024  # Pydantic default as fallback
+    timeout: int = 30
+
+@register_create_session_handler(
+    engine_response_session_id_path="body"
+)
+@app.post("/engine/create_session")
+async def create_session(obj: CreateSessionRequest, request: Request):
+    # obj.capacity will be:
+    # 1. Value from request body if provided
+    # 2. Value from SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS if set
+    # 3. Pydantic default (1024) if neither is provided
+    session_id = await my_engine.create_session(capacity=obj.capacity)
+    return session_id
 ```
-
-### Response Extraction
-
-For **create session**, you must specify:
-- `engine_response_session_id_path`: Where to extract the session ID from the engine's response
-- `content_path`: Where to extract content for logging (optional)
-
-```python
-engine_response_session_id_path="body.session_id"  # Extract from {"session_id": "..."}
-engine_response_session_id_path="body"  # If response is just the session ID string
-engine_response_session_id_path="headers.X-Session-Id"  # Extract from response header
-content_path="body.message"  # Extract message from response
-content_path="`Session created`"  # Use literal string
-```
-
-For **close session**, you only need:
-- `content_path`: Where to extract content for logging (optional)
 
 ## Response Formats
 
 Your custom handlers can return different response formats:
 
+### String Response (Recommended for Create Session)
+```python
+async def create_session(obj: CreateSessionRequest, request: Request):
+    session_id = str(uuid.uuid4())
+    return session_id  # Return session ID directly
+
+# Configuration: engine_response_session_id_path="body"
+```
+
 ### Dictionary Response
 ```python
 async def create_session(obj: CreateSessionRequest, request: Request):
     session_id = str(uuid.uuid4())
-    return {"session_id": session_id, "metadata": {"engine": "custom"}}
-```
+    return {
+        "session_id": session_id,
+        "metadata": {"engine": "custom", "version": "1.0"}
+    }
 
-### String Response
-```python
-async def create_session(obj: CreateSessionRequest, request: Request):
-    session_id = str(uuid.uuid4())
-    return session_id  # Just return the session ID
+# Configuration: engine_response_session_id_path="body.session_id"
 ```
 
 ### FastAPI Response Object
 ```python
 from fastapi import Response
+import json
 
 async def create_session(obj: CreateSessionRequest, request: Request):
     session_id = str(uuid.uuid4())
     return Response(
         status_code=201,
         content=json.dumps({"session_id": session_id}),
-        media_type="application/json"
+        media_type="application/json",
+        headers={"X-Custom-Header": "value"}
     )
+
+# Configuration: engine_response_session_id_path="body.session_id"
+```
+
+### Header-Based Response
+```python
+from fastapi import Response
+
+async def create_session(obj: CreateSessionRequest, request: Request):
+    session_id = str(uuid.uuid4())
+    return Response(
+        status_code=200,
+        headers={"X-Session-Id": session_id}
+    )
+
+# Configuration: engine_response_session_id_path="headers.X-Session-Id"
 ```
 
 ## Error Handling
@@ -238,23 +247,27 @@ Raise `HTTPException` to return errors to the client:
 ```python
 from fastapi.exceptions import HTTPException
 
-@register_create_session_handler(...)
+@register_create_session_handler(
+    engine_response_session_id_path="body"
+)
 async def create_session(obj: CreateSessionRequest, request: Request):
     try:
-        session_id = await my_engine.create_session()
-        return {"session_id": session_id}
+        session_id = await my_engine.create_session(capacity=obj.capacity)
+        return session_id
     except EngineError as e:
         raise HTTPException(status_code=500, detail=f"Engine error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Unexpected error")
 ```
 
 ## Complete Example
 
-Here's a complete example with error handling and session tracking:
+Here's a complete example with error handling, validation, and session tracking:
 
 ```python
 from fastapi import FastAPI, Request, HTTPException, Response
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 import uuid
 import json
@@ -265,25 +278,23 @@ from model_hosting_container_standards.sagemaker import (
     stateful_session_manager,
     bootstrap
 )
-from model_hosting_container_standards.sagemaker.sessions.models import (
-    SageMakerSessionHeader
-)
 
 app = FastAPI()
 
 # Track sessions in memory (for demo purposes)
 active_sessions = {}
 
+# Define request models with validation
 class CreateSessionRequest(BaseModel):
-    capacity: int
+    capacity: int = Field(default=1024, ge=1, le=10000)
     session_id: Optional[str] = None
+
+class CloseSessionRequest(BaseModel):
+    session_id: str
 
 @register_create_session_handler(
     engine_response_session_id_path="body.session_id",
-    request_shape={
-        "capacity": "`1024`"
-    },
-    content_path="body.message"
+    engine_request_model_cls=CreateSessionRequest
 )
 @app.post("/engine/create_session")
 async def create_session(obj: CreateSessionRequest, request: Request):
@@ -294,8 +305,18 @@ async def create_session(obj: CreateSessionRequest, request: Request):
     if session_id in active_sessions:
         raise HTTPException(status_code=400, detail="Session already exists")
 
+    # Validate capacity
+    if obj.capacity < 1 or obj.capacity > 10000:
+        raise HTTPException(status_code=400, detail="Capacity must be between 1 and 10000")
+
     # Create session in your engine
-    active_sessions[session_id] = {"capacity": obj.capacity}
+    try:
+        active_sessions[session_id] = {
+            "capacity": obj.capacity,
+            "created_at": "2025-01-01T00:00:00Z"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create session: {e}")
 
     return {
         "session_id": session_id,
@@ -303,18 +324,22 @@ async def create_session(obj: CreateSessionRequest, request: Request):
     }
 
 @register_close_session_handler(
-    engine_request_session_id_path="session_id",
-    content_path="`Session closed successfully`"
+    engine_request_session_id_path="body.session_id",
+    engine_request_model_cls=CloseSessionRequest
 )
 @app.post("/engine/close_session")
-async def close_session(session_id: str, request: Request):
-    if session_id not in active_sessions:
-        raise HTTPException(status_code=404, detail="Session not found")
+async def close_session(obj: CloseSessionRequest, request: Request):
+    if obj.session_id not in active_sessions:
+        # Idempotent: succeed even if session doesn't exist
+        return Response(status_code=200, content="Session already closed or does not exist")
 
     # Close session in your engine
-    del active_sessions[session_id]
+    try:
+        del active_sessions[obj.session_id]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to close session: {e}")
 
-    return Response(status_code=200, content="Session closed")
+    return Response(status_code=200, content="Session closed successfully")
 
 @app.post("/invocations")
 @stateful_session_manager(engine_request_session_id_path="session_id")
@@ -330,6 +355,7 @@ async def invocations(request: Request):
     return JSONResponse({
         "result": "success",
         "session_id": session_id or "no-session",
+        "session_data": active_sessions.get(session_id, {}),
         "echo": body
     })
 
@@ -345,29 +371,66 @@ When custom handlers are registered, the framework **does not** validate session
 
 This design allows your engine to manage sessions independently without interference from the default session manager.
 
+## Using Pydantic Models for Validation
+
+Using Pydantic models with `engine_request_model_cls` provides automatic request validation:
+
+```python
+from pydantic import BaseModel, Field, validator
+
+class CreateSessionRequest(BaseModel):
+    capacity: int = Field(ge=1, le=10000, description="Session capacity")
+    timeout: int = Field(default=30, ge=1, le=3600)
+    metadata: Optional[dict] = None
+
+    @validator('capacity')
+    def validate_capacity(cls, v):
+        if v % 2 != 0:
+            raise ValueError('Capacity must be even')
+        return v
+
+@register_create_session_handler(
+    engine_response_session_id_path="body",
+    engine_request_model_cls=CreateSessionRequest
+)
+@app.post("/engine/create_session")
+async def create_session(obj: CreateSessionRequest, request: Request):
+    # obj is fully validated - capacity is even, in range, etc.
+    session_id = str(uuid.uuid4())
+    return session_id
+```
+
+If validation fails, FastAPI automatically returns a 422 Unprocessable Entity response with detailed error information.
+
 ## Best Practices
 
-1. **Validate session IDs**: Check that the engine returns valid session IDs in create handlers
-2. **Handle errors gracefully**: Use HTTPException for clear error messages
-3. **Log operations**: Log session creation/closure for debugging
-4. **Test thoroughly**: Test both success and failure scenarios
-5. **Idempotency**: Handle duplicate close requests gracefully (return 404 or succeed silently)
-6. **Session isolation**: Ensure different sessions maintain independent state
-7. **Thread safety**: If your engine stores session state, ensure thread-safe access for concurrent requests
+1. **Use Pydantic models**: Define `engine_request_model_cls` for automatic validation and documentation
+2. **Validate session IDs**: Check that the engine returns valid session IDs in create handlers
+3. **Handle errors gracefully**: Use HTTPException for clear error messages
+4. **Log operations**: Log session creation/closure for debugging
+5. **Test thoroughly**: Test both success and failure scenarios
+6. **Idempotency**: Handle duplicate close requests gracefully (return success if session already closed)
+7. **Session isolation**: Ensure different sessions maintain independent state
+8. **Thread safety**: If your engine stores session state, ensure thread-safe access for concurrent requests
+9. **Use environment variables for defaults**: Configure default values via `SAGEMAKER_TRANSFORMS_*` env vars
+10. **Return simple responses**: For create handlers, returning just the session ID string is often simplest
 
 ## Troubleshooting
 
 ### Session ID not extracted from response
 
-**Problem**: Getting "Engine failed to return a valid session ID" error.
+**Problem**: Getting "Session ID not found in response" error.
 
 **Solution**: Check that your `engine_response_session_id_path` matches your response structure:
 ```python
+# If your handler returns: "abc123" (string)
+engine_response_session_id_path="body"
+
 # If your handler returns: {"session_id": "abc123"}
 engine_response_session_id_path="body.session_id"
 
-# If your handler returns: "abc123"
-engine_response_session_id_path="body"
+# If your handler returns: {"data": {"id": "abc123"}}
+engine_response_session_id_path="body.data.id"
 
 # If session ID is in response header
 engine_response_session_id_path="headers.X-Session-Id"
@@ -379,23 +442,73 @@ engine_response_session_id_path="headers.X-Session-Id"
 
 **Solution**: Ensure you call `bootstrap(app)` **after** registering your handlers:
 ```python
+# Register handlers first
 @register_create_session_handler(...)
 async def create_session(...):
     pass
 
-bootstrap(app)  # Must be after handler registration
+@register_close_session_handler(...)
+async def close_session(...):
+    pass
+
+# Bootstrap after all registrations
+bootstrap(app)
 ```
 
 ### Session ID not injected into engine request
 
-**Problem**: Engine receives request without session ID.
+**Problem**: Close session handler receives request without session ID.
 
-**Solution**: Ensure your `engine_request_session_id_path` specifies where to inject the session ID:
+**Solution**:
+1. Ensure your Pydantic model has a `session_id` field
+2. Ensure `engine_request_session_id_path` points to the correct location
+3. Ensure the client sends the session ID in the `X-Amzn-SageMaker-Session-Id` header
+
 ```python
-engine_request_session_id_path="session_id"  # Injects at root level of request body
+class CloseSessionRequest(BaseModel):
+    session_id: str  # This field must exist
+
+@register_close_session_handler(
+    engine_request_session_id_path="body.session_id",  # Must match field path
+    engine_request_model_cls=CloseSessionRequest
+)
+```
+
+### Default values not applied
+
+**Problem**: Default values from environment variables not being used.
+
+**Solution**:
+1. Ensure environment variable is set before application starts
+2. Check JSON format is valid
+3. Verify the path notation matches your model structure
+
+```bash
+# Correct format
+export SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS='{"body.capacity": 1024}'
+
+# Incorrect format (will fail)
+export SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS='capacity: 1024'
+```
+
+### Validation errors with Pydantic models
+
+**Problem**: Getting 422 validation errors unexpectedly.
+
+**Solution**: Check that default values and environment variable defaults match your Pydantic model:
+
+```python
+class CreateSessionRequest(BaseModel):
+    capacity: int = Field(ge=1)  # Must be >= 1
+
+# Environment variable default must also satisfy constraints
+# Good: export SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS='{"body.capacity": 1024}'
+# Bad:  export SAGEMAKER_TRANSFORMS_CREATE_SESSION_DEFAULTS='{"body.capacity": 0}'
 ```
 
 ## See Also
 
 - [README.md](./README.md) - Main sessions documentation
 - [Integration tests](../../../tests/integration/test_custom_session_handlers_integration.py) - Complete working examples
+- [BaseApiTransform2](../../common/transforms/base_api_transform2.py) - Transform base class
+- [Defaults Configuration](../../common/transforms/defaults_config.py) - Default values system
