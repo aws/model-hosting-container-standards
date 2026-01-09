@@ -513,6 +513,7 @@ exit(1)
 
     def test_direct_launch_exit_code_propagation(self, clean_env):
         """Test that exit codes are properly propagated in direct launch mode."""
+        env = {"PROCESS_AUTO_RECOVERY": "false"}
         # Test exit code 0
         result = subprocess.run(
             [
@@ -523,7 +524,7 @@ exit(1)
                 "-c",
                 "import sys; sys.exit(0)",
             ],
-            env=os.environ,
+            env={**os.environ, **env},
             capture_output=True,
             text=True,
             timeout=10,
@@ -541,7 +542,7 @@ exit(1)
                 "-c",
                 "import sys; sys.exit(42)",
             ],
-            env=os.environ,
+            env={**os.environ, **env},
             capture_output=True,
             text=True,
             timeout=10,
@@ -551,6 +552,7 @@ exit(1)
 
     def test_direct_launch_command_not_found(self, clean_env):
         """Test direct launch with non-existent command."""
+        env = {"PROCESS_AUTO_RECOVERY": "false"}
         result = subprocess.run(
             [
                 sys.executable,
@@ -560,7 +562,7 @@ exit(1)
                 "arg1",
                 "arg2",
             ],
-            env=os.environ,
+            env={**os.environ, **env},
             capture_output=True,
             text=True,
             timeout=10,
@@ -574,13 +576,14 @@ exit(1)
 
     def test_direct_launch_no_command_provided(self, clean_env):
         """Test direct launch with no command provided."""
+        env = {"PROCESS_AUTO_RECOVERY": "false"}
         result = subprocess.run(
             [
                 sys.executable,
                 "-m",
                 "model_hosting_container_standards.supervisor.scripts.standard_supervisor",
             ],
-            env=os.environ,
+            env={**os.environ, **env},
             capture_output=True,
             text=True,
             timeout=10,
