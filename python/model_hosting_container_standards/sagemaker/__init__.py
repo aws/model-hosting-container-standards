@@ -3,6 +3,7 @@
 from typing import Dict, List, Optional, Union
 
 from fastapi import FastAPI
+from pydantic import BaseModel
 
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig, safe_include_router
@@ -22,6 +23,9 @@ from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
 from .sessions import create_session_transform_decorator
+from .sessions.close_session import _register_close_session_handler
+from .sessions.create_session import _register_create_session_handler
+from .sessions.models import SageMakerSessionHeader
 
 # SageMaker decorator instances - created using utility functions
 
@@ -118,17 +122,83 @@ def inject_adapter_id(
     )
 
 
-def stateful_session_manager():
+def stateful_session_manager(engine_request_session_id_path: Optional[str] = None):
     """Create a decorator for session-based sticky routing.
 
-    This decorator enables stateful session management without JMESPath transformations.
-    Pass empty dicts to enable transform infrastructure (for intercept functionality)
-    without requiring JMESPath expressions.
+    This decorator enables stateful session management for regular invocation requests,
+    allowing the session ID to be injected into the request body for stateful inference.
+
+    Args:
+        engine_request_session_id_path: Optional target path in the request body where
+                                        the session ID will be injected. The session ID
+                                        is extracted from the SageMaker session header and
+                                        placed at this path in the request sent to the engine.
+
+                                        Examples: "session_id", "metadata.session_id"
+
+                                        If None, session management is enabled but the
+                                        session ID is not injected into the request body.
 
     Returns:
         A decorator that can be applied to route handlers to enable session management
     """
-    return create_session_transform_decorator()(request_shape={}, response_shape={})
+    request_shape = {}
+    if engine_request_session_id_path:
+        request_shape[engine_request_session_id_path] = (
+            f'headers."{SageMakerSessionHeader.SESSION_ID}"'
+        )
+    return create_session_transform_decorator()(
+        request_shape=request_shape, response_shape={}
+    )
+
+
+def register_create_session_handler(
+    engine_response_session_id_path: str,
+    engine_request_model_cls: Optional[BaseModel] = None,
+):
+    """Register a handler for session creation with custom request/response transformations.
+
+    This decorator creates a session handler that transforms incoming requests to include
+    the session ID and extracts the session ID from the engine's response.
+
+    Returns:
+        A decorator that can be applied to engine-specific session creation handlers.
+    """
+    return _register_create_session_handler(
+        engine_response_session_id_path=engine_response_session_id_path,
+        engine_request_model_cls=engine_request_model_cls,
+    )
+
+
+def register_close_session_handler(
+    engine_request_session_id_path: str,
+    engine_request_model_cls: Optional[BaseModel] = None,
+):
+    """Register a handler for session closure with custom request transformations.
+
+    This decorator creates a session handler that transforms incoming requests to include
+    the session ID for proper session cleanup.
+
+    Returns:
+        A decorator that can be applied to engine-specific session closure handlers.
+
+    Raises:
+        ValueError: If engine_request_session_id_path is None or empty.
+
+    Note:
+        If engine_request_session_id_path appears in additional_request_shape, it will be
+        overwritten to ensure the session ID is properly injected.
+    """
+    if not engine_request_session_id_path:
+        raise ValueError(
+            "engine_request_session_id_path is required for close_session handler. "
+            "The engine needs to know which session to close."
+        )
+
+    return _register_close_session_handler(
+        engine_request_session_id_path=engine_request_session_id_path,
+        engine_request_model_cls=engine_request_model_cls,
+    )
 
 
 def bootstrap(app: FastAPI) -> FastAPI:
