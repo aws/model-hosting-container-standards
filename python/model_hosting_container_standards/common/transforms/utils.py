@@ -1,10 +1,25 @@
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Literal, Optional, Union
 
 import jmespath
 
 from ...logging_config import logger
 
 DEFAULT_MAX_DEPTH_TO_CREATE = 2
+
+
+SAGEMAKER_HEADER_PREFIX = "X-Amzn-SageMaker-"
+
+SageMakerInjectMode = Literal["append", "prepend", "replace"]
+
+
+def to_hyphens(field_name: str) -> str:
+    return field_name.replace("_", "-")
+
+
+def to_sagemaker_headers(field_name: str) -> str:
+    field_name = to_hyphens(field_name)
+    field_name = SAGEMAKER_HEADER_PREFIX + field_name.title()
+    return field_name
 
 
 def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
@@ -28,13 +43,26 @@ def _compile_jmespath_expressions(shape: Dict[str, Any]) -> Dict[str, Any]:
     return compiled_shape
 
 
+def _set(new_value, original_value, mode, separator):
+    if mode == "replace":
+        return new_value
+    elif original_value is None:
+        return new_value
+    elif mode == "append":
+        return f"{original_value}{separator}{new_value}"
+    elif mode == "prepend":
+        return f"{new_value}{separator}{original_value}"
+
+
 def set_value(
-    obj: dict,
+    obj: Dict[str, Any],
     path: str,
     value: Any,
     create_parent: bool = False,
     max_create_depth: Optional[int] = DEFAULT_MAX_DEPTH_TO_CREATE,
-) -> dict:
+    mode: SageMakerInjectMode = "replace",
+    separator: Optional[str] = None,
+) -> Dict:
     """Set value in a nested dict using dot-separated path traversal.
 
     Note: This function assumes JMESPath-style dot notation but only supports simple
@@ -60,12 +88,12 @@ def set_value(
     """
     # Split "parent.child" into ('parent', 'child')
     if "." not in path:
-        obj[path] = value
+        obj[path] = _set(value, obj.get(path), mode, separator)
         return obj
 
     *parent_parts, child = path.split(".")
     if len(parent_parts) == 0:
-        obj[child] = value
+        obj[child] = _set(value, obj.get(child), mode, separator)
         return obj
 
     # Find the deepest existing parent by manually traversing the dict
@@ -83,7 +111,9 @@ def set_value(
 
     # If we found the complete parent path, just set the value
     if existing_depth == len(parent_parts):
-        existing_parent[child] = value
+        existing_parent[child] = _set(
+            value, existing_parent.get(child), mode, separator
+        )
         return obj
 
     # Parent doesn't exist completely, we need to create missing parts
@@ -122,3 +152,25 @@ def set_value(
         ]
 
     return obj
+
+
+ValidPrefix = Literal["body.", "headers.", "query_params.", "path_params."]
+
+
+def validate_engine_path(
+    engine_path: str, default_prefix: Optional[ValidPrefix] = "body."
+) -> str:
+    if not isinstance(engine_path, str):
+        raise ValueError(
+            f"Engine path must be a string, got {type(engine_path)}: {engine_path}"
+        )
+    if engine_path == "body":
+        return engine_path
+    if not engine_path.startswith(
+        ("body.", "headers.", "query_params.", "path_params.")
+    ):
+        if default_prefix:
+            return f"{default_prefix}{engine_path}"
+        else:
+            raise ValueError(f"Invalid path, missing valid prefix: {engine_path}")
+    return engine_path

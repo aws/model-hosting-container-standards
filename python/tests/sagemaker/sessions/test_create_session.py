@@ -15,9 +15,9 @@ from model_hosting_container_standards.common.handler import handler_registry
 from model_hosting_container_standards.common.transforms.base_api_transform2 import (
     BaseTransformRequestOutput,
 )
+from model_hosting_container_standards.sagemaker import register_create_session_handler
 from model_hosting_container_standards.sagemaker.sessions.create_session import (
     CreateSessionApiTransform,
-    _register_create_session_handler,
     create_create_session_transform,
 )
 from model_hosting_container_standards.sagemaker.sessions.models import (
@@ -322,7 +322,7 @@ class TestCreateCreateSessionTransform:
 
 
 class TestRegisterCreateSessionHandler:
-    """Test suite for _register_create_session_handler function."""
+    """Test suite for register_create_session_handler function."""
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
@@ -334,17 +334,17 @@ class TestRegisterCreateSessionHandler:
 
     @pytest.mark.asyncio
     @patch(
-        "model_hosting_container_standards.sagemaker.sessions.create_session._transform_defaults_config",
+        "model_hosting_container_standards.sagemaker._transform_defaults_config",
     )
     @patch(
-        "model_hosting_container_standards.sagemaker.sessions.create_session.create_create_session_transform",
+        "model_hosting_container_standards.sagemaker.create_create_session_transform",
         wraps=create_create_session_transform,
     )
     @patch(
         "model_hosting_container_standards.sagemaker.sessions.create_session.handler_registry",
         wraps=handler_registry,
     )
-    @patch("model_hosting_container_standards.sagemaker.sessions.create_session.logger")
+    @patch("model_hosting_container_standards.sagemaker.logger")
     async def test_register_create_session_handler(
         self,
         mock_logger,
@@ -353,7 +353,7 @@ class TestRegisterCreateSessionHandler:
         mock_transform_defaults_config,
     ):
         """
-        Test _register_create_session_handler with various parameter combinations.
+        Test register_create_session_handler with various parameter combinations.
 
         Should verify:
         - Function accepts engine_response_session_id_path parameter
@@ -368,7 +368,7 @@ class TestRegisterCreateSessionHandler:
             "body.param1": "default-value"
         }
 
-        actual_decorator = _register_create_session_handler(
+        actual_decorator = register_create_session_handler(
             engine_response_session_id_path=engine_response_session_id_path,
             engine_request_model_cls=MockEngineRequest,
         )

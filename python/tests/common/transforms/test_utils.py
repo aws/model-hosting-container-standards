@@ -1,10 +1,42 @@
 """Unit tests for common.transforms.utils module."""
 
+from unittest.mock import patch
+
 import pytest
 
 from model_hosting_container_standards.common.transforms.utils import (  # _set_value_with_parent_creation,
+    SAGEMAKER_HEADER_PREFIX,
     set_value,
+    to_hyphens,
+    to_sagemaker_headers,
 )
+
+
+class TestUtilityFunctions:
+    """Test suite for utility functions used in close_session module."""
+
+    def test_to_hyphens_basic_conversion(self):
+        """
+        Test to_hyphens function with basic underscore to hyphen conversion.
+        """
+        assert to_hyphens("_") == "-"
+        assert to_hyphens("___") == "---"
+        assert to_hyphens("a_b_c") == "a-b-c"
+        assert to_hyphens("abc") == "abc"
+        assert to_hyphens("") == ""
+
+    @patch(
+        "model_hosting_container_standards.common.transforms.utils.to_hyphens",
+        wraps=to_hyphens,
+    )
+    def test_to_sagemaker_headers_basic_conversion(self, mock_to_hyphens):
+        """
+        Test to_sagemaker_headers function with basic field name conversion.
+        """
+        assert (
+            to_sagemaker_headers("session_id") == f"{SAGEMAKER_HEADER_PREFIX}Session-Id"
+        )
+        mock_to_hyphens.assert_any_call("session_id")
 
 
 class TestSetValue:
