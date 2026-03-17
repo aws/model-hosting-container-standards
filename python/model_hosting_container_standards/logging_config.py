@@ -25,6 +25,38 @@ def parse_level(level: str) -> Union[int, str]:
         return level
 
 
+def _get_env_log_level() -> Union[int, str]:
+    """Get the log level from environment variables, defaulting to ERROR."""
+    level = os.getenv(
+        "SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "ERROR")
+    )
+    return parse_level(level)
+
+
+def _safe_set_level(logger: logging.Logger, level: Union[int, str]) -> None:
+    """Set log level on a logger, falling back to ERROR on failure."""
+    try:
+        logger.setLevel(level)
+    except (ValueError, AttributeError, TypeError):
+        logger.setLevel(logging.ERROR)
+
+
+def configure_root_logger() -> None:
+    """Enforce SAGEMAKER_CONTAINER_LOG_LEVEL on the root logger.
+
+    Ensures the environment variable is respected even when another
+    framework has already initialized the root logger.
+    """
+    level = _get_env_log_level()
+    root = logging.getLogger()
+    _safe_set_level(root, level)
+
+    resolved = root.level
+    for handler in root.handlers:
+        if handler.level < resolved:
+            handler.setLevel(resolved)
+
+
 def get_logger(name: str = "model_hosting_container_standards") -> logging.Logger:
     """Get a configured logger for the package.
 
@@ -36,15 +68,13 @@ def get_logger(name: str = "model_hosting_container_standards") -> logging.Logge
     """
     logger = logging.getLogger(name)
 
-    # Only configure if not already configured
-    if not logger.handlers:
-        # Get log level from environment, default to ERROR (effectively disabled)
-        # Convert level to uppercase
-        level = os.getenv(
-            "SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "ERROR")
-        )
+    level = _get_env_log_level()
 
-        # Set up handler with consistent format
+    # Always apply the log level, even if handlers already exist
+    _safe_set_level(logger, level)
+
+    # Only add our handler once to avoid duplicate log lines
+    if not logger.handlers:
         handler = logging.StreamHandler(sys.stdout)
         formatter = logging.Formatter(
             "[%(levelname)s] %(name)s - %(filename)s:%(lineno)d: %(message)s"
@@ -52,19 +82,13 @@ def get_logger(name: str = "model_hosting_container_standards") -> logging.Logge
         handler.setFormatter(formatter)
         logger.addHandler(handler)
 
-        try:
-            # Will raise error if the set log level is not registered in
-            # logging.getLevelNamesMapping()
-            logger.setLevel(parse_level(level))
-        except (ValueError, AttributeError, TypeError):
-            # if setLevel with environment variable fails, default to ERROR
-            logger.setLevel(logging.ERROR)
-
-        # Prevent propagation to avoid duplicate logs
-        logger.propagate = False
+    # Prevent propagation to avoid duplicate logs
+    logger.propagate = False
 
     return logger
 
+
+configure_root_logger()
 
 # Package logger instance
 logger = get_logger()
