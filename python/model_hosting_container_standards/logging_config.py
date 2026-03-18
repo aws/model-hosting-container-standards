@@ -27,9 +27,7 @@ def parse_level(level: str) -> Union[int, str]:
 
 def _get_env_log_level() -> Union[int, str]:
     """Get the log level from environment variables, defaulting to ERROR."""
-    level = os.getenv(
-        "SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "ERROR")
-    )
+    level = os.getenv("SAGEMAKER_CONTAINER_LOG_LEVEL", os.getenv("LOG_LEVEL", "ERROR"))
     return parse_level(level)
 
 
