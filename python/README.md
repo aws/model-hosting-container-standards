@@ -7,6 +7,7 @@ A standardized Python framework for seamless integration between ML frameworks (
 This package simplifies model deployment by providing:
 - **Unified Handler System**: Consistent `/ping` and `/invocations` endpoints across frameworks
 - **Flexible Configuration**: Environment variables, decorators, or custom scripts
+- **Automatic Dependency Installation**: Installs `requirements.txt` from model artifacts before server startup
 - **Framework Agnostic**: Works with vLLM, TensorRT-LLM, and other ML frameworks
 - **Production Ready**: Comprehensive logging, error handling, and debugging tools
 

@@ -135,6 +135,41 @@ class StandardSupervisor:
 
         return launch_command
 
+    def _install_dependencies(self, launch_command: List[str]) -> bool:
+        """Install customer dependencies if enabled via STANDARD_AUTO_INSTALL_REQ.
+
+        Extracts the Python interpreter from the launch command so that packages
+        are installed into the same site-packages the framework will use.
+
+        Args:
+            launch_command: The framework launch command (e.g.
+                ["python3", "-m", "vllm.entrypoints.openai.api_server", ...]).
+
+        Returns:
+            True if installation succeeded or was skipped.
+            False if installation failed.
+        """
+        from model_hosting_container_standards.common.dependency_manager import (
+            STANDARD_PIP_ARGS,
+            install_requirements,
+            is_auto_install_enabled,
+            resolve_python_from_command,
+        )
+
+        if not is_auto_install_enabled():
+            self.logger.info("Automatic requirements installation disabled")
+            return True
+
+        python_executable = resolve_python_from_command(launch_command)
+        pip_args = os.getenv(STANDARD_PIP_ARGS)
+        success = install_requirements(
+            pip_args=pip_args,
+            python_executable=python_executable,
+        )
+        if not success:
+            self.logger.error("Dependency installation failed, aborting startup")
+        return success
+
     def run(self) -> int:
         """Main execution method."""
         launch_command = self.parse_arguments()
@@ -145,6 +180,10 @@ class StandardSupervisor:
             config = parse_environment_variables()
         except ConfigurationError as e:
             self.logger.error(f"Configuration error: {e}")
+            return 1
+
+        # Pre-launch: install customer dependencies from model artifacts
+        if not self._install_dependencies(launch_command):
             return 1
 
         config_path = config.config_path
@@ -204,6 +243,24 @@ def _launch_command_directly() -> None:
         print("ERROR: No launch command provided", file=sys.stderr)
         print("Usage: standard-supervisor <launch_command> [args...]", file=sys.stderr)
         sys.exit(1)
+
+    # Pre-launch: install customer dependencies from model artifacts
+    from model_hosting_container_standards.common.dependency_manager import (
+        STANDARD_PIP_ARGS,
+        install_requirements,
+        is_auto_install_enabled,
+        resolve_python_from_command,
+    )
+
+    if is_auto_install_enabled():
+        python_executable = resolve_python_from_command(launch_command)
+        pip_args = os.getenv(STANDARD_PIP_ARGS)
+        if not install_requirements(
+            pip_args=pip_args,
+            python_executable=python_executable,
+        ):
+            print("ERROR: Dependency installation failed", file=sys.stderr)
+            sys.exit(1)
 
     # Replace current process with the command
     # If execvp fails, it will raise an exception and Python will exit

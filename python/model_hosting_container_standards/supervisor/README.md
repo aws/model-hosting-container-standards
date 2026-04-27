@@ -135,6 +135,41 @@ docker run \
   my-image
 ```
 
+## Automatic Dependency Installation
+
+`standard-supervisor` automatically installs Python dependencies from a `requirements.txt` file in the model directory before starting the inference server. This uses `uv` when available, falling back to `pip`.
+
+### Default Behavior
+
+If `/opt/ml/model/requirements.txt` exists, it is installed automatically. No configuration needed.
+
+### Configuration
+
+```bash
+# Disable automatic installation
+export STANDARD_AUTO_INSTALL_REQ=false
+
+# Use explicit pip arguments instead of auto-discovery
+export STANDARD_PIP_ARGS="-r /custom/path/requirements.txt --index-url https://my-index/simple"
+```
+
+When `STANDARD_PIP_ARGS` is set, auto-discovery is skipped — the value is passed directly as arguments to the install command.
+
+### Offline Installs
+
+Place wheel files in a `requirements/` subdirectory alongside `requirements.txt`:
+
+```
+/opt/ml/model/
+├── requirements.txt
+└── requirements/
+    └── my_package-1.0.0-py3-none-any.whl
+```
+
+The installer automatically adds `--find-links` to resolve packages locally.
+
+For full details, see [Dependency Installation Guide](../../../docs/sagemaker/06_dependency_installation.md).
+
 ## Complete Examples
 
 ### Basic vLLM Example
@@ -295,5 +330,6 @@ standard-supervisor ./my-custom-entrypoint.sh
 
 - `scripts/standard_supervisor.py` - Main CLI entry point (`standard-supervisor` command)
 - `scripts/generate_supervisor_config.py` - Configuration generator (used internally)
+- `../common/dependency_manager.py` - Pre-launch dependency installation logic
 
 That's all you need! The supervisor system handles the rest automatically.
