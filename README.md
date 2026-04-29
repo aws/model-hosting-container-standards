@@ -19,6 +19,7 @@ ModelHostingContainerStandards/
 │   │   ├── common/            # Common utilities
 │   │   │   ├── fastapi/       # FastAPI integration
 │   │   │   ├── custom_code_ref_resolver/  # Dynamic code loading
+│   │   │   ├── dependency_manager.py  # Pre-launch requirements.txt installation
 │   │   │   └── handler/       # Handler specifications
 │   │   └── sagemaker/         # SageMaker integration
 │   │       ├── lora/          # LoRA adapter support
