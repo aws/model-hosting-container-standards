@@ -14,6 +14,7 @@ Example:
 
 import logging
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -192,10 +193,13 @@ class StandardSupervisor:
         try:
             # Generate and start supervisor
             self.logger.info("Generating supervisor configuration...")
+            # Use shlex.join (inverse of supervisord's shlex.split on command=) so
+            # that arguments containing spaces or quotes — e.g. a JSON value passed
+            # to vLLM's --speculative-config — survive the round-trip intact.
             write_supervisord_config(
                 config_path=config_path,
                 config=config,
-                launch_command=" ".join(launch_command),
+                launch_command=shlex.join(launch_command),
                 program_name=program_name,
             )
 
