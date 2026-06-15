@@ -6,6 +6,7 @@ without requiring actual supervisor processes or system integration.
 """
 
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -251,6 +252,62 @@ class TestStandardSupervisor:
             result = supervisor.run()
 
         assert result == 1
+
+    @patch(
+        "model_hosting_container_standards.supervisor.scripts.standard_supervisor.parse_environment_variables"
+    )
+    @patch(
+        "model_hosting_container_standards.supervisor.scripts.standard_supervisor.write_supervisord_config"
+    )
+    def test_run_preserves_quoted_json_argument(
+        self, mock_write_config, mock_parse_env
+    ):
+        """Regression test for SM_VLLM_SPECULATIVE_CONFIG quote stripping.
+
+        An argv element that contains spaces and double quotes (such as the JSON
+        passed to vLLM's --speculative-config) must be shell-quoted when joined
+        into supervisord's ``command=`` field. supervisord re-parses that field
+        with ``shlex.split``; with a plain ``" ".join`` the quotes were stripped
+        and the JSON broke apart into multiple tokens. See ticket P446501135.
+        """
+        mock_config = Mock()
+        mock_config.config_path = "/tmp/test.conf"
+        mock_parse_env.return_value = mock_config
+
+        mock_process = Mock()
+        mock_process.poll.side_effect = [None, 0]
+        mock_process.returncode = 0
+
+        supervisor = StandardSupervisor()
+        supervisor.process_manager.start = Mock(return_value=mock_process)
+        supervisor.signal_handler.setup = Mock()
+
+        speculative_config = (
+            '{"model": "/opt/ml/additional-model-data-sources/eagle", '
+            '"method": "eagle3", "num_speculative_tokens": 3, '
+            '"parallel_drafting": true}'
+        )
+        argv = [
+            "python3",
+            "-m",
+            "vllm.entrypoints.openai.api_server",
+            "--speculative-config",
+            speculative_config,
+            "--host",
+            "0.0.0.0",
+        ]
+
+        with patch.object(sys, "argv", ["standard-supervisor", *argv]):
+            with patch("time.sleep"):
+                supervisor.run()
+
+        # The launch_command written to the config must round-trip back to the
+        # original argv when supervisord parses it with shlex.split.
+        _, kwargs = mock_write_config.call_args
+        launch_command = kwargs["launch_command"]
+        assert shlex.split(launch_command) == argv
+        # The JSON value must remain a single intact token.
+        assert speculative_config in shlex.split(launch_command)
 
 
 class TestHelperFunctions:

@@ -7,6 +7,7 @@ Simple script to generate supervisord configuration files for ML frameworks.
 
 import argparse
 import logging
+import shlex
 import sys
 
 from model_hosting_container_standards.logging_config import get_logger
@@ -51,8 +52,10 @@ def main() -> int:
         # Parse configuration from environment
         config = parse_environment_variables()
 
-        # Get launch command from CLI arguments
-        launch_command = " ".join(args.command)
+        # Get launch command from CLI arguments. Use shlex.join (inverse of
+        # supervisord's shlex.split on command=) so arguments containing spaces or
+        # quotes — e.g. a JSON value for vLLM's --speculative-config — survive intact.
+        launch_command = shlex.join(args.command)
 
         # Generate and write configuration
         write_supervisord_config(args.output, config, launch_command, args.program_name)
