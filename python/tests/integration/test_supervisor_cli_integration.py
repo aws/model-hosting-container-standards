@@ -258,8 +258,7 @@ class TestSupervisorCLIIntegration:
             # Create a server that runs briefly then exits (to test restart)
             server_script_file = os.path.join(temp_dir, "test_server.py")
             with open(server_script_file, "w") as f:
-                f.write(
-                    f"""import time
+                f.write(f"""import time
 import sys
 import os
 
@@ -277,8 +276,7 @@ for i in range(3):
 
 print('Server exiting (will be restarted by supervisor)', flush=True)
 sys.exit(0)
-"""
-                )
+""")
 
             # Start supervisor with the server
             process = subprocess.Popen(
@@ -351,8 +349,7 @@ sys.exit(0)
             # Create script that logs startup attempts then fails before startsecs
             script_file = os.path.join(temp_dir, "failing_script.py")
             with open(script_file, "w") as f:
-                f.write(
-                    f"""import time
+                f.write(f"""import time
 import os
 
 # Log this startup attempt
@@ -364,8 +361,7 @@ print('Process starting up...', flush=True)
 time.sleep(2)  # Run for 2 seconds (less than startsecs=5, so it's a startup failure)
 print('Process failing before startsecs...', flush=True)
 exit(1)
-"""
-                )
+""")
 
             # Run supervisor with the failing script
             # Use Popen since supervisord won't exit after FATAL

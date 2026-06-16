@@ -60,8 +60,7 @@ class TestHandlerOverrideIntegration:
 
         # Customer writes a script file with ping() and invoke() functions
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 from fastapi import Request
 
 async def custom_sagemaker_ping_handler():
@@ -76,8 +75,7 @@ async def custom_sagemaker_invocation_handler(request: Request):
         "predictions": ["Custom response from customer script"],
         "source": "customer_override"
     }
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -116,8 +114,7 @@ async def custom_sagemaker_invocation_handler(request: Request):
 
         # Customer writes a script file with decorators and regular functions
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 from fastapi import Request
 
@@ -131,8 +128,7 @@ async def custom_invoke(request: Request):
 # Regular ping function
 async def custom_sagemaker_ping_handler():
     return {"source": "customer_function", "priority": "script_function"}
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -169,8 +165,7 @@ async def custom_sagemaker_ping_handler():
 
         # Customer writes a script file with multiple handler options
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 from fastapi import Request
 
 async def custom_sagemaker_ping_handler():
@@ -184,8 +179,7 @@ async def env_ping():
 
 async def env_invoke(request=None):
     return {"source": "env_invoke", "type": "environment_variable"}
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -222,8 +216,7 @@ async def env_invoke(request=None):
 
         # Customer writes a script file
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 from fastapi import Request
 
 async def custom_sagemaker_ping_handler():
@@ -231,8 +224,7 @@ async def custom_sagemaker_ping_handler():
 
 async def custom_sagemaker_invocation_handler(request: Request):
     return {"predictions": ["file customer response"], "source": "file_customer_script"}
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -269,8 +261,7 @@ async def custom_sagemaker_invocation_handler(request: Request):
 
         # Customer writes a script file with different handler types
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 
 # Decorator handler (higher priority than script functions)
@@ -281,8 +272,7 @@ async def decorator_ping():
 # Script function handler (lower priority than decorators)
 async def custom_sagemaker_ping_handler():
     return {"source": "script_function", "priority": "low"}
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -313,8 +303,7 @@ async def custom_sagemaker_ping_handler():
 
         # Customer writes a script file with decorators and regular functions
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 from fastapi import Request
 
@@ -326,8 +315,7 @@ async def my_invoke(request: Request):
 # Customer uses regular function for ping (higher priority than decorators)
 async def custom_sagemaker_ping_handler():
     return {"type": "ping", "source": "customer_function"}
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -364,8 +352,7 @@ async def custom_sagemaker_ping_handler():
 
         # Customer writes a script with @custom_ping_handler decorator and regular functions
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 import model_hosting_container_standards.sagemaker as sagemaker_standards
 from fastapi import Request, Response
 import json
@@ -399,8 +386,7 @@ async def custom_sagemaker_invocation_handler(request: Request):
         "source": "script_invoke_function",
         "priority": "function"
     }
-"""
-            )
+""")
             script_path = f.name
 
         try:

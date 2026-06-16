@@ -51,12 +51,10 @@ class TestHandlerResolver:
         """Test resolving ping handler from customer script."""
         # Create a temporary customer script
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 def custom_sagemaker_ping_handler():
     return "customer ping"
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -89,12 +87,10 @@ def custom_sagemaker_ping_handler():
 
         # Create customer script with ping function
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 def custom_sagemaker_ping_handler():
     return "customer"
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -182,12 +178,10 @@ def custom_sagemaker_ping_handler():
         """Test resolving invoke handler from customer script."""
         # Create a temporary customer script
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 def custom_sagemaker_invocation_handler(data):
     return f"customer invoke: {data}"
-"""
-            )
+""")
             script_path = f.name
 
         try:

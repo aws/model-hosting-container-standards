@@ -52,15 +52,13 @@ class TestEnvironmentMiddlewareIntegration:
         """Test loading throttle middleware from environment variable."""
         # Create a test middleware script
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 async def throttle_middleware(request, call_next):
     # Add custom header to identify this middleware ran
     response = await call_next(request)
     response.headers["X-Throttle-Applied"] = "true"
     return response
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -104,8 +102,7 @@ async def throttle_middleware(request, call_next):
         """Test loading pre/post process middleware from environment variable."""
         # Create a test middleware script
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 async def pre_post_middleware(request, call_next):
     # Add request header
     request.headers.__dict__.setdefault("_list", []).append(("X-Pre-Process", "true"))
@@ -115,8 +112,7 @@ async def pre_post_middleware(request, call_next):
     # Add response header
     response.headers["X-Post-Process"] = "true"
     return response
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -156,8 +152,7 @@ async def pre_post_middleware(request, call_next):
         """Test loading separate pre and post functions that get combined."""
         # Create test functions script
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 async def pre_process_func(request):
     # Modify request (in real scenario)
     request.state.pre_processed = True
@@ -167,8 +162,7 @@ async def post_process_func(response):
     # Modify response
     response.headers["X-Post-Processed"] = "true"
     return response
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -212,14 +206,12 @@ async def post_process_func(response):
         """Test that environment variables take priority over decorators."""
         # Create environment middleware script
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 async def env_throttle_middleware(request, call_next):
     response = await call_next(request)
     response.headers["X-Middleware-Source"] = "environment"
     return response
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -281,8 +273,7 @@ async def env_throttle_middleware(request, call_next):
         """Test loading multiple middlewares from environment variables."""
         # Create script with multiple middlewares
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 async def throttle_func(request, call_next):
     response = await call_next(request)
     response.headers["X-Throttle"] = "applied"
@@ -292,8 +283,7 @@ async def pre_post_func(request, call_next):
     response = await call_next(request)
     response.headers["X-PrePost"] = "applied"
     return response
-"""
-            )
+""")
             script_path = f.name
 
         try:
@@ -336,8 +326,7 @@ async def pre_post_func(request, call_next):
         """Test that direct pre_post_process env var takes priority over separate pre/post."""
         # Create script with both types
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 async def direct_pre_post(request, call_next):
     response = await call_next(request)
     response.headers["X-Middleware-Type"] = "direct"
@@ -349,8 +338,7 @@ async def separate_pre(request):
 async def separate_post(response):
     response.headers["X-Middleware-Type"] = "separate"
     return response
-"""
-            )
+""")
             script_path = f.name
 
         try:
