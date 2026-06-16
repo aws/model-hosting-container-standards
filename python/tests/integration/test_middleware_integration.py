@@ -56,8 +56,7 @@ class TestMiddlewareIntegration:
         """Test that customer middlewares are automatically loaded by plugin."""
         # Customer writes a middleware script
         with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
-            f.write(
-                """
+            f.write("""
 from model_hosting_container_standards.common.fastapi.middleware import custom_middleware, output_formatter
 
 @custom_middleware("throttle")
@@ -74,8 +73,7 @@ async def customer_output_formatter(response):
     order = response.headers.get("X-Middleware-Order", "")
     response.headers["X-Middleware-Order"] = order + "pre_post_process,"
     return response
-"""
-            )
+""")
             script_path = f.name
 
         try:

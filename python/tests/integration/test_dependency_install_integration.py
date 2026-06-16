@@ -92,12 +92,10 @@ class TestAutoDiscovery:
         )
         assert pre_check.returncode != 0, "six should not be pre-installed in venv"
 
-        script = textwrap.dedent(
-            """\
+        script = textwrap.dedent("""\
             import six
             print(f"six version: {six.__version__}", flush=True)
-        """
-        )
+        """)
         script_file = tmp_path / "verify.py"
         script_file.write_text(script)
 
@@ -201,12 +199,10 @@ class TestExplicitPipArgs:
         good_req = tmp_path / "custom_req.txt"
         good_req.write_text("six==1.17.0\n")
 
-        script = textwrap.dedent(
-            """\
+        script = textwrap.dedent("""\
             import six
             print(f"six version: {six.__version__}", flush=True)
-        """
-        )
+        """)
         script_file = tmp_path / "verify.py"
         script_file.write_text(script)
 
@@ -258,14 +254,12 @@ class TestPythonResolution:
         model_dir.mkdir()
         (model_dir / "requirements.txt").write_text("six==1.17.0\n")
 
-        script = textwrap.dedent(
-            """\
+        script = textwrap.dedent("""\
             import sys
             print(f"python: {sys.executable}", flush=True)
             import six
             print(f"six: {six.__version__}", flush=True)
-        """
-        )
+        """)
         script_file = tmp_path / "verify.py"
         script_file.write_text(script)
 
