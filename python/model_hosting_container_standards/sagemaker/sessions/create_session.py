@@ -12,7 +12,6 @@ from ...common.transforms.base_api_transform2 import (
     BaseApiTransform2,
     BaseTransformRequestOutput,
 )
-from ...common.transforms.defaults_config import _transform_defaults_config
 from ...logging_config import logger
 from .models import SageMakerSessionHeader
 
@@ -124,19 +123,3 @@ def create_create_session_transform(
         return create_session_transform_wrapper
 
     return create_session_decorator
-
-
-def _register_create_session_handler(
-    engine_response_session_id_path: str,
-    engine_request_model_cls: Optional[BaseModel] = None,
-):
-    logger.info("Registering create session handler")
-    logger.debug(
-        f"Handler parameter - engine_response_session_id_path: {engine_response_session_id_path}"
-    )
-    return create_create_session_transform(
-        engine_request_paths={},
-        engine_response_session_id_path=engine_response_session_id_path,
-        engine_request_model_cls=engine_request_model_cls,
-        engine_request_defaults=_transform_defaults_config.create_session_defaults,
-    )

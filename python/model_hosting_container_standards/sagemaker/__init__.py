@@ -8,6 +8,8 @@ from pydantic import BaseModel
 # Import routing utilities (generic)
 from ..common.fastapi.routing import RouteConfig, safe_include_router
 from ..common.handler.decorators import override_handler, register_handler
+from ..common.transforms.defaults_config import _transform_defaults_config
+from ..common.transforms.utils import SageMakerInjectMode, validate_engine_path
 from ..logging_config import logger
 
 # Import the real resolver functions
@@ -17,14 +19,16 @@ from .handler_resolver import register_sagemaker_overrides
 from .lora import (
     LoRAHandlerType,
     SageMakerLoRAApiHeader,
+    create_lora_transform2_decorator,
     create_lora_transform_decorator,
 )
+from .lora.lora_api_inject import InjectDefinition, create_lora_api_inject
 from .lora.models import AppendOperation
 from .sagemaker_loader import SageMakerFunctionLoader
 from .sagemaker_router import create_sagemaker_router
 from .sessions import create_session_transform_decorator
-from .sessions.close_session import _register_close_session_handler
-from .sessions.create_session import _register_create_session_handler
+from .sessions.close_session import create_close_session_transform
+from .sessions.create_session import create_create_session_transform
 from .sessions.models import SageMakerSessionHeader
 
 # SageMaker decorator instances - created using utility functions
@@ -42,6 +46,7 @@ def register_load_adapter_handler(
 ):
     # TODO: validate and preprocess request shape
     # TODO: validate and preprocess response shape
+    logger.info("There is a newer version of this method available.")
     return create_lora_transform_decorator(LoRAHandlerType.REGISTER_ADAPTER)(
         request_shape, response_shape
     )
@@ -52,8 +57,96 @@ def register_unload_adapter_handler(
 ):
     # TODO: validate and preprocess request shape
     # TODO: validate and preprocess response shape
+    logger.info("There is a newer version of this method available.")
     return create_lora_transform_decorator(LoRAHandlerType.UNREGISTER_ADAPTER)(
         request_shape, response_shape
+    )
+
+
+def register_load_adapter_handler_v2(
+    engine_request_lora_name_path: str,
+    engine_request_lora_src_path: str,
+    engine_request_lora_pinned_path: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
+):
+    logger.info("Registering load adapter handler")
+    logger.debug(
+        f"Handler parameters - name_path: {engine_request_lora_name_path}, src_path: {engine_request_lora_src_path}"
+    )
+    engine_request_paths = {
+        "name": validate_engine_path(engine_request_lora_name_path),
+        "src": validate_engine_path(engine_request_lora_src_path),
+    }
+    if engine_request_lora_pinned_path:
+        engine_request_paths["pinned"] = validate_engine_path(
+            engine_request_lora_pinned_path
+        )
+    logger.debug(
+        f"Created engine_request_paths from individual parameters: {engine_request_paths}"
+    )
+    return create_lora_transform2_decorator(LoRAHandlerType.REGISTER_ADAPTER.value)(
+        engine_request_paths,
+        engine_request_defaults=_transform_defaults_config.load_adapter_defaults,
+        engine_request_model_cls=engine_request_model_cls,
+    )
+
+
+def register_unload_adapter_handler_v2(
+    engine_request_lora_name_path: str,
+    engine_request_model_cls: Optional[BaseModel] = None,
+):
+    logger.info("Registering unload adapter handler")
+    logger.debug(f"Handler parameters - name_path: {engine_request_lora_name_path}")
+
+    return create_lora_transform2_decorator(LoRAHandlerType.UNREGISTER_ADAPTER.value)(
+        {
+            "name": validate_engine_path(engine_request_lora_name_path),
+        },
+        engine_request_defaults=_transform_defaults_config.unload_adapter_defaults,
+        engine_request_model_cls=engine_request_model_cls,
+    )
+
+
+def inject_adapter_id_v2(
+    engine_request_adapter_path: str,
+    mode: SageMakerInjectMode = "replace",
+    separator: Optional[str] = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
+):
+    """Create a decorator that injects adapter ID from SageMaker headers into request body.
+
+    This decorator extracts the adapter identifier from the SageMaker LoRA API header
+    (X-Amzn-SageMaker-Adapter-Identifier) and injects it into the specified path
+    within the request body using JMESPath syntax.
+
+    Args:
+    """
+    logger.info("Registering LoRA API inject handler")
+    logger.debug(
+        f"Handler parameters - engine_request_adapter_path: {engine_request_adapter_path}"
+    )
+    if not engine_request_adapter_path:
+        raise ValueError("engine_request_adapter_path cannot be empty")
+
+    validated_path = validate_engine_path(engine_request_adapter_path, "body.")
+
+    if mode == "replace" and separator:
+        logger.error(f"separator is specified {separator} but {mode=}")
+        raise ValueError(f"separator is specified {separator} but {mode=}")
+    if mode != "replace" and not separator:
+        logger.error(f"separator must be provided when {mode=}")
+        raise ValueError(f"separator must be provided when {mode=}")
+    engine_request_inject_definitions = {
+        "adapter_identifier": InjectDefinition(
+            path=validated_path,
+            mode=mode,
+            separator=separator,
+        )
+    }
+    return create_lora_api_inject(
+        engine_request_inject_definitions,
+        engine_request_model_cls,
+        engine_request_defaults=None,
     )
 
 
@@ -90,6 +183,7 @@ def inject_adapter_id(
         This is a transform-only decorator that does not create its own route.
         It must be applied to existing route handlers.
     """
+    logger.info("There is a newer version of this method available.")
     # validate and preprocess
     if not adapter_path:
         logger.error("adapter_path cannot be empty")
@@ -164,9 +258,15 @@ def register_create_session_handler(
     Returns:
         A decorator that can be applied to engine-specific session creation handlers.
     """
-    return _register_create_session_handler(
+    logger.info("Registering create session handler")
+    logger.debug(
+        f"Handler parameter - engine_response_session_id_path: {engine_response_session_id_path}"
+    )
+    return create_create_session_transform(
+        engine_request_paths={},
         engine_response_session_id_path=engine_response_session_id_path,
         engine_request_model_cls=engine_request_model_cls,
+        engine_request_defaults=_transform_defaults_config.create_session_defaults,
     )
 
 
@@ -194,10 +294,18 @@ def register_close_session_handler(
             "engine_request_session_id_path is required for close_session handler. "
             "The engine needs to know which session to close."
         )
+    validated_path = validate_engine_path(
+        engine_request_session_id_path, default_prefix=None
+    )
+    engine_request_paths = {"session_id": validated_path}
 
-    return _register_close_session_handler(
-        engine_request_session_id_path=engine_request_session_id_path,
-        engine_request_model_cls=engine_request_model_cls,
+    logger.info("Registering close session handler")
+    logger.debug(f"Handler parameters - request_session_id_path: {validated_path}")
+
+    return create_close_session_transform(
+        engine_request_paths,
+        engine_request_model_cls,
+        engine_request_defaults=_transform_defaults_config.close_session_defaults,
     )
 
 

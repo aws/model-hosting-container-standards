@@ -13,14 +13,11 @@ from model_hosting_container_standards.common.handler import handler_registry
 from model_hosting_container_standards.common.transforms.base_api_transform2 import (
     BaseTransformRequestOutput,
 )
+from model_hosting_container_standards.sagemaker import register_close_session_handler
 from model_hosting_container_standards.sagemaker.sessions.close_session import (
-    SAGEMAKER_HEADER_PREFIX,
     CloseSessionApiTransform,
     SageMakerSessionRequestHeader,
-    _register_close_session_handler,
     create_close_session_transform,
-    to_hyphens,
-    to_sagemaker_headers,
 )
 from model_hosting_container_standards.sagemaker.sessions.models import (
     SageMakerSessionHeader,
@@ -32,33 +29,6 @@ class MockEngineRequest(BaseModel):
 
     session_id: str
     additional_param: str = "default"
-
-
-class TestUtilityFunctions:
-    """Test suite for utility functions used in close_session module."""
-
-    def test_to_hyphens_basic_conversion(self):
-        """
-        Test to_hyphens function with basic underscore to hyphen conversion.
-        """
-        assert to_hyphens("_") == "-"
-        assert to_hyphens("___") == "---"
-        assert to_hyphens("a_b_c") == "a-b-c"
-        assert to_hyphens("abc") == "abc"
-        assert to_hyphens("") == ""
-
-    @patch(
-        "model_hosting_container_standards.sagemaker.sessions.close_session.to_hyphens",
-        wraps=to_hyphens,
-    )
-    def test_to_sagemaker_headers_basic_conversion(self, mock_to_hyphens):
-        """
-        Test to_sagemaker_headers function with basic field name conversion.
-        """
-        assert (
-            to_sagemaker_headers("session_id") == f"{SAGEMAKER_HEADER_PREFIX}Session-Id"
-        )
-        mock_to_hyphens.assert_any_call("session_id")
 
 
 class TestSageMakerSessionRequestHeader:
@@ -416,7 +386,7 @@ class TestCreateCloseSessionTransform:
 
 
 class TestRegisterCloseSessionHandler:
-    """Test suite for _register_close_session_handler function."""
+    """Test suite for register_close_session_handler function."""
 
     def setup_method(self):
         """Set up test fixtures before each test method."""
@@ -428,17 +398,17 @@ class TestRegisterCloseSessionHandler:
 
     @pytest.mark.asyncio
     @patch(
-        "model_hosting_container_standards.sagemaker.sessions.close_session._transform_defaults_config",
+        "model_hosting_container_standards.sagemaker._transform_defaults_config",
     )
     @patch(
-        "model_hosting_container_standards.sagemaker.sessions.close_session.create_close_session_transform",
+        "model_hosting_container_standards.sagemaker.create_close_session_transform",
         wraps=create_close_session_transform,
     )
     @patch(
         "model_hosting_container_standards.sagemaker.sessions.close_session.handler_registry",
         wraps=handler_registry,
     )
-    @patch("model_hosting_container_standards.sagemaker.sessions.close_session.logger")
+    @patch("model_hosting_container_standards.sagemaker.logger")
     async def test_handler_registration_complete(
         self,
         mock_logger,
@@ -447,7 +417,7 @@ class TestRegisterCloseSessionHandler:
         mock_transform_defaults_config,
     ):
         """
-        Test _register_close_session_handler comprehensive functionality.
+        Test register_close_session_handler comprehensive functionality.
         """
         mock_transform_defaults_config.close_session_defaults = {
             "body.additional_param": "value"
@@ -455,7 +425,7 @@ class TestRegisterCloseSessionHandler:
         original_function = AsyncMock(wraps=dummy_func_with_model)
         engine_request_session_id_path = "body.session_id"
 
-        actual_decorator = _register_close_session_handler(
+        actual_decorator = register_close_session_handler(
             engine_request_session_id_path=engine_request_session_id_path,
             engine_request_model_cls=MockEngineRequest,
         )

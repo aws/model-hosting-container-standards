@@ -10,21 +10,9 @@ from ...common.transforms.base_api_transform2 import (
     BaseApiTransform2,
     BaseTransformRequestOutput,
 )
-from ...common.transforms.defaults_config import _transform_defaults_config
+from ...common.transforms.utils import to_sagemaker_headers
 from ...logging_config import logger
 from .models import SageMakerSessionHeader
-
-SAGEMAKER_HEADER_PREFIX = "X-Amzn-SageMaker-"
-
-
-def to_hyphens(field_name: str) -> str:
-    return field_name.replace("_", "-")
-
-
-def to_sagemaker_headers(field_name: str) -> str:
-    field_name = to_hyphens(field_name)
-    field_name = SAGEMAKER_HEADER_PREFIX + field_name.title()
-    return field_name
 
 
 class SageMakerSessionRequestHeader(BaseModel):
@@ -103,7 +91,7 @@ class CloseSessionApiTransform(BaseApiTransform2):
 
 def create_close_session_transform(
     engine_request_paths: Optional[Dict[str, Any]] = None,
-    engine_request_model_cls: BaseModel = None,
+    engine_request_model_cls: Optional[BaseModel] = None,
     engine_request_defaults: Optional[Dict[str, Any]] = None,
 ):
     handler_type = "close_session"
@@ -126,19 +114,3 @@ def create_close_session_transform(
         return close_session_transform_wrapper
 
     return close_session_decorator
-
-
-def _register_close_session_handler(
-    engine_request_session_id_path: str,
-    engine_request_model_cls: Optional[BaseModel] = None,
-):
-    logger.info("Registering close session handler")
-    logger.debug(
-        f"Handler parameters - request_session_id_path: {engine_request_session_id_path}"
-    )
-    engine_request_paths = {"session_id": engine_request_session_id_path}
-    return create_close_session_transform(
-        engine_request_paths,
-        engine_request_model_cls,
-        engine_request_defaults=_transform_defaults_config.close_session_defaults,
-    )
