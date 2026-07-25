@@ -508,3 +508,111 @@ class TestIntegration:
 
         # Verify final result
         assert result == {"status": "registered"}
+
+
+class TestResolveLoraTransform2:
+    """Test resolve_lora_transform2 function for v2 transforms."""
+
+    def test_resolve_with_register_adapter_handler_type(self):
+        """Test resolving LoadLoraApiTransform for register adapter handler."""
+        # TODO: Implement test
+
+    def test_resolve_with_unregister_adapter_handler_type(self):
+        """Test resolving UnloadLoraApiTransform for unregister adapter handler."""
+        # TODO: Implement test
+
+    def test_resolve_with_invalid_handler_type_raises_error(self):
+        """Test that invalid handler type raises ValueError."""
+        # TODO: Implement test
+
+    def test_resolve_passes_original_func_to_transform(self):
+        """Test that original function is passed to transform constructor."""
+        # TODO: Implement test
+
+    def test_resolve_passes_engine_request_paths_to_transform(self):
+        """Test that engine_request_paths is passed to transform constructor."""
+        # TODO: Implement test
+
+    def test_resolve_passes_engine_request_model_cls_to_transform(self):
+        """Test that engine_request_model_cls is passed to transform constructor."""
+        # TODO: Implement test
+
+    def test_resolve_passes_engine_request_defaults_to_transform(self):
+        """Test that engine_request_defaults is passed to transform constructor."""
+        # TODO: Implement test
+
+    def test_resolve_logs_debug_messages(self):
+        """Test that resolution logs appropriate debug messages."""
+        # TODO: Implement test
+
+    def test_resolve_logs_error_for_invalid_handler_type(self):
+        """Test that error is logged for invalid handler type."""
+        # TODO: Implement test
+
+
+class TestCreateLoraTransform2Decorator:
+    """Test create_lora_transform2_decorator function."""
+
+    def test_create_decorator_returns_decorator_factory(self):
+        """Test that function returns a decorator factory."""
+        # TODO: Implement test
+
+    def test_decorator_factory_accepts_engine_request_paths(self):
+        """Test that decorator factory accepts engine_request_paths parameter."""
+        # TODO: Implement test
+
+    def test_decorator_factory_accepts_engine_request_model_cls(self):
+        """Test that decorator factory accepts engine_request_model_cls parameter."""
+        # TODO: Implement test
+
+    def test_decorator_factory_accepts_engine_request_defaults(self):
+        """Test that decorator factory accepts engine_request_defaults parameter."""
+        # TODO: Implement test
+
+    def test_decorator_registers_handler_in_registry(self):
+        """Test that decorator registers handler in handler_registry."""
+        # TODO: Implement test
+
+    def test_decorator_logs_registration_message(self):
+        """Test that decorator logs handler registration message."""
+        # TODO: Implement test
+
+    def test_decorator_wraps_original_function(self):
+        """Test that decorator properly wraps the original function."""
+        # TODO: Implement test
+
+    async def test_wrapped_function_calls_transform_method(self):
+        """Test that wrapped function calls transform method on the transform instance."""
+        # TODO: Implement test
+
+    async def test_wrapped_function_passes_raw_request(self):
+        """Test that wrapped function passes raw request to transform."""
+        # TODO: Implement test
+
+    def test_decorator_for_register_adapter_creates_load_transform(self):
+        """Test decorator with register_adapter handler type creates LoadLoraApiTransform."""
+        # TODO: Implement test
+
+    def test_decorator_for_unregister_adapter_creates_unload_transform(self):
+        """Test decorator with unregister_adapter handler type creates UnloadLoraApiTransform."""
+        # TODO: Implement test
+
+
+class TestCreateLoraTransform2DecoratorIntegration:
+    """Integration tests for v2 decorator."""
+
+    async def test_end_to_end_load_adapter_flow(self):
+        """Test complete flow for load adapter with v2 decorator."""
+        # TODO: Implement test
+
+    async def test_end_to_end_unload_adapter_flow(self):
+        """Test complete flow for unload adapter with v2 decorator."""
+        # TODO: Implement test
+
+    async def test_decorator_with_engine_defaults_applied(self):
+        """Test that engine defaults are properly applied during transformation."""
+        # TODO: Implement test
+
+    async def test_decorator_with_custom_request_model_validation(self):
+        """Test decorator with custom engine request model class."""
+        # TODO: Implement test
