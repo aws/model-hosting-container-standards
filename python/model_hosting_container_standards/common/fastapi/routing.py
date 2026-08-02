@@ -1,11 +1,94 @@
+import copy
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Any, Callable, Iterator, List, Optional, Set, Tuple
 
 from fastapi import APIRouter, FastAPI
 from fastapi.routing import APIRoute
 
 from ...logging_config import logger
 from ..handler import handler_registry
+
+RouteKey = Tuple[str, Tuple[str, ...]]
+
+
+def unwrap_included_router(route: Any) -> Optional[Tuple[APIRouter, str]]:
+    """Return (router, prefix) if route is a lazy include marker, else None.
+
+    FastAPI >= 0.137 no longer copies an included router's APIRoute objects into
+    app.router.routes; it appends a single _IncludedRouter marker that resolves
+    them at request time.
+    """
+    original_router = getattr(route, "original_router", None)
+    include_context = getattr(route, "include_context", None)
+    if original_router is None or include_context is None:
+        return None
+    return original_router, getattr(include_context, "prefix", "")
+
+
+def iter_api_routes(
+    routes: List[Any], prefix: str = ""
+) -> Iterator[Tuple[str, APIRoute]]:
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield f"{prefix}{route.path}", route
+            continue
+        included = unwrap_included_router(route)
+        if included is not None:
+            router, router_prefix = included
+            yield from iter_api_routes(router.routes, f"{prefix}{router_prefix}")
+
+
+def rebuild_included_router(route: Any, router: APIRouter, routes: List[Any]) -> Any:
+    pruned_router = copy.copy(router)
+    pruned_router.routes = routes
+
+    pruned_route = copy.copy(route)
+    pruned_route.original_router = pruned_router
+    for attr in ("_effective_candidates", "_effective_low_priority_routes"):
+        if hasattr(pruned_route, attr):
+            setattr(pruned_route, attr, [])
+    for attr in ("_effective_candidates_version", "_effective_low_priority_routes_version"):
+        if hasattr(pruned_route, attr):
+            setattr(pruned_route, attr, None)
+    return pruned_route
+
+
+def prune_routes(
+    routes: List[Any], conflicts: Set[RouteKey], prefix: str = ""
+) -> Tuple[List[Any], int]:
+    """Rebuild a route list without the conflicting routes.
+
+    Included routers are replaced by pruned copies rather than mutated in place,
+    so a router shared between applications keeps all of its routes.
+    """
+    pruned: List[Any] = []
+    removed = 0
+
+    for route in routes:
+        if isinstance(route, APIRoute):
+            methods = tuple(sorted(route.methods))
+            path = f"{prefix}{route.path}"
+            if (path, methods) in conflicts:
+                logger.info(f"Removing conflicting route: {methods} {path}")
+                removed += 1
+                continue
+            pruned.append(route)
+            continue
+
+        included = unwrap_included_router(route)
+        if included is not None:
+            router, router_prefix = included
+            router_routes, router_removed = prune_routes(
+                router.routes, conflicts, f"{prefix}{router_prefix}"
+            )
+            if router_removed:
+                removed += router_removed
+                pruned.append(rebuild_included_router(route, router, router_routes))
+                continue
+
+        pruned.append(route)
+
+    return pruned, removed
 
 
 def normalize_prefix(prefix: str) -> str:
@@ -199,28 +282,15 @@ def remove_conflicting_routes(
 
     # Get routes that will be added by the router
     incoming_routes = set()
-    for route in router.routes:
-        if isinstance(route, APIRoute):
-            router_path = f"{prefix}{route.path}" if prefix else route.path
-            router_methods = tuple(sorted(route.methods))
-            incoming_routes.add((router_path, router_methods))
+    for router_path, route in iter_api_routes(router.routes, prefix):
+        incoming_routes.add((router_path, tuple(sorted(route.methods))))
 
     if not incoming_routes:
         return
 
     # Remove conflicting routes from app
-    app_routes = app.router.routes
-    removed_count = 0
-    for i in range(len(app_routes) - 1, -1, -1):
-        route = app_routes[i]
-        if isinstance(route, APIRoute):
-            route_path = route.path
-            route_methods = tuple(sorted(route.methods))
-
-            if (route_path, route_methods) in incoming_routes:
-                logger.info(f"Removing conflicting route: {route_methods} {route_path}")
-                del app_routes[i]
-                removed_count += 1
+    pruned_routes, removed_count = prune_routes(app.router.routes, incoming_routes)
+    app.router.routes[:] = pruned_routes
 
     if removed_count > 0:
         # Refresh OpenAPI schema
@@ -246,20 +316,17 @@ def check_route_conflicts(
 
     # Get existing routes from the app
     existing_paths = set()
-    for route in app.router.routes:
-        if isinstance(route, APIRoute):
-            existing_paths.add((route.path, tuple(sorted(route.methods))))
+    for path, route in iter_api_routes(app.router.routes):
+        existing_paths.add((path, tuple(sorted(route.methods))))
 
     # Get routes from the router to be included
     conflicts = []
-    for route in router.routes:
-        if isinstance(route, APIRoute):
-            router_path = f"{prefix}{route.path}" if prefix else route.path
-            router_methods = tuple(sorted(route.methods))
+    for router_path, route in iter_api_routes(router.routes, prefix):
+        router_methods = tuple(sorted(route.methods))
 
-            if (router_path, router_methods) in existing_paths:
-                methods_str = ", ".join(router_methods)
-                conflicts.append(f"{methods_str} {router_path}")
+        if (router_path, router_methods) in existing_paths:
+            methods_str = ", ".join(router_methods)
+            conflicts.append(f"{methods_str} {router_path}")
 
     return conflicts
 
