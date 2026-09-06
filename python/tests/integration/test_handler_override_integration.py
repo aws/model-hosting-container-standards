@@ -16,6 +16,9 @@ from unittest.mock import patch
 
 import pytest
 
+from model_hosting_container_standards.common.fastapi.routing import (
+    _iter_effective_api_routes,
+)
 from model_hosting_container_standards.sagemaker.config import SageMakerEnvVars
 
 # Removed direct handler imports - using server responses instead
@@ -438,27 +441,27 @@ async def custom_sagemaker_invocation_handler(request: Request):
         # Get the FastAPI app to inspect routes
         app = mock_vllm_server.mock_server.app
 
-        # Check that /ping and /invocations routes exist
-        ping_routes = [
-            route
-            for route in app.routes
-            if hasattr(route, "path") and route.path == "/ping"
+        # Check that /ping and /invocations routes exist. Walk the effective
+        # route tree rather than the top-level app.routes list: FastAPI >= 0.137
+        # keeps routes added via include_router inside lazy wrapper objects, so a
+        # flat scan of app.routes would miss them.
+        effective_paths = [
+            path for path, _methods, _route in _iter_effective_api_routes(app.routes)
         ]
+        ping_routes = [path for path in effective_paths if path == "/ping"]
         invocations_routes = [
-            route
-            for route in app.routes
-            if hasattr(route, "path") and route.path == "/invocations"
+            path for path in effective_paths if path == "/invocations"
         ]
 
         # Should have ping routes (the mock server creates them)
         assert (
             len(ping_routes) > 0
-        ), f"No /ping routes found. Available routes: {[r.path for r in app.routes if hasattr(r, 'path')]}"
+        ), f"No /ping routes found. Available routes: {effective_paths}"
 
         # Should have invocations route (the mock server creates them)
         assert (
             len(invocations_routes) > 0
-        ), f"No /invocations routes found. Available routes: {[r.path for r in app.routes if hasattr(r, 'path')]}"
+        ), f"No /invocations routes found. Available routes: {effective_paths}"
 
         # Test that the routes actually work and call framework code
         ping_response = asyncio.run(mock_vllm_server.call_ping_endpoint())
