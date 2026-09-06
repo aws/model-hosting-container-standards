@@ -4,14 +4,39 @@ from unittest.mock import Mock, patch
 
 import pytest
 from fastapi import APIRouter, FastAPI
+from fastapi.routing import APIRoute
 
 from model_hosting_container_standards.common.fastapi.routing import (
     RouteConfig,
+    check_route_conflicts,
     create_router,
     mount_handlers,
     normalize_prefix,
     remove_conflicting_routes,
+    safe_include_router,
 )
+
+
+def _count_api_routes(app: FastAPI) -> int:
+    """Count all APIRoutes reachable from the app, descending into FastAPI
+    >= 0.137 ``_IncludedRouter`` wrappers via ``original_router``.
+
+    ``len(app.router.routes)`` is insufficient on FastAPI >= 0.137 because a
+    nested route removal does not change the top-level list length.
+    """
+    total = 0
+
+    def walk(routes):
+        nonlocal total
+        for route in routes:
+            if isinstance(route, APIRoute):
+                total += 1
+            sub = getattr(route, "original_router", None)
+            if sub is not None:
+                walk(sub.routes)
+
+    walk(app.router.routes)
+    return total
 
 
 class TestRouteConfig:
@@ -519,3 +544,155 @@ class TestRemoveConflictingRoutes:
         # Check summary log
         second_call = mock_logger.info.call_args_list[1][0][0]
         assert "Removed 1 conflicting routes" in second_call
+
+
+class TestConflictsWithIncludedRouters:
+    """Conflict detection/removal when the app's routes were registered via
+    ``app.include_router()``.
+
+    FastAPI >= 0.137 (PR #15745) no longer flattens included routes into
+    ``app.router.routes``; instead it stores lazy ``_IncludedRouter`` wrapper
+    objects that form a tree. Conflict handling that only inspects top-level
+    ``APIRoute`` instances silently stops finding these routes, so overrides
+    never replace them. These tests exercise that path; on older FastAPI the
+    same app is flat and the behavior is unchanged.
+    """
+
+    def _app_with_included_route(self, path: str, method: str = "GET") -> FastAPI:
+        """Build an app whose ``path`` route is registered via include_router,
+        mirroring how vLLM attaches its routers."""
+        app = FastAPI()
+        existing = APIRouter()
+        existing.add_api_route(path, lambda: {"who": "app"}, methods=[method])
+        app.include_router(existing)
+        return app
+
+    def test_check_conflicts_detects_included_route(self):
+        app = self._app_with_included_route("/ping")
+
+        override = APIRouter()
+        override.add_api_route("/ping", lambda: {"who": "override"}, methods=["GET"])
+
+        conflicts = check_route_conflicts(app, override)
+
+        assert conflicts == ["GET /ping"]
+
+    def test_remove_conflicting_included_route(self):
+        app = self._app_with_included_route("/ping")
+        before = _count_api_routes(app)
+
+        override = APIRouter()
+        override.add_api_route("/ping", lambda: {"who": "override"}, methods=["GET"])
+
+        remove_conflicting_routes(app, override)
+
+        assert _count_api_routes(app) == before - 1
+
+    def test_remove_conflicting_included_route_with_prefix(self):
+        """The prefix supplied at include time must be honored when matching."""
+        app = FastAPI()
+        existing = APIRouter()
+        existing.add_api_route("/ping", lambda: {"who": "app"}, methods=["GET"])
+        app.include_router(existing, prefix="/sm")
+
+        override = APIRouter()
+        override.add_api_route("/ping", lambda: {"who": "override"}, methods=["GET"])
+        before = _count_api_routes(app)
+
+        # Router prefixed to /sm/ping -> conflicts with the included /sm/ping
+        remove_conflicting_routes(app, override, prefix="/sm")
+
+        assert _count_api_routes(app) == before - 1
+
+    def test_no_conflict_leaves_included_routes_untouched(self):
+        app = self._app_with_included_route("/ping")
+        before = _count_api_routes(app)
+
+        override = APIRouter()
+        override.add_api_route("/other", lambda: {}, methods=["GET"])
+
+        remove_conflicting_routes(app, override)
+
+        assert _count_api_routes(app) == before
+
+    def test_safe_include_router_override_actually_wins(self):
+        """End-to-end: after safe_include_router the override handler responds,
+        not the original included handler. This is the behavior that regressed
+        on FastAPI >= 0.137."""
+        from starlette.testclient import TestClient
+
+        app = self._app_with_included_route("/ping")
+
+        override = APIRouter()
+
+        @override.get("/ping")
+        def override_ping():
+            return {"who": "override"}
+
+        safe_include_router(app, override)
+
+        assert TestClient(app).get("/ping").json() == {"who": "override"}
+
+    def test_included_router_is_not_mutated(self):
+        """Removing a conflict must not mutate the caller's included router.
+
+        On FastAPI >= 0.137 an included router's real routes are referenced by
+        the app (not copied), so deleting a route from the app in place would
+        strip it from the caller's own router. The router must survive intact so
+        it can be re-included elsewhere."""
+        app = FastAPI()
+        existing = APIRouter()
+        existing.add_api_route("/ping", lambda: {"who": "app"}, methods=["GET"])
+        existing.add_api_route("/keep", lambda: {"who": "app"}, methods=["GET"])
+        app.include_router(existing)
+        paths_before = sorted(r.path for r in existing.routes)
+
+        override = APIRouter()
+        override.add_api_route("/ping", lambda: {"who": "override"}, methods=["GET"])
+
+        remove_conflicting_routes(app, override)
+
+        # The caller's router still has both of its original routes.
+        assert sorted(r.path for r in existing.routes) == paths_before
+
+    def test_included_router_still_usable_in_second_app(self):
+        """A router included into one app, then subjected to conflict removal,
+        must still serve its original route when included into another app."""
+        from starlette.testclient import TestClient
+
+        existing = APIRouter()
+        existing.add_api_route("/ping", lambda: {"who": "existing"}, methods=["GET"])
+
+        app1 = FastAPI()
+        app1.include_router(existing)
+        override = APIRouter()
+        override.add_api_route("/ping", lambda: {"who": "override"}, methods=["GET"])
+        safe_include_router(app1, override)
+
+        # Second app reuses the same router instance; it must be unaffected by
+        # the conflict removal that happened against app1.
+        app2 = FastAPI()
+        app2.include_router(existing)
+
+        assert TestClient(app1).get("/ping").json() == {"who": "override"}
+        assert TestClient(app2).get("/ping").json() == {"who": "existing"}
+
+    def test_mounted_subapp_is_not_recursed(self):
+        """Removal must not descend into mounted ASGI sub-apps / Mounts; only
+        FastAPI include wrappers are traversed. A same-named path inside a
+        mounted sub-app must be left intact."""
+        from starlette.applications import Starlette
+        from starlette.routing import Mount, Route
+
+        sub = Starlette(routes=[Route("/ping", lambda request: None, methods=["GET"])])
+        app = FastAPI()
+        app.router.routes.append(Mount("/mounted", app=sub))
+
+        override = APIRouter()
+        override.add_api_route("/ping", lambda: {}, methods=["GET"])
+        before = len(app.router.routes)
+
+        remove_conflicting_routes(app, override)
+
+        # The Mount (and its inner /ping) is untouched.
+        assert len(app.router.routes) == before
