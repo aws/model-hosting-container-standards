@@ -1,11 +1,114 @@
+import copy
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing import Callable, Iterator, List, Optional, Tuple
 
+import fastapi.routing as _fastapi_routing
 from fastapi import APIRouter, FastAPI
 from fastapi.routing import APIRoute
+from starlette.routing import BaseRoute
 
 from ...logging_config import logger
 from ..handler import handler_registry
+
+
+def _iter_effective_api_routes(
+    routes: List[BaseRoute],
+) -> Iterator[Tuple[str, frozenset, APIRoute]]:
+    """Yield ``(effective_path, methods, route)`` for every ``APIRoute`` an app
+    actually serves, including routes registered via ``include_router()``.
+
+    FastAPI >= 0.137 (PR #15745) stopped flattening included routes into
+    ``app.router.routes``; they are kept as lazy wrapper objects that form a
+    tree, so iterating ``app.router.routes`` and reading ``route.path`` only
+    sees top-level routes. ``fastapi.routing.iter_route_contexts`` walks that
+    tree and reports each route's effective path (with include prefixes already
+    composed). On older FastAPI the helper is absent and the list is already
+    flat, so we iterate it directly. Either way only ``APIRoute`` instances are
+    yielded, so mounted ASGI sub-apps are left alone.
+    """
+    iter_route_contexts = getattr(_fastapi_routing, "iter_route_contexts", None)
+    if iter_route_contexts is not None:
+        for ctx in iter_route_contexts(routes):
+            route = ctx.original_route
+            if isinstance(route, APIRoute):
+                yield ctx.path, frozenset(route.methods or ()), route
+    else:
+        for route in routes:
+            if isinstance(route, APIRoute):
+                yield route.path, frozenset(route.methods or ()), route
+
+
+def _mark_router_changed(router: "APIRouter") -> None:
+    """Invalidate a router's FastAPI >= 0.137 effective-route cache.
+
+    FastAPI >= 0.137 caches the effective routes an included router contributes,
+    keyed on ``_get_routes_version()``. Bumping the version forces a rebuild so a
+    removed route stops matching. Guarded with ``getattr`` because older FastAPI
+    has no such caching (and no such method)."""
+    mark_changed = getattr(router, "_mark_routes_changed", None)
+    if mark_changed is not None:
+        mark_changed()
+
+
+def _rebuild_routes_without(
+    routes: List[BaseRoute], target: APIRoute
+) -> Tuple[List[BaseRoute], bool]:
+    """Return ``(new_routes, removed)`` — a copy of ``routes`` with ``target``
+    (matched by identity) removed, without mutating ``routes`` or any router
+    reachable through it.
+
+    FastAPI >= 0.137 (PR #15745) no longer flattens included routes into the
+    app; ``app.router.routes`` holds ``_IncludedRouter`` wrappers whose
+    ``original_router`` is the *caller's* own ``APIRouter`` instance, with its
+    real ``APIRoute`` objects. Deleting a route from that shared router in place
+    would corrupt the caller's router for any later use (e.g. re-including it),
+    so when the target lives inside a wrapper we rebuild the affected wrapper
+    over a shallow copy of its router that omits the target, leaving the
+    original untouched. A brand-new ``_IncludedRouter`` is created around the
+    copy (the same way ``include_router`` builds one) so it starts with a fresh,
+    uncontaminated effective-route cache. Only include wrappers are traversed,
+    never mounted ASGI sub-apps."""
+    new_routes: List[BaseRoute] = []
+    removed = False
+    for route in routes:
+        if not removed:
+            if route is target:
+                removed = True
+                continue
+            included_router = getattr(route, "original_router", None)
+            if included_router is not None:
+                sub_routes, sub_removed = _rebuild_routes_without(
+                    included_router.routes, target
+                )
+                if sub_removed:
+                    removed = True
+                    new_router = copy.copy(included_router)
+                    new_router.routes = sub_routes
+                    _mark_router_changed(new_router)
+                    included_router_cls = type(route)
+                    new_routes.append(
+                        included_router_cls(
+                            original_router=new_router,
+                            include_context=route.include_context,
+                        )
+                    )
+                    continue
+        new_routes.append(route)
+    return new_routes, removed
+
+
+def _remove_route_object(app_router: "APIRouter", target: APIRoute) -> bool:
+    """Remove ``target`` (by identity) from the app so it is no longer served.
+
+    ``app_router`` is the application's own router, so its top-level ``routes``
+    list may be mutated in place; routes contributed by an included router are
+    dropped via :func:`_rebuild_routes_without`, which copies rather than mutates
+    the caller's router. Returns True if the route was found and removed."""
+    new_routes, removed = _rebuild_routes_without(app_router.routes, target)
+    if removed:
+        app_router.routes[:] = new_routes
+        _mark_router_changed(app_router)
+    return removed
 
 
 def normalize_prefix(prefix: str) -> str:
@@ -208,18 +311,16 @@ def remove_conflicting_routes(
     if not incoming_routes:
         return
 
-    # Remove conflicting routes from app
-    app_routes = app.router.routes
+    # Remove conflicting routes from app. Materialize the effective routes first
+    # so we can mutate the (possibly nested) route tree while iterating.
     removed_count = 0
-    for i in range(len(app_routes) - 1, -1, -1):
-        route = app_routes[i]
-        if isinstance(route, APIRoute):
-            route_path = route.path
-            route_methods = tuple(sorted(route.methods))
-
-            if (route_path, route_methods) in incoming_routes:
+    for route_path, methods, route_obj in list(
+        _iter_effective_api_routes(app.router.routes)
+    ):
+        route_methods = tuple(sorted(methods))
+        if (route_path, route_methods) in incoming_routes:
+            if _remove_route_object(app.router, route_obj):
                 logger.info(f"Removing conflicting route: {route_methods} {route_path}")
-                del app_routes[i]
                 removed_count += 1
 
     if removed_count > 0:
@@ -244,11 +345,11 @@ def check_route_conflicts(
     # Normalize prefix to ensure consistent path handling
     prefix = normalize_prefix(prefix)
 
-    # Get existing routes from the app
+    # Get existing routes from the app (including routes registered via
+    # include_router, which FastAPI >= 0.137 hides inside wrapper objects).
     existing_paths = set()
-    for route in app.router.routes:
-        if isinstance(route, APIRoute):
-            existing_paths.add((route.path, tuple(sorted(route.methods))))
+    for route_path, methods, _route in _iter_effective_api_routes(app.router.routes):
+        existing_paths.add((route_path, tuple(sorted(methods))))
 
     # Get routes from the router to be included
     conflicts = []
