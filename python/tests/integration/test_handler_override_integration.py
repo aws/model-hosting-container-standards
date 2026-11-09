@@ -16,9 +16,15 @@ from unittest.mock import patch
 
 import pytest
 
+from model_hosting_container_standards.common.fastapi.routing import iter_api_routes
 from model_hosting_container_standards.sagemaker.config import SageMakerEnvVars
 
 # Removed direct handler imports - using server responses instead
+
+
+def flatten_routes(app):
+    """Resolve app routes, including those behind FastAPI's lazy include markers."""
+    return [route for _, route in iter_api_routes(app.router.routes)]
 
 
 class TestHandlerOverrideIntegration:
@@ -439,26 +445,19 @@ async def custom_sagemaker_invocation_handler(request: Request):
         app = mock_vllm_server.mock_server.app
 
         # Check that /ping and /invocations routes exist
-        ping_routes = [
-            route
-            for route in app.routes
-            if hasattr(route, "path") and route.path == "/ping"
-        ]
-        invocations_routes = [
-            route
-            for route in app.routes
-            if hasattr(route, "path") and route.path == "/invocations"
-        ]
+        routes = flatten_routes(app)
+        ping_routes = [route for route in routes if route.path == "/ping"]
+        invocations_routes = [route for route in routes if route.path == "/invocations"]
 
         # Should have ping routes (the mock server creates them)
         assert (
             len(ping_routes) > 0
-        ), f"No /ping routes found. Available routes: {[r.path for r in app.routes if hasattr(r, 'path')]}"
+        ), f"No /ping routes found. Available routes: {[r.path for r in routes]}"
 
         # Should have invocations route (the mock server creates them)
         assert (
             len(invocations_routes) > 0
-        ), f"No /invocations routes found. Available routes: {[r.path for r in app.routes if hasattr(r, 'path')]}"
+        ), f"No /invocations routes found. Available routes: {[r.path for r in routes]}"
 
         # Test that the routes actually work and call framework code
         ping_response = asyncio.run(mock_vllm_server.call_ping_endpoint())
